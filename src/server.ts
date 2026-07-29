@@ -1,0 +1,72 @@
+import 'dotenv/config';
+
+import { createApp } from './app.js';
+import { createPrismaClient } from './common/database/prisma.js';
+import { createLogger } from './common/logging/logger.js';
+import { JwtAccessTokenService } from './common/security/access-token.js';
+import { CryptoOpaqueTokenService } from './common/security/opaque-token.js';
+import { Argon2idPasswordHasher } from './common/security/password-hasher.js';
+import { loadConfig } from './config/env.js';
+import { PrismaAuthRepository } from './modules/auth/auth.repository.js';
+import { AuthService } from './modules/auth/auth.service.js';
+import { DevelopmentEmailService } from './modules/email/in-memory-email.service.js';
+import { PrismaTeamRepository } from './modules/teams/team.repository.js';
+import { TeamService } from './modules/teams/team.service.js';
+import { PrismaUserRepository } from './modules/users/user.repository.js';
+import { UserService } from './modules/users/user.service.js';
+
+const config = loadConfig();
+const logger = createLogger(config);
+const prisma = createPrismaClient(config.databaseUrl);
+const teamReader = new TeamService(new PrismaTeamRepository(prisma));
+const accessTokens = new JwtAccessTokenService({
+  secret: config.auth.accessTokenSecret,
+  expiresInSeconds: config.auth.accessTokenTtlSeconds,
+});
+const emailService = new DevelopmentEmailService(logger, config.email.logResetUrl);
+const authService = new AuthService({
+  repository: new PrismaAuthRepository(prisma),
+  passwordHasher: new Argon2idPasswordHasher(),
+  accessTokens,
+  opaqueTokens: new CryptoOpaqueTokenService(),
+  emailService,
+  refreshTokenTtlSeconds: config.auth.refreshTokenTtlSeconds,
+  passwordResetTokenTtlSeconds: config.passwordReset.tokenTtlSeconds,
+  passwordResetFrontendUrl: config.passwordReset.frontendUrl,
+  onEmailDeliveryError: (error) => {
+    logger.error({ err: error }, 'Password reset email delivery failed');
+  },
+});
+const userService = new UserService(new PrismaUserRepository(prisma));
+const app = createApp({ config, logger, teamReader, authService, userService, accessTokens });
+
+const server = app.listen(config.port, config.host, (error?: Error) => {
+  if (error) {
+    logger.fatal({ err: error }, 'Failed to start HTTP server');
+    process.exitCode = 1;
+    return;
+  }
+
+  logger.info({ host: config.host, port: config.port }, 'HTTP server started');
+});
+
+let isShuttingDown = false;
+
+function shutdown(signal: NodeJS.Signals): void {
+  if (isShuttingDown) {
+    return;
+  }
+  isShuttingDown = true;
+
+  logger.info({ signal }, 'Shutting down HTTP server');
+  server.close((error) => {
+    void prisma.$disconnect();
+    if (error) {
+      logger.error({ err: error }, 'HTTP server shutdown failed');
+      process.exitCode = 1;
+    }
+  });
+}
+
+process.on('SIGINT', shutdown);
+process.on('SIGTERM', shutdown);
