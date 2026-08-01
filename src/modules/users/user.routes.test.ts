@@ -5,7 +5,11 @@ import request from 'supertest';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
-import { createTestConfig, createTestTeamReader } from '../../../tests/helpers/test-config.js';
+import {
+  createTestConfig,
+  createTestGameReader,
+  createTestTeamReader,
+} from '../../../tests/helpers/test-config.js';
 import { InMemoryAuthRepository } from '../../../tests/helpers/in-memory-auth-repository.js';
 import {
   TestAccessTokenService,
@@ -47,6 +51,7 @@ function createHarness() {
     config,
     logger: pino({ level: 'silent' }),
     teamReader: createTestTeamReader(),
+    gameReader: createTestGameReader(),
     authService,
     userService,
     accessTokens,

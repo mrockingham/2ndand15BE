@@ -122,31 +122,85 @@ Exit criteria:
 - The current-user response never exposes password or refresh-session fields.
 - The separately maintained frontend can implement its personalized-home bootstrap from the documented contract.
 
-## Milestone 5 — Vertical-slice hardening
+## Milestone 5 — NFL schedules and normalized game catalog
 
-Goal: validate the slice as a coherent release candidate before adding sports features.
+Goal: add the first real football-content domain without coupling public contracts to a sports-data vendor.
+
+**Status:** Implemented and verified on July 31, 2026 against the configured hosted PostgreSQL database. The migration, two-pass idempotent seed, database integration suite, HTTP smoke tests, quality gates, production build, and dependency audit passed.
 
 Deliverables:
 
-- End-to-end happy-path coverage across team listing, registration/login, favorite selection, current user, refresh, and logout
-- Fresh-database migration and idempotent seed verification
-- OpenAPI review against actual responses
-- Security/log-redaction review
-- Dependency and error-path review
-- Deployment/runbook notes appropriate to the selected host
+- Normalized `Game` and `GameProviderMapping` persistence
+- Constrained season types and game statuses
+- Validated, explicitly fictional development schedule fixture
+- Idempotent synchronization with team-mapping resolution and structured outcomes
+- Public filtered/cursor-paginated game list, single-game, and team-games endpoints
+- UTC date handling, bounded defaults, OpenAPI documentation, and database coverage
 
 Exit criteria:
 
-- All automated quality gates pass in a production-like configuration.
-- Known limitations and deferred work are recorded.
-- No commercial provider credential or integration is required for the slice.
+- Repeated fixture synchronization preserves internal IDs and updates mutable fields.
+- Provider mappings never appear in public DTOs.
+- List filters, bounds, pagination, errors, and team convenience reads are verified.
+- Migrations, hosted persistence checks, quality gates, and HTTP smoke tests pass.
+- No commercial provider credential or integration is required.
+
+## Milestone 6 — API-Sports NFL synchronization
+
+Goal: synchronize real NFL teams and schedules without changing public API contracts or coupling request handlers to the provider.
+
+**Status:** Implemented and verified on August 1, 2026. Mocked and full quality gates passed; the configured hosted database retained 32 unique teams, added 32 API-Sports team mappings and 256 normalized 2024 regular-season games, and repeated synchronizations were idempotent. Read-only HTTP checks confirmed source isolation and private provider metadata. The configured provider plan rejected 2025 and exposed no 2026 records, so current-season synchronization remains provider-plan/data-blocked rather than being treated as a successful populated sync.
+
+Deliverables:
+
+- Validated API-Sports NFL team/game adapter behind `SportsDataProvider`
+- Timeout, abort, bounded-retry, rate-limit, safe-error, and credential-redaction behavior
+- Deterministic matching of API-Sports teams to the existing internal 32-team catalog
+- Idempotent real-game synchronization through private provider mappings
+- Explicit provider factory and source-isolated public game reads
+- Manual team/game/combined sync and opt-in read-only live verification commands
+- Mocked provider coverage and operational documentation
+
+Exit criteria:
+
+- API-Sports response envelopes and records are validated without leaking raw payloads.
+- Existing teams receive mappings without duplication or unwanted display-field replacement.
+- Real games preserve internal IDs, resolve internal teams, and update mutable fields idempotently.
+- Mock remains the default and fictional games are excluded when API-Sports is selected.
+- Quality gates, safe live verification, and configured hosted-database checks are reported.
+- Scheduling, polling, play-by-play, and other future sports domains remain deferred.
+
+## Milestone 6.1 — Current-season and provider-evaluation safety
+
+Goal: prevent historical or fictional games from being presented as current data and establish a read-only evaluation boundary for future provider decisions.
+
+**Status:** Completed and verified on August 1, 2026.
+
+Deliverables:
+
+- Explicit validated current NFL season and historical-default policy
+- Fixture visibility controlled independently from provider selection
+- Empty current-season defaults when the selected source has no current games
+- Explicit historical-season queries preserved without DTO changes
+- Provider-neutral evaluation report schema, findings, and sanitized renderer
+- API-Sports historical/current suitability report under `docs/provider-evaluations/`
+- Credential scans, safety regression tests, and HTTP verification
+
+Exit criteria:
+
+- Historical 2024 API-Sports games never appear in a default 2026 query.
+- Fixture games are hidden unless explicitly enabled.
+- Public responses remain normalized and provider-private.
+- Evaluation reports distinguish verified, unavailable, and untested capabilities.
+- No credential or credential header appears in tracked evaluation output.
+- All quality and hosted verification gates pass.
 
 ## Later roadmap themes
 
 After the first slice is stable, define separate milestones for:
 
-- Schedule, game, score, standings, and statistics normalization
-- Commercial sports-provider adapter, caching, quotas, and failover
+- Standings and player/team statistics normalization
+- Additional sports-provider adapters, distributed caching, quotas, and failover
 - News ingestion, attribution, deduplication, and AI summaries
 - Predictions, model/version provenance, calibration, and historical accuracy
 - Low-latency play-by-play delivery and visualizer event contracts

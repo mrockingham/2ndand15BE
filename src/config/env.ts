@@ -64,15 +64,40 @@ const booleanSchema = (defaultValue: boolean) =>
     .default(defaultValue ? 'true' : 'false')
     .transform((value) => value === 'true');
 
-const baseEnvironmentSchema = z.object({
+const optionalSecretSchema = z.preprocess(
+  (value) => (value === '' ? undefined : value),
+  z.string().min(1).max(1024).optional(),
+);
+
+const databaseEnvironmentSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+  DATABASE_URL: postgresUrlSchema,
+  LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
+});
+
+const baseEnvironmentSchema = databaseEnvironmentSchema.extend({
   HOST: z.string().min(1).default('0.0.0.0'),
   PORT: z.coerce.number().int().min(1).max(65_535).default(3000),
-  DATABASE_URL: postgresUrlSchema,
   CORS_ORIGINS: corsOriginsSchema,
-  LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
   RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60_000),
   RATE_LIMIT_MAX: z.coerce.number().int().positive().default(100),
+  CURRENT_NFL_SEASON: z.coerce.number().int().min(1920).max(2100),
+  ALLOW_HISTORICAL_DEFAULT_GAME_RESULTS: booleanSchema(false),
+  FIXTURE_DATA_ENABLED: booleanSchema(false),
+  SPORTS_PROVIDER: z.enum(['mock', 'api-sports']).default('mock'),
+  API_SPORTS_BASE_URL: z.url().default('https://v1.american-football.api-sports.io'),
+  SPORTS_API: optionalSecretSchema,
+  API_SPORTS_KEY: optionalSecretSchema,
+  API_SPORTS_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(100).max(60_000).default(10_000),
+  API_SPORTS_MAX_RETRIES: z.coerce.number().int().min(0).max(5).default(2),
+  API_SPORTS_SYNC_SEASON: z.coerce
+    .number()
+    .int()
+    .min(1920)
+    .max(2100)
+    .default(new Date().getUTCFullYear()),
+  API_SPORTS_SYNC_SEASON_TYPE: z.enum(['ALL', 'PRE', 'REG', 'POST']).default('ALL'),
+  API_SPORTS_STORE_LOGO_URLS: booleanSchema(false),
 });
 
 const environmentSchema = baseEnvironmentSchema
@@ -95,6 +120,8 @@ const environmentSchema = baseEnvironmentSchema
     EMAIL_DEV_LOG_RESET_URL: booleanSchema(false),
   })
   .superRefine((value, context) => {
+    validateSportsConfiguration(value, context);
+
     if (value.REFRESH_COOKIE_SAME_SITE === 'none' && !value.REFRESH_COOKIE_SECURE) {
       context.addIssue({
         code: 'custom',
@@ -104,6 +131,13 @@ const environmentSchema = baseEnvironmentSchema
     }
 
     if (value.NODE_ENV === 'production') {
+      if (value.ALLOW_HISTORICAL_DEFAULT_GAME_RESULTS) {
+        context.addIssue({
+          code: 'custom',
+          path: ['ALLOW_HISTORICAL_DEFAULT_GAME_RESULTS'],
+          message: 'Must be false in production',
+        });
+      }
       if (!value.REFRESH_COOKIE_SECURE) {
         context.addIssue({
           code: 'custom',
@@ -160,6 +194,27 @@ export interface AppConfig extends DatabaseConfig {
     readonly provider: 'development';
     readonly logResetUrl: boolean;
   };
+  readonly sports: SportsConfig;
+}
+
+export interface SportsConfig {
+  readonly provider: 'mock' | 'api-sports';
+  readonly currentNflSeason: number;
+  readonly allowHistoricalDefaultGameResults: boolean;
+  readonly fixtureDataEnabled: boolean;
+  readonly apiSports: {
+    readonly baseUrl: string;
+    readonly apiKey: string | null;
+    readonly requestTimeoutMs: number;
+    readonly maxRetries: number;
+    readonly syncSeason: number;
+    readonly syncSeasonType: 'PRE' | 'REG' | 'POST' | null;
+    readonly storeLogoUrls: boolean;
+  };
+}
+
+export interface SportsSyncConfig extends DatabaseConfig {
+  readonly sports: SportsConfig;
 }
 
 export interface RateLimitConfig {
@@ -180,11 +235,24 @@ export class EnvironmentValidationError extends Error {
 export function loadDatabaseConfig(
   environment: Record<string, string | undefined> = process.env,
 ): DatabaseConfig {
-  const data = parseEnvironment(baseEnvironmentSchema, environment);
+  const data = parseEnvironment(databaseEnvironmentSchema, environment);
   return {
     nodeEnv: data.NODE_ENV,
     databaseUrl: data.DATABASE_URL,
     logLevel: data.LOG_LEVEL,
+  };
+}
+
+export function loadSportsSyncConfig(
+  environment: Record<string, string | undefined> = process.env,
+): SportsSyncConfig {
+  const schema = baseEnvironmentSchema.superRefine(validateSportsConfiguration);
+  const data = parseEnvironment(schema, environment);
+  return {
+    nodeEnv: data.NODE_ENV,
+    databaseUrl: data.DATABASE_URL,
+    logLevel: data.LOG_LEVEL,
+    sports: toSportsConfig(data),
   };
 }
 
@@ -230,7 +298,56 @@ export function loadConfig(
       provider: data.EMAIL_PROVIDER,
       logResetUrl: data.EMAIL_DEV_LOG_RESET_URL,
     },
+    sports: toSportsConfig(data),
   };
+}
+
+function toSportsConfig(data: z.output<typeof baseEnvironmentSchema>): SportsConfig {
+  return {
+    provider: data.SPORTS_PROVIDER,
+    currentNflSeason: data.CURRENT_NFL_SEASON,
+    allowHistoricalDefaultGameResults: data.ALLOW_HISTORICAL_DEFAULT_GAME_RESULTS,
+    fixtureDataEnabled: data.FIXTURE_DATA_ENABLED,
+    apiSports: {
+      baseUrl: data.API_SPORTS_BASE_URL,
+      apiKey: data.SPORTS_API ?? data.API_SPORTS_KEY ?? null,
+      requestTimeoutMs: data.API_SPORTS_REQUEST_TIMEOUT_MS,
+      maxRetries: data.API_SPORTS_MAX_RETRIES,
+      syncSeason: data.API_SPORTS_SYNC_SEASON,
+      syncSeasonType:
+        data.API_SPORTS_SYNC_SEASON_TYPE === 'ALL' ? null : data.API_SPORTS_SYNC_SEASON_TYPE,
+      storeLogoUrls: data.API_SPORTS_STORE_LOGO_URLS,
+    },
+  };
+}
+
+function validateSportsConfiguration(
+  value: z.output<typeof baseEnvironmentSchema>,
+  context: z.RefinementCtx,
+): void {
+  if (
+    value.SPORTS_API !== undefined &&
+    value.API_SPORTS_KEY !== undefined &&
+    value.SPORTS_API !== value.API_SPORTS_KEY
+  ) {
+    context.addIssue({
+      code: 'custom',
+      path: ['SPORTS_API'],
+      message: 'Must match API_SPORTS_KEY when both variables are set',
+    });
+  }
+
+  if (
+    value.SPORTS_PROVIDER === 'api-sports' &&
+    value.SPORTS_API === undefined &&
+    value.API_SPORTS_KEY === undefined
+  ) {
+    context.addIssue({
+      code: 'custom',
+      path: ['SPORTS_API'],
+      message: 'Is required when SPORTS_PROVIDER is api-sports',
+    });
+  }
 }
 
 function parseEnvironment<T extends z.ZodType>(

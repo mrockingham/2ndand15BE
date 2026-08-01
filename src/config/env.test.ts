@@ -5,6 +5,7 @@ import { EnvironmentValidationError, loadConfig } from './env.js';
 const requiredEnvironment = {
   DATABASE_URL: 'postgresql://test:test@localhost:5432/test?schema=public',
   JWT_ACCESS_SECRET: 'test-access-secret-that-is-at-least-32-characters',
+  CURRENT_NFL_SEASON: '2026',
 };
 
 describe('loadConfig', () => {
@@ -49,6 +50,21 @@ describe('loadConfig', () => {
         provider: 'development',
         logResetUrl: false,
       },
+      sports: {
+        provider: 'mock',
+        currentNflSeason: 2026,
+        allowHistoricalDefaultGameResults: false,
+        fixtureDataEnabled: false,
+        apiSports: {
+          baseUrl: 'https://v1.american-football.api-sports.io',
+          apiKey: null,
+          requestTimeoutMs: 10_000,
+          maxRetries: 2,
+          syncSeason: new Date().getUTCFullYear(),
+          syncSeasonType: null,
+          storeLogoUrls: false,
+        },
+      },
     });
   });
 
@@ -65,6 +81,35 @@ describe('loadConfig', () => {
     expect(() => loadConfig({ ...requiredEnvironment, CORS_ORIGINS: '*' })).toThrow(
       EnvironmentValidationError,
     );
+  });
+
+  it('requires an explicit current NFL season', () => {
+    const { CURRENT_NFL_SEASON: _currentSeason, ...missingCurrentSeason } = requiredEnvironment;
+    void _currentSeason;
+    expect(() => loadConfig(missingCurrentSeason)).toThrow(EnvironmentValidationError);
+  });
+
+  it('validates game-data safety flags and rejects historical defaults in production', () => {
+    const development = loadConfig({
+      ...requiredEnvironment,
+      ALLOW_HISTORICAL_DEFAULT_GAME_RESULTS: 'true',
+      FIXTURE_DATA_ENABLED: 'true',
+    });
+    expect(development.sports).toMatchObject({
+      currentNflSeason: 2026,
+      allowHistoricalDefaultGameResults: true,
+      fixtureDataEnabled: true,
+    });
+
+    expect(() =>
+      loadConfig({
+        ...requiredEnvironment,
+        NODE_ENV: 'production',
+        ALLOW_HISTORICAL_DEFAULT_GAME_RESULTS: 'true',
+        REFRESH_COOKIE_SECURE: 'true',
+        PASSWORD_RESET_FRONTEND_URL: 'https://example.com/reset-password',
+      }),
+    ).toThrow(EnvironmentValidationError);
   });
 
   it('parses configurable authentication lifetimes and secure cookie settings', () => {
@@ -106,5 +151,46 @@ describe('loadConfig', () => {
 
     expect(thrownError).toBeInstanceOf(EnvironmentValidationError);
     expect((thrownError as EnvironmentValidationError).message).not.toContain(secretUrl);
+  });
+
+  it('requires SPORTS_API only when API-Sports is selected', () => {
+    expect(() => loadConfig({ ...requiredEnvironment, SPORTS_PROVIDER: 'api-sports' })).toThrow(
+      EnvironmentValidationError,
+    );
+
+    const config = loadConfig({
+      ...requiredEnvironment,
+      SPORTS_PROVIDER: 'api-sports',
+      SPORTS_API: 'test-provider-key',
+      API_SPORTS_SYNC_SEASON: '2024',
+      API_SPORTS_SYNC_SEASON_TYPE: 'REG',
+    });
+    expect(config.sports).toMatchObject({
+      provider: 'api-sports',
+      apiSports: {
+        apiKey: 'test-provider-key',
+        syncSeason: 2024,
+        syncSeasonType: 'REG',
+      },
+    });
+  });
+
+  it('accepts API_SPORTS_KEY as a compatibility alias without exposing it in errors', () => {
+    const secret = 'compatibility-secret';
+    const config = loadConfig({
+      ...requiredEnvironment,
+      SPORTS_PROVIDER: 'api-sports',
+      API_SPORTS_KEY: secret,
+    });
+    expect(config.sports.apiSports.apiKey).toBe(secret);
+
+    expect(() =>
+      loadConfig({
+        ...requiredEnvironment,
+        SPORTS_PROVIDER: 'api-sports',
+        SPORTS_API: secret,
+        API_SPORTS_KEY: 'different-secret',
+      }),
+    ).toThrow(EnvironmentValidationError);
   });
 });

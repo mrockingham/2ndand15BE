@@ -6,6 +6,7 @@ import {
   createTestAccessTokenService,
   createTestAuthService,
   createTestConfig,
+  createTestGameReader,
   createTestUserService,
 } from '../../../tests/helpers/test-config.js';
 import { createApp } from '../../app.js';
@@ -26,6 +27,7 @@ function createTeamApp(repository: TeamRepository) {
     config: createTestConfig(),
     logger: pino({ level: 'silent' }),
     teamReader: new TeamService(repository),
+    gameReader: createTestGameReader(),
     authService: createTestAuthService(),
     userService: createTestUserService(),
     accessTokens: createTestAccessTokenService(),

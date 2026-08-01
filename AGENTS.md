@@ -19,6 +19,9 @@ Keep the current milestone small. Do not implement future product ideas merely b
 - Frontend clients consume normalized domain models, never a sports provider's raw response shape or identifiers.
 - Internal `Team.id` values are the stable keys used by users and other product data.
 - Provider identifiers belong in `TeamProviderMapping` and must not become foreign keys in product-facing models.
+- Internal `Game.id` values are public game keys; provider game IDs belong only in `GameProviderMapping`.
+- Public game queries without an explicit season must be constrained to `CURRENT_NFL_SEASON`; historical seasons require an explicit query.
+- Development fixture games must remain hidden unless `FIXTURE_DATA_ENABLED` is explicitly enabled.
 - A user may have zero or one favorite team during the MVP.
 - A favorite team must exist and be active when it is assigned.
 - Team asset metadata must retain its source and external URL. Do not assume that an asset may be copied or stored locally.
@@ -88,16 +91,20 @@ Lower layers must not import higher layers. Avoid cross-module access to another
 - Select only required fields, especially for users; password hashes and token hashes must never be returned from general user queries.
 - Use a transaction when a use case makes multiple writes that must succeed or fail together.
 - Seed teams idempotently using stable internal identifiers or another documented stable key. Re-running a seed must not create duplicate teams or mappings.
+- Synchronize games idempotently through provider mappings, resolve teams to internal IDs, and never delete games solely because a provider response omits them.
 - Review migration SQL before committing it. Never edit an already-applied migration to change production history; add a new migration.
 
 ## Sports data providers
 
 - Code against the `SportsDataProvider` interface, not a concrete provider, outside the provider composition layer.
 - Provider adapters own provider authentication, transport details, retries/timeouts, input validation, and normalization.
-- The initial mock provider reads local fixture data but must satisfy the same contract expected of a future commercial adapter.
+- The mock provider reads local fixture data and remains the default for tests, offline development, and fixture seeding.
+- The API-Sports provider key is `api-sports`; its credential is supplied by `SPORTS_API` and must never be logged, committed, or exposed through API/OpenAPI contracts.
+- API-Sports may be called only by explicit synchronization or opt-in verification commands, never by public request handlers.
+- Provider evaluations are read-only, sanitized, credential-free, and stored under `docs/provider-evaluations/`; unavailable and untested capabilities must not be presented as verified.
 - A normalized record may carry an internal ID where the domain already has one; provider IDs must remain explicit mapping metadata and must not masquerade as internal IDs.
 - Preserve attribution and asset-source metadata required by provider terms.
-- Do not add a live commercial provider until credentials, licensing, usage limits, and caching expectations are explicitly agreed.
+- Keep API-Sports logo storage disabled unless provider terms have been reviewed and `API_SPORTS_STORE_LOGO_URLS` is explicitly enabled.
 
 ## Errors, logging, and observability
 

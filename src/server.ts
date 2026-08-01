@@ -10,6 +10,11 @@ import { loadConfig } from './config/env.js';
 import { PrismaAuthRepository } from './modules/auth/auth.repository.js';
 import { AuthService } from './modules/auth/auth.service.js';
 import { DevelopmentEmailService } from './modules/email/in-memory-email.service.js';
+import {
+  PrismaGameRepository,
+  resolvePublicGameDataSource,
+} from './modules/games/game.repository.js';
+import { GameService } from './modules/games/game.service.js';
 import { PrismaTeamRepository } from './modules/teams/team.repository.js';
 import { TeamService } from './modules/teams/team.service.js';
 import { PrismaUserRepository } from './modules/users/user.repository.js';
@@ -19,6 +24,15 @@ const config = loadConfig();
 const logger = createLogger(config);
 const prisma = createPrismaClient(config.databaseUrl);
 const teamReader = new TeamService(new PrismaTeamRepository(prisma));
+const publicGameSource = resolvePublicGameDataSource(config.sports);
+const gameReader = new GameService(
+  new PrismaGameRepository(prisma, publicGameSource),
+  () => new Date(),
+  {
+    currentNflSeason: config.sports.currentNflSeason,
+    allowHistoricalDefaultGameResults: config.sports.allowHistoricalDefaultGameResults,
+  },
+);
 const accessTokens = new JwtAccessTokenService({
   secret: config.auth.accessTokenSecret,
   expiresInSeconds: config.auth.accessTokenTtlSeconds,
@@ -38,7 +52,15 @@ const authService = new AuthService({
   },
 });
 const userService = new UserService(new PrismaUserRepository(prisma));
-const app = createApp({ config, logger, teamReader, authService, userService, accessTokens });
+const app = createApp({
+  config,
+  logger,
+  teamReader,
+  gameReader,
+  authService,
+  userService,
+  accessTokens,
+});
 
 const server = app.listen(config.port, config.host, (error?: Error) => {
   if (error) {

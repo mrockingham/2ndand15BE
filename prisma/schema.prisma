@@ -23,6 +23,23 @@ enum Division {
   West
 }
 
+enum SeasonType {
+  PRE
+  REG
+  POST
+}
+
+enum GameStatus {
+  SCHEDULED
+  PREGAME
+  IN_PROGRESS
+  HALFTIME
+  FINAL
+  POSTPONED
+  CANCELED
+  SUSPENDED
+}
+
 model User {
   id                  String               @id @default(uuid()) @db.Uuid
   email               String               @db.VarChar(254)
@@ -93,11 +110,60 @@ model Team {
   createdAt      DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt      DateTime              @updatedAt @map("updated_at") @db.Timestamptz(3)
   providerMaps   TeamProviderMapping[]
+  homeGames      Game[]                @relation("HomeTeamGames")
+  awayGames      Game[]                @relation("AwayTeamGames")
   favoritedBy    User[]                @relation("UserFavoriteTeam")
 
   @@unique([league, abbreviation], map: "teams_league_abbreviation_key")
   @@index([league, isActive, conference, division, fullName], map: "teams_catalog_order_idx")
   @@map("teams")
+}
+
+model Game {
+  id                    String                @id @default(uuid()) @db.Uuid
+  league                League
+  season                Int
+  seasonType            SeasonType            @map("season_type")
+  week                  Int?
+  startTime             DateTime              @map("start_time") @db.Timestamptz(3)
+  status                GameStatus
+  homeTeamId            String                @map("home_team_id") @db.Uuid
+  awayTeamId            String                @map("away_team_id") @db.Uuid
+  homeScore             Int?                  @map("home_score")
+  awayScore             Int?                  @map("away_score")
+  quarter               Int?
+  clock                 String?               @db.VarChar(16)
+  venueName             String?               @map("venue_name") @db.VarChar(160)
+  venueCity             String?               @map("venue_city") @db.VarChar(128)
+  broadcastNetwork      String?               @map("broadcast_network") @db.VarChar(64)
+  isNeutralSite         Boolean               @default(false) @map("is_neutral_site")
+  providerLastUpdatedAt DateTime?             @map("provider_last_updated_at") @db.Timestamptz(3)
+  createdAt             DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt             DateTime              @updatedAt @map("updated_at") @db.Timestamptz(3)
+  homeTeam              Team                  @relation("HomeTeamGames", fields: [homeTeamId], references: [id], onDelete: Restrict)
+  awayTeam              Team                  @relation("AwayTeamGames", fields: [awayTeamId], references: [id], onDelete: Restrict)
+  providerMaps          GameProviderMapping[]
+
+  @@index([league, season, seasonType, week, startTime], map: "games_schedule_idx")
+  @@index([status, startTime], map: "games_status_start_time_idx")
+  @@index([homeTeamId, startTime], map: "games_home_team_start_time_idx")
+  @@index([awayTeamId, startTime], map: "games_away_team_start_time_idx")
+  @@map("games")
+}
+
+model GameProviderMapping {
+  id             String   @id @default(uuid()) @db.Uuid
+  gameId         String   @map("game_id") @db.Uuid
+  provider       String   @db.VarChar(64)
+  providerGameId String   @map("provider_game_id") @db.VarChar(128)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  game           Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerGameId], map: "game_provider_mappings_provider_id_key")
+  @@unique([gameId, provider], map: "game_provider_mappings_game_provider_key")
+  @@index([gameId], map: "game_provider_mappings_game_id_idx")
+  @@map("game_provider_mappings")
 }
 
 model TeamProviderMapping {

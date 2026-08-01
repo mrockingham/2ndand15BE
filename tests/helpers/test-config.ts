@@ -6,6 +6,7 @@ import type {
   AuthenticationService,
 } from '../../src/modules/auth/auth.service.js';
 import type { TeamReader } from '../../src/modules/teams/team.service.js';
+import type { GameReader } from '../../src/modules/games/game.service.js';
 import type { UserPersonalizationService } from '../../src/modules/users/user.service.js';
 
 export function createTestConfig(overrides: Partial<AppConfig> = {}): AppConfig {
@@ -47,6 +48,21 @@ export function createTestConfig(overrides: Partial<AppConfig> = {}): AppConfig 
       provider: 'development',
       logResetUrl: false,
     },
+    sports: {
+      provider: 'mock',
+      currentNflSeason: 2026,
+      allowHistoricalDefaultGameResults: false,
+      fixtureDataEnabled: true,
+      apiSports: {
+        baseUrl: 'https://v1.american-football.api-sports.io',
+        apiKey: null,
+        requestTimeoutMs: 10_000,
+        maxRetries: 2,
+        syncSeason: 2026,
+        syncSeasonType: null,
+        storeLogoUrls: false,
+      },
+    },
     ...overrides,
   };
 }
@@ -59,6 +75,22 @@ export function createTestTeamReader(overrides: Partial<TeamReader> = {}): TeamR
         new AppError({
           code: 'TEAM_NOT_FOUND',
           message: 'The requested active team was not found.',
+          statusCode: 404,
+        }),
+      ),
+    ...overrides,
+  };
+}
+
+export function createTestGameReader(overrides: Partial<GameReader> = {}): GameReader {
+  return {
+    listGames: () => Promise.resolve({ games: [], nextCursor: null }),
+    listTeamGames: () => Promise.resolve({ games: [], nextCursor: null }),
+    getGame: () =>
+      Promise.reject(
+        new AppError({
+          code: 'GAME_NOT_FOUND',
+          message: 'The requested game was not found.',
           statusCode: 404,
         }),
       ),

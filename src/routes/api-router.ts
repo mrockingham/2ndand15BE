@@ -6,6 +6,8 @@ import { createApiRateLimiter } from '../common/middleware/rate-limit.js';
 import type { AppConfig } from '../config/env.js';
 import { openApiDocument } from '../docs/openapi.js';
 import type { HealthControllerOptions } from '../modules/health/health.controller.js';
+import { createGameRouter, createTeamGameRouter } from '../modules/games/game.routes.js';
+import type { GameReader } from '../modules/games/game.service.js';
 import { createHealthRouter } from '../modules/health/health.routes.js';
 import { createAuthRouter } from '../modules/auth/auth.routes.js';
 import type { AuthenticationService } from '../modules/auth/auth.service.js';
@@ -18,6 +20,7 @@ export interface ApiRouterOptions {
   readonly rateLimit: AppConfig['rateLimit'];
   readonly health?: HealthControllerOptions;
   readonly teamReader: TeamReader;
+  readonly gameReader: GameReader;
   readonly authService: AuthenticationService;
   readonly userService: UserPersonalizationService;
   readonly authenticate: RequestHandler;
@@ -51,6 +54,8 @@ export function createApiRouter(options: ApiRouterOptions): Router {
     swaggerUi.setup(openApiDocument),
   );
   router.use('/health', createHealthRouter(options.health));
+  router.use('/games', createGameRouter(options.gameReader));
+  router.use('/teams/:teamId/games', createTeamGameRouter(options.gameReader));
   router.use('/teams', createTeamRouter(options.teamReader));
   router.use(
     '/auth',

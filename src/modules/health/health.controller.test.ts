@@ -7,6 +7,7 @@ import {
   createTestAccessTokenService,
   createTestAuthService,
   createTestConfig,
+  createTestGameReader,
   createTestTeamReader,
   createTestUserService,
 } from '../../../tests/helpers/test-config.js';
@@ -17,6 +18,7 @@ describe('GET /api/v1/health', () => {
       config: createTestConfig(),
       logger: pino({ level: 'silent' }),
       teamReader: createTestTeamReader(),
+      gameReader: createTestGameReader(),
       authService: createTestAuthService(),
       userService: createTestUserService(),
       accessTokens: createTestAccessTokenService(),
@@ -43,6 +45,7 @@ describe('GET /api/v1/health', () => {
       config: createTestConfig(),
       logger: pino({ level: 'silent' }),
       teamReader: createTestTeamReader(),
+      gameReader: createTestGameReader(),
       authService: createTestAuthService(),
       userService: createTestUserService(),
       accessTokens: createTestAccessTokenService(),

@@ -1,3 +1,28 @@
+const gameListQueryParameters = [
+  { name: 'season', in: 'query', schema: { type: 'integer', minimum: 1920, maximum: 2100 } },
+  { name: 'seasonType', in: 'query', schema: { type: 'string', enum: ['PRE', 'REG', 'POST'] } },
+  { name: 'week', in: 'query', schema: { type: 'integer', minimum: 1, maximum: 22 } },
+  {
+    name: 'startDate',
+    in: 'query',
+    description: 'UTC ISO 8601 date or timestamp. Must be paired with endDate.',
+    schema: { type: 'string' },
+  },
+  {
+    name: 'endDate',
+    in: 'query',
+    description: 'Inclusive UTC ISO 8601 date or timestamp. Ranges are limited to 31 days.',
+    schema: { type: 'string' },
+  },
+  { name: 'status', in: 'query', schema: { $ref: '#/components/schemas/GameStatus' } },
+  {
+    name: 'limit',
+    in: 'query',
+    schema: { type: 'integer', minimum: 1, maximum: 100, default: 20 },
+  },
+  { name: 'cursor', in: 'query', schema: { type: 'string', format: 'uuid' } },
+] as const;
+
 export const openApiDocument = {
   openapi: '3.1.0',
   info: {
@@ -312,6 +337,105 @@ export const openApiDocument = {
         },
       },
     },
+    '/games': {
+      get: {
+        operationId: 'listGames',
+        summary: 'List normalized NFL games',
+        tags: ['Games'],
+        description:
+          'Public endpoint. Without an explicit season, results are restricted to the configured current NFL season; an unfiltered request also uses a bounded upcoming 14-day window. Explicit historical seasons remain queryable. Explicit date ranges use UTC, require both bounds, and may not exceed 31 days.',
+        parameters: [
+          ...gameListQueryParameters,
+          {
+            name: 'teamId',
+            in: 'query',
+            description: 'Application-owned team UUID.',
+            schema: { type: 'string', format: 'uuid' },
+          },
+        ],
+        responses: {
+          '200': {
+            description: 'A stable start-time-ordered page of games.',
+            content: {
+              'application/json': { schema: { $ref: '#/components/schemas/GameListResponse' } },
+            },
+          },
+          '400': { $ref: '#/components/responses/ValidationError' },
+          '404': {
+            description: 'The supplied team filter does not identify an active team.',
+            content: {
+              'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } },
+            },
+          },
+          '429': { $ref: '#/components/responses/RateLimitError' },
+        },
+      },
+    },
+    '/games/{gameId}': {
+      get: {
+        operationId: 'getGameById',
+        summary: 'Get one normalized NFL game',
+        tags: ['Games'],
+        parameters: [
+          {
+            name: 'gameId',
+            in: 'path',
+            required: true,
+            description: 'Application-owned game UUID.',
+            schema: { type: 'string', format: 'uuid' },
+          },
+        ],
+        responses: {
+          '200': {
+            description: 'The normalized game.',
+            content: {
+              'application/json': { schema: { $ref: '#/components/schemas/GameResponse' } },
+            },
+          },
+          '400': { $ref: '#/components/responses/ValidationError' },
+          '404': {
+            description: 'The game was not found.',
+            content: {
+              'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } },
+            },
+          },
+          '429': { $ref: '#/components/responses/RateLimitError' },
+        },
+      },
+    },
+    '/teams/{teamId}/games': {
+      get: {
+        operationId: 'listTeamGames',
+        summary: 'List games for one active NFL team',
+        tags: ['Games', 'Teams'],
+        parameters: [
+          {
+            name: 'teamId',
+            in: 'path',
+            required: true,
+            description: 'Application-owned team UUID.',
+            schema: { type: 'string', format: 'uuid' },
+          },
+          ...gameListQueryParameters,
+        ],
+        responses: {
+          '200': {
+            description: 'A page of home and away games for the team.',
+            content: {
+              'application/json': { schema: { $ref: '#/components/schemas/GameListResponse' } },
+            },
+          },
+          '400': { $ref: '#/components/responses/ValidationError' },
+          '404': {
+            description: 'The active team was not found.',
+            content: {
+              'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } },
+            },
+          },
+          '429': { $ref: '#/components/responses/RateLimitError' },
+        },
+      },
+    },
   },
   components: {
     securitySchemes: {
@@ -430,6 +554,97 @@ export const openApiDocument = {
           data: {
             type: 'array',
             items: { $ref: '#/components/schemas/Team' },
+          },
+        },
+      },
+      GameStatus: {
+        type: 'string',
+        enum: [
+          'SCHEDULED',
+          'PREGAME',
+          'IN_PROGRESS',
+          'HALFTIME',
+          'FINAL',
+          'POSTPONED',
+          'CANCELED',
+          'SUSPENDED',
+        ],
+        description:
+          'Provider-independent game state. Provider adapters must map source statuses into this set.',
+      },
+      GameTeamSummary: {
+        type: 'object',
+        required: ['id', 'fullName', 'abbreviation', 'logoUrl', 'primaryColor', 'secondaryColor'],
+        properties: {
+          id: { type: 'string', format: 'uuid' },
+          fullName: { type: 'string' },
+          abbreviation: { type: 'string' },
+          logoUrl: { type: ['string', 'null'], format: 'uri' },
+          primaryColor: { type: 'string', pattern: '^#[0-9A-F]{6}$' },
+          secondaryColor: { type: 'string', pattern: '^#[0-9A-F]{6}$' },
+        },
+      },
+      Game: {
+        type: 'object',
+        required: [
+          'id',
+          'league',
+          'season',
+          'seasonType',
+          'week',
+          'startTime',
+          'status',
+          'homeTeam',
+          'awayTeam',
+          'homeScore',
+          'awayScore',
+          'quarter',
+          'clock',
+          'venue',
+          'broadcastNetwork',
+          'isNeutralSite',
+        ],
+        properties: {
+          id: { type: 'string', format: 'uuid' },
+          league: { type: 'string', enum: ['NFL'] },
+          season: { type: 'integer' },
+          seasonType: { type: 'string', enum: ['PRE', 'REG', 'POST'] },
+          week: { type: ['integer', 'null'], minimum: 1, maximum: 22 },
+          startTime: {
+            type: 'string',
+            format: 'date-time',
+            description: 'UTC ISO 8601 timestamp.',
+          },
+          status: { $ref: '#/components/schemas/GameStatus' },
+          homeTeam: { $ref: '#/components/schemas/GameTeamSummary' },
+          awayTeam: { $ref: '#/components/schemas/GameTeamSummary' },
+          homeScore: { type: ['integer', 'null'], minimum: 0 },
+          awayScore: { type: ['integer', 'null'], minimum: 0 },
+          quarter: { type: ['integer', 'null'] },
+          clock: { type: ['string', 'null'] },
+          venue: {
+            type: 'object',
+            required: ['name', 'city'],
+            properties: { name: { type: ['string', 'null'] }, city: { type: ['string', 'null'] } },
+          },
+          broadcastNetwork: { type: ['string', 'null'] },
+          isNeutralSite: { type: 'boolean' },
+        },
+      },
+      GameResponse: {
+        type: 'object',
+        required: ['data'],
+        properties: { data: { $ref: '#/components/schemas/Game' } },
+      },
+      GameListResponse: {
+        type: 'object',
+        required: ['data', 'meta'],
+        properties: {
+          data: { type: 'array', items: { $ref: '#/components/schemas/Game' } },
+          meta: {
+            type: 'object',
+            required: ['nextCursor'],
+            properties: { nextCursor: { type: ['string', 'null'], format: 'uuid' } },
           },
         },
       },

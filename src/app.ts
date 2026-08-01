@@ -12,6 +12,7 @@ import type { AppConfig } from './config/env.js';
 import type { AccessTokenService } from './common/security/access-token.js';
 import type { AuthenticationService } from './modules/auth/auth.service.js';
 import type { HealthControllerOptions } from './modules/health/health.controller.js';
+import type { GameReader } from './modules/games/game.service.js';
 import type { TeamReader } from './modules/teams/team.service.js';
 import type { UserPersonalizationService } from './modules/users/user.service.js';
 import { createApiRouter } from './routes/api-router.js';
@@ -21,6 +22,7 @@ export interface CreateAppOptions {
   readonly logger?: Logger;
   readonly health?: HealthControllerOptions;
   readonly teamReader: TeamReader;
+  readonly gameReader: GameReader;
   readonly authService: AuthenticationService;
   readonly userService: UserPersonalizationService;
   readonly accessTokens: AccessTokenService;
@@ -45,6 +47,7 @@ export function createApp(options: CreateAppOptions): Express {
     createApiRouter({
       rateLimit: options.config.rateLimit,
       teamReader: options.teamReader,
+      gameReader: options.gameReader,
       authService: options.authService,
       userService: options.userService,
       authenticate: createAuthenticationMiddleware(options.accessTokens),

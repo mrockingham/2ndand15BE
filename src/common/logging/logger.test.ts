@@ -18,10 +18,12 @@ describe('createLogger', () => {
     logger.info({
       password: 'raw-password',
       accessToken: 'raw-access-token',
+      apiKey: 'raw-api-sports-key',
       request: {
         headers: {
           authorization: 'Bearer raw-bearer-token',
           cookie: 'refresh_token=raw-refresh-token',
+          'x-apisports-key': 'raw-api-sports-header',
         },
         tokenHash: 'hashed-token-value',
       },
@@ -32,6 +34,8 @@ describe('createLogger', () => {
     expect(output).not.toContain('raw-bearer-token');
     expect(output).not.toContain('raw-refresh-token');
     expect(output).not.toContain('hashed-token-value');
+    expect(output).not.toContain('raw-api-sports-key');
+    expect(output).not.toContain('raw-api-sports-header');
     expect(output).toContain('[REDACTED]');
   });
 });

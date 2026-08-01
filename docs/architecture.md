@@ -2,11 +2,11 @@
 
 ## Status
 
-This document defines the architecture for the first backend vertical slice. The service foundation, normalized mock-backed team catalog, authentication lifecycle, database-backed refresh sessions, password-reset flow, and favorite-team personalization are implemented.
+This document defines the backend architecture through the API-Sports synchronization milestone. The service foundation, normalized mock/API-Sports-backed team and game catalogs, authentication lifecycle, database-backed refresh sessions, password-reset flow, and favorite-team personalization are implemented.
 
 ## System context
 
-The backend is a Node.js/TypeScript REST service. A separately deployed consumer frontend calls it over HTTPS. PostgreSQL is the system of record for users, refresh sessions, teams, and provider mappings. During the initial slice, local fixture data stands in for a commercial sports source.
+The backend is a Node.js/TypeScript REST service. A separately deployed consumer frontend calls it over HTTPS. PostgreSQL is the system of record for users, refresh sessions, teams, games, and provider mappings. Local fixture data remains the default; API-Sports can be selected for explicit synchronization commands.
 
 ```text
 Frontend
@@ -15,9 +15,9 @@ Frontend
    v
 Express API
    |-- Auth / Users services ------> PostgreSQL via Prisma
-   |-- Teams service --------------> PostgreSQL via Prisma
-   `-- Sports provider interface --> Mock fixture adapter
-                                      (commercial adapters later)
+   |-- Teams / Games services -----> PostgreSQL via Prisma
+   `-- Sports provider interface -+-> Mock fixture adapter
+                                  `-> API-Sports adapter (sync commands only)
 ```
 
 Raw provider records stop at the adapter boundary. The frontend sees only API DTOs derived from normalized domain data.
@@ -94,14 +94,13 @@ The planned provider contract is:
 
 ```ts
 interface SportsDataProvider {
-  getTeams(): Promise<NormalizedTeam[]>;
-  getGamesByDate(date: string): Promise<NormalizedGame[]>;
-  getGameById(gameId: string): Promise<NormalizedGame | null>;
-  getPlayByPlay(gameId: string): Promise<NormalizedPlay[]>;
+  getTeams(): Promise<readonly NormalizedTeam[]>;
+  getGames(query: GameQuery): Promise<readonly NormalizedGame[]>;
+  getGameByProviderId(providerGameId: string): Promise<NormalizedGame | null>;
 }
 ```
 
-Only `getTeams` is currently declared and implemented. Games and play-by-play methods will be added to the interface with their own approved milestones rather than receive speculative placeholders.
+Teams and games are declared and implemented by the mock adapter. Play-by-play remains deferred rather than receiving a speculative provider contract.
 
 The mock adapter must:
 
@@ -183,6 +182,14 @@ Expected constraints include a unique abbreviation within a league and consisten
 
 The pair `(provider, providerTeamId)` must be unique. A team should have at most one mapping per provider unless a future provider contract demonstrates a legitimate need otherwise.
 
+### Game and GameProviderMapping
+
+`Game` stores league, season/type/week, UTC start time, normalized status, internal home/away team foreign keys, nullable scores/period/clock, venue and broadcast metadata, neutral-site state, and timestamps. Home and away teams must differ; scores are nonnegative and either both present or both null. Schedule, status, and both team directions are indexed.
+
+`GameProviderMapping` owns provider game identity. `(provider, providerGameId)` and `(gameId, provider)` are unique. Synchronization resolves provider team identities through `TeamProviderMapping`, creates or updates the mapped internal game in a transaction, preserves its UUID, skips identical records, reports missing mappings, and never deletes records absent from a response.
+
+Provider status adapters map into `SCHEDULED`, `PREGAME`, `IN_PROGRESS`, `HALFTIME`, `FINAL`, `POSTPONED`, `CANCELED`, or `SUSPENDED`. Unknown source statuses must be handled explicitly by the adapter and cannot leak into persistence or public DTOs.
+
 ## HTTP API
 
 All initial routes are under `/api/v1`.
@@ -200,6 +207,9 @@ All initial routes are under `/api/v1`.
 | PATCH  | `/users/me/favorite-team` | Access token          | Set, replace, or optionally clear the favorite team        |
 | GET    | `/teams`                  | None                  | Return active normalized teams                             |
 | GET    | `/teams/:teamId`          | None                  | Return one normalized team                                 |
+| GET    | `/games`                  | None                  | Return a bounded, filterable page of normalized games      |
+| GET    | `/games/:gameId`          | None                  | Return one normalized game                                 |
+| GET    | `/teams/:teamId/games`    | None                  | Return games involving one active team                     |
 
 The favorite-team endpoint accepts `favoriteTeamId: null` to clear the favorite. Every non-null value must reference an existing, active internal team.
 
@@ -235,6 +245,7 @@ Errors use:
 
 - User DTOs expose `id`, `email`, `displayName`, active status, normalized favorite-team data or null, and timestamps, never normalized email, password hashes, reset tokens, or session fields.
 - Team DTOs use internal `id` and the normalized Team attributes. Provider mappings are not included in ordinary public responses.
+- Game DTOs use internal IDs, embedded safe team summaries, UTC timestamps, and explicit nullable fields. Provider mappings and synchronization metadata are never public.
 - Authentication DTOs must make access-token expiry unambiguous.
 - OpenAPI is the source of truth for exact request and response properties once endpoints are implemented.
 
@@ -311,6 +322,20 @@ These choices are approved for the service foundation:
 
 Any changed default should be reflected here and in an architecture decision record if it has long-term consequences.
 
+## Game query and time behavior
+
+Game list reads are capped at 100 records and use a UUID cursor with stable start-time/ID ordering. A request without an explicit season is constrained to `CURRENT_NFL_SEASON`; an entirely unfiltered request also defaults to a 14-day upcoming UTC window. If that season has no games, the result is empty and never falls back to an older season. Explicit historical seasons remain supported. Explicit date ranges require both bounds and may not exceed 31 days. Date-only bounds are interpreted as UTC calendar-day boundaries; timestamps must include an offset. Display timezone conversion belongs to clients.
+
+## Provider synchronization architecture
+
+Provider selection occurs at one factory boundary. `mock` remains the default. The API-Sports adapter validates external envelopes and records, normalizes dates/status/scores, and uses a dedicated HTTP client with timeouts and bounded idempotent retries. Manual CLI synchronization is the only external-fetch trigger. Public routes always read PostgreSQL and select games through private provider mappings, preventing mock and API-Sports records from being silently mixed.
+
+`FIXTURE_DATA_ENABLED` controls whether the public game repository may select `mock` mappings. When disabled, it uses an internal no-source filter; fixture rows remain stored but cannot appear in game endpoints. API-Sports records remain available through the `api-sports` source, subject to the current-season query policy. Source classifications and mappings stay private.
+
+API-Sports teams are matched to stable internal teams by existing mapping, abbreviation, then normalized full name. Real-provider synchronization does not create teams or overwrite approved local display metadata. Game synchronization resolves both team mappings and preserves stable internal game IDs. See `docs/api-sports.md` for operational details and the documented status map.
+
+Provider evaluation is a separate read-only boundary. Evaluators produce validated, sanitized reports with explicit verified, unavailable, and untested evidence states plus pass/warning/failure findings. Evaluation never mutates PostgreSQL or stores request credentials. Reports live under `docs/provider-evaluations/` so future providers can be assessed before adapter approval.
+
 ## Deferred architecture
 
-The interface leaves room for games and play-by-play, but no databases, queues, caches, websocket transport, AI model integration, prediction storage, or fantasy-provider integration should be designed in detail during this slice. Those features need their own requirements around latency, licensing, provenance, corrections, cost, and historical auditability.
+The game fixture is development-only and is not official current NFL information. Automated scheduling, live polling, WebSockets, play-by-play, drives, statistics, standings, news, injuries, odds, predictions, fantasy, notifications, distributed caches, and queues remain deferred. These features need their own requirements around latency, licensing, provenance, corrections, cost, and historical auditability.

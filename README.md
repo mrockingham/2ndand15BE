@@ -2,7 +2,7 @@
 
 Backend REST API for the 2nd and 15 consumer NFL platform.
 
-The implemented backend includes the TypeScript/Express foundation, a normalized mock-backed catalog of all 32 active NFL teams, email/password authentication, rotating database-backed refresh sessions, password reset, and one favorite NFL team per user.
+The implemented backend includes the TypeScript/Express foundation, normalized NFL team and game catalogs, a fixture-backed mock provider, an explicit API-Sports synchronization adapter, email/password authentication, rotating database-backed refresh sessions, password reset, and one favorite NFL team per user.
 
 ## Requirements
 
@@ -40,7 +40,7 @@ Docker is optional. The supplied Compose file remains available if a local Postg
    npm run prisma:generate
    ```
 
-4. Apply committed migrations and seed the NFL teams. Both commands use `DATABASE_URL`:
+4. Apply committed migrations and seed the NFL teams and development-only game fixture. Both commands use `DATABASE_URL`:
 
    ```sh
    npm run prisma:deploy
@@ -62,6 +62,9 @@ The API defaults to `http://localhost:3000`. The PostgreSQL credentials in `.env
 - `GET /api/v1/health` — process liveness
 - `GET /api/v1/teams` — all active NFL teams in stable catalog order
 - `GET /api/v1/teams/:teamId` — one active NFL team by internal UUID
+- `GET /api/v1/games` — bounded, filterable normalized NFL game catalog
+- `GET /api/v1/games/:gameId` — one game by internal UUID
+- `GET /api/v1/teams/:teamId/games` — games involving one active team
 - `POST /api/v1/auth/register` — register and immediately create a session
 - `POST /api/v1/auth/login` — authenticate with email and password
 - `POST /api/v1/auth/refresh` — rotate the cookie-backed refresh session
@@ -111,6 +114,11 @@ npm run prisma:seed
 npm run prisma:migrate
 npm run prisma:deploy
 npm run prisma:studio
+npm run sports:sync:teams
+npm run sports:sync:games
+npm run sports:sync
+npm run sports:verify:live
+npm run sports:evaluate:api-sports -- --seasons=2024,2025,2026
 ```
 
 Use `prisma:migrate` only when authoring a new migration in development. Use `prisma:deploy` to apply committed migrations, including against a hosted development database.
@@ -134,11 +142,26 @@ Configuration is validated at startup. See `.env.example` for the complete set.
 - `AUTH_RATE_LIMIT_*` configures credential and refresh endpoints; `PASSWORD_RESET_RATE_LIMIT_MAX` applies a stricter reset limit.
 - `PASSWORD_RESET_FRONTEND_URL` is the frontend route to which the opaque reset token is appended as a query parameter.
 - `EMAIL_PROVIDER=development` captures messages in memory. `EMAIL_DEV_LOG_RESET_URL=true` explicitly prints development reset URLs and is rejected in production. A production email vendor is not implemented.
+- `SPORTS_PROVIDER=mock` is the safe default. Set it to `api-sports` only for real synchronization and source-isolated game reads.
+- `CURRENT_NFL_SEASON` is required. Any game list query without an explicit `season` is constrained to this value.
+- `ALLOW_HISTORICAL_DEFAULT_GAME_RESULTS=false` is the safe default and is mandatory in production. Historical data remains available through an explicit `?season=<year>` query.
+- `FIXTURE_DATA_ENABLED=false` hides fictional game records. Set it to `true` explicitly for local demonstrations that need the development schedule.
+- `SPORTS_API` supplies the API-Sports credential. The key is required only when API-Sports is selected and must never be committed or logged.
+- `API_SPORTS_SYNC_SEASON` and `API_SPORTS_SYNC_SEASON_TYPE` select the synchronization scope. Provider plans may restrict season access.
+- API-Sports timeouts, bounded retries, base URL, and optional external-logo metadata are configured by the remaining `API_SPORTS_*` variables in `.env.example`.
 - Never commit `.env`; only placeholder examples belong in `.env.example`.
 
-## Team data
+## Team and game data
 
 `npm run prisma:seed` reads the validated local fixture through the `mock` sports provider and upserts teams by the application catalog key. Provider IDs are stored only in `TeamProviderMapping`; API responses use internal team UUIDs and never expose mappings. Fixture logos and logo sources are currently `null`, allowing clients to fall back to abbreviation badges without assuming asset rights.
+
+The same seed then synchronizes a small, explicitly fictional development schedule. It covers preseason, regular season, postseason, scheduled, pregame, in-progress, final, postponed, and canceled behavior without claiming to be an official NFL schedule. Games use internal team UUID relationships; provider game identities remain only in `GameProviderMapping`. Repeated synchronization preserves internal IDs, updates mutable game state, reports missing team mappings, and never deletes a game merely because a provider response omits it.
+
+Game timestamps are stored and returned as UTC ISO 8601 values. The backend does not infer a display timezone. `GET /games` defaults to `CURRENT_NFL_SEASON` and the next 14 days, so unavailable current-season data produces an empty normalized list rather than historical fallback. `?season=2024` remains an explicit historical query. Date filters must be supplied together and may span at most 31 days. Cursor pagination is ordered by start time and internal game ID.
+
+API-Sports is available only through explicit synchronization commands; public routes never call it. In API-Sports mode, real teams are matched to the existing 32-team catalog and game reads exclude fictional mock records through private provider mappings. One team sync uses one provider call, one game sync uses one, and a combined sync normally uses two before bounded retries. Commands support `-- --dry-run`. See [the API-Sports integration guide](docs/api-sports.md) for configuration, status mapping, rate-limit behavior, fixture separation, failure recovery, and safe live verification.
+
+Provider evaluations are read-only and never access Prisma. `sports:evaluate:api-sports` evaluates selected seasons and writes a sanitized report to `docs/provider-evaluations/api-sports-latest.md`. The reusable evaluation contract distinguishes verified, unavailable, and untested capabilities and records pass, warning, and failure findings. The approved baseline report is [API-Sports evaluation — August 1, 2026](docs/provider-evaluations/api-sports-2026-08-01.md).
 
 ## Frontend authentication contract
 

@@ -6,6 +6,7 @@ import {
   createTestAccessTokenService,
   createTestAuthService,
   createTestConfig,
+  createTestGameReader,
   createTestTeamReader,
   createTestUserService,
 } from '../tests/helpers/test-config.js';
@@ -19,6 +20,7 @@ describe('application middleware', () => {
       config: createTestConfig(),
       logger: silentLogger,
       teamReader: createTestTeamReader(),
+      gameReader: createTestGameReader(),
       authService: createTestAuthService(),
       userService: createTestUserService(),
       accessTokens: createTestAccessTokenService(),
@@ -40,6 +42,7 @@ describe('application middleware', () => {
       config: createTestConfig(),
       logger: silentLogger,
       teamReader: createTestTeamReader(),
+      gameReader: createTestGameReader(),
       authService: createTestAuthService(),
       userService: createTestUserService(),
       accessTokens: createTestAccessTokenService(),
@@ -59,6 +62,7 @@ describe('application middleware', () => {
       config: createTestConfig({ rateLimit: { windowMs: 60_000, max: 1 } }),
       logger: silentLogger,
       teamReader: createTestTeamReader(),
+      gameReader: createTestGameReader(),
       authService: createTestAuthService(),
       userService: createTestUserService(),
       accessTokens: createTestAccessTokenService(),
@@ -81,6 +85,7 @@ describe('application middleware', () => {
       config: createTestConfig(),
       logger: silentLogger,
       teamReader: createTestTeamReader(),
+      gameReader: createTestGameReader(),
       authService: createTestAuthService(),
       userService: createTestUserService(),
       accessTokens: createTestAccessTokenService(),
@@ -106,6 +111,7 @@ describe('application middleware', () => {
       config: createTestConfig(),
       logger: silentLogger,
       teamReader: createTestTeamReader(),
+      gameReader: createTestGameReader(),
       authService: createTestAuthService(),
       userService: createTestUserService(),
       accessTokens: createTestAccessTokenService(),
@@ -124,6 +130,15 @@ describe('application middleware', () => {
         },
         '/teams/{teamId}': {
           get: { operationId: 'getTeamById' },
+        },
+        '/games': {
+          get: { operationId: 'listGames' },
+        },
+        '/games/{gameId}': {
+          get: { operationId: 'getGameById' },
+        },
+        '/teams/{teamId}/games': {
+          get: { operationId: 'listTeamGames' },
         },
         '/auth/register': {
           post: { operationId: 'register' },
@@ -146,6 +161,7 @@ describe('application middleware', () => {
       config: createTestConfig(),
       logger: silentLogger,
       teamReader: createTestTeamReader(),
+      gameReader: createTestGameReader(),
       authService: createTestAuthService(),
       userService: createTestUserService(),
       accessTokens: createTestAccessTokenService(),

@@ -5,7 +5,11 @@ import { z } from 'zod';
 
 import { createApp } from '../../app.js';
 import { CryptoOpaqueTokenService } from '../../common/security/opaque-token.js';
-import { createTestConfig, createTestTeamReader } from '../../../tests/helpers/test-config.js';
+import {
+  createTestConfig,
+  createTestGameReader,
+  createTestTeamReader,
+} from '../../../tests/helpers/test-config.js';
 import { InMemoryAuthRepository } from '../../../tests/helpers/in-memory-auth-repository.js';
 import {
   TestAccessTokenService,
@@ -79,6 +83,7 @@ function createHarness(config = createTestConfig()) {
     config,
     logger: pino({ level: 'silent' }),
     teamReader: createTestTeamReader(),
+    gameReader: createTestGameReader(),
     authService,
     userService,
     accessTokens,
