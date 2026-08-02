@@ -23,6 +23,130 @@ const gameListQueryParameters = [
   { name: 'cursor', in: 'query', schema: { type: 'string', format: 'uuid' } },
 ] as const;
 
+const publicArticleQueryParameters = [
+  { name: 'limit', in: 'query', schema: { type: 'integer', minimum: 1, maximum: 50, default: 20 } },
+  { name: 'cursor', in: 'query', schema: { type: 'string', format: 'uuid' } },
+  { name: 'type', in: 'query', schema: { $ref: '#/components/schemas/ArticleType' } },
+  { name: 'teamId', in: 'query', schema: { type: 'string', format: 'uuid' } },
+  {
+    name: 'team',
+    in: 'query',
+    description: 'Active NFL team abbreviation.',
+    schema: { type: 'string' },
+  },
+  { name: 'featured', in: 'query', schema: { type: 'boolean' } },
+  { name: 'publishedFrom', in: 'query', schema: { type: 'string', format: 'date-time' } },
+  { name: 'publishedTo', in: 'query', schema: { type: 'string', format: 'date-time' } },
+  { name: 'search', in: 'query', schema: { type: 'string', minLength: 2, maxLength: 100 } },
+] as const;
+
+const articleIdParameter = {
+  name: 'articleId',
+  in: 'path',
+  required: true,
+  schema: { type: 'string', format: 'uuid' },
+} as const;
+
+const articleVersionActionBody = {
+  required: true,
+  content: {
+    'application/json': { schema: { $ref: '#/components/schemas/ArticleVersionActionRequest' } },
+  },
+} as const;
+
+function articleActionPath(operationId: string, summary: string, scheduled: boolean) {
+  return {
+    post: {
+      operationId,
+      summary,
+      tags: ['Editorial CMS'],
+      security: [{ bearerAuth: [] }],
+      parameters: [articleIdParameter],
+      requestBody: scheduled
+        ? {
+            required: true,
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/ArticleScheduleRequest' },
+              },
+            },
+          }
+        : articleVersionActionBody,
+      responses: {
+        '200': {
+          description: 'Article lifecycle transition and immutable revision.',
+          content: {
+            'application/json': {
+              schema: { $ref: '#/components/schemas/AdminArticleDetailResponse' },
+            },
+          },
+        },
+        '400': { $ref: '#/components/responses/ValidationError' },
+        '401': { $ref: '#/components/responses/UnauthorizedError' },
+        '403': { $ref: '#/components/responses/ForbiddenError' },
+        '404': { $ref: '#/components/responses/NotFoundError' },
+        '409': { $ref: '#/components/responses/ConflictError' },
+      },
+    },
+  };
+}
+
+const articleEditorialProperties = {
+  type: { $ref: '#/components/schemas/ArticleType' },
+  title: { type: 'string', minLength: 1, maxLength: 180 },
+  slug: { type: 'string', minLength: 1, maxLength: 160 },
+  summary: { type: ['string', 'null'], maxLength: 1000 },
+  body: {
+    type: ['string', 'null'],
+    maxLength: 100000,
+    description:
+      'Markdown only; embedded HTML is rejected. Curated commentary is limited to 2,000 characters.',
+  },
+  sourceName: { type: ['string', 'null'], maxLength: 160 },
+  sourceUrl: { type: ['string', 'null'], format: 'uri' },
+  sourcePublishedAt: { type: ['string', 'null'], format: 'date-time' },
+  heroImageUrl: { type: ['string', 'null'], format: 'uri' },
+  heroImageAlt: { type: ['string', 'null'], maxLength: 300 },
+  heroImageAttribution: { type: ['string', 'null'], maxLength: 500 },
+  heroImageAttributionUrl: { type: ['string', 'null'], format: 'uri' },
+  seoTitle: { type: ['string', 'null'], maxLength: 180 },
+  seoDescription: { type: ['string', 'null'], maxLength: 320 },
+  isFeatured: { type: 'boolean' },
+  featuredPriority: { type: ['integer', 'null'], minimum: 1, maximum: 1000 },
+  featuredStartsAt: { type: ['string', 'null'], format: 'date-time' },
+  featuredEndsAt: { type: ['string', 'null'], format: 'date-time' },
+  teamIds: {
+    type: 'array',
+    maxItems: 32,
+    uniqueItems: true,
+    items: { type: 'string', format: 'uuid' },
+  },
+  changeSummary: { type: ['string', 'null'], maxLength: 500 },
+} as const;
+
+function dataResponse(reference: string) {
+  return {
+    type: 'object',
+    required: ['data'],
+    properties: { data: { $ref: reference } },
+  };
+}
+
+function articleListResponse(reference: string) {
+  return {
+    type: 'object',
+    required: ['data', 'meta'],
+    properties: {
+      data: { type: 'array', items: { $ref: reference } },
+      meta: {
+        type: 'object',
+        required: ['nextCursor'],
+        properties: { nextCursor: { type: ['string', 'null'], format: 'uuid' } },
+      },
+    },
+  };
+}
+
 export const openApiDocument = {
   openapi: '3.1.0',
   info: {
@@ -232,6 +356,316 @@ export const openApiDocument = {
             },
           },
           '429': { $ref: '#/components/responses/RateLimitError' },
+        },
+      },
+    },
+    '/articles': {
+      get: {
+        operationId: 'listArticles',
+        summary: 'List publicly visible articles without full bodies',
+        tags: ['Articles'],
+        parameters: publicArticleQueryParameters,
+        responses: {
+          '200': {
+            description: 'Cursor-paginated visible articles.',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/PublicArticleListResponse' },
+              },
+            },
+          },
+          '400': { $ref: '#/components/responses/ValidationError' },
+        },
+      },
+    },
+    '/articles/featured': {
+      get: {
+        operationId: 'listFeaturedArticles',
+        summary: 'List active featured articles in deterministic priority order',
+        tags: ['Articles'],
+        parameters: publicArticleQueryParameters,
+        responses: {
+          '200': {
+            description: 'Cursor-paginated featured articles.',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/PublicArticleListResponse' },
+              },
+            },
+          },
+          '400': { $ref: '#/components/responses/ValidationError' },
+        },
+      },
+    },
+    '/articles/{slug}': {
+      get: {
+        operationId: 'getArticleBySlug',
+        summary: 'Get one publicly visible article',
+        tags: ['Articles'],
+        parameters: [{ name: 'slug', in: 'path', required: true, schema: { type: 'string' } }],
+        responses: {
+          '200': {
+            description: 'Public article detail including safe Markdown source.',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/PublicArticleDetailResponse' },
+              },
+            },
+          },
+          '404': { $ref: '#/components/responses/NotFoundError' },
+        },
+      },
+    },
+    '/teams/{teamId}/articles': {
+      get: {
+        operationId: 'listTeamArticles',
+        summary: 'List publicly visible articles tagged to an active team',
+        tags: ['Articles'],
+        parameters: [
+          {
+            name: 'teamId',
+            in: 'path',
+            required: true,
+            schema: { type: 'string', format: 'uuid' },
+          },
+          ...publicArticleQueryParameters,
+        ],
+        responses: {
+          '200': {
+            description: 'Cursor-paginated team articles.',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/PublicArticleListResponse' },
+              },
+            },
+          },
+          '400': { $ref: '#/components/responses/ValidationError' },
+          '404': { $ref: '#/components/responses/NotFoundError' },
+        },
+      },
+    },
+    '/admin/articles': {
+      get: {
+        operationId: 'listAdminArticles',
+        summary: 'List editorial articles without large bodies',
+        tags: ['Editorial CMS'],
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: 'limit',
+            in: 'query',
+            schema: { type: 'integer', minimum: 1, maximum: 100, default: 25 },
+          },
+          { name: 'cursor', in: 'query', schema: { type: 'string', format: 'uuid' } },
+          { name: 'status', in: 'query', schema: { $ref: '#/components/schemas/ArticleStatus' } },
+          { name: 'type', in: 'query', schema: { $ref: '#/components/schemas/ArticleType' } },
+          { name: 'teamId', in: 'query', schema: { type: 'string', format: 'uuid' } },
+          { name: 'featured', in: 'query', schema: { type: 'boolean' } },
+          { name: 'authorId', in: 'query', schema: { type: 'string', format: 'uuid' } },
+          { name: 'search', in: 'query', schema: { type: 'string', minLength: 2, maxLength: 100 } },
+        ],
+        responses: {
+          '200': {
+            description: 'Administrative article summaries.',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/AdminArticleListResponse' },
+              },
+            },
+          },
+          '401': { $ref: '#/components/responses/UnauthorizedError' },
+          '403': { $ref: '#/components/responses/ForbiddenError' },
+        },
+      },
+      post: {
+        operationId: 'createArticle',
+        summary: 'Create an editorial draft',
+        tags: ['Editorial CMS'],
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': { schema: { $ref: '#/components/schemas/ArticleCreateRequest' } },
+          },
+        },
+        responses: {
+          '201': {
+            description: 'Draft created with revision 1.',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/AdminArticleDetailResponse' },
+              },
+            },
+          },
+          '400': { $ref: '#/components/responses/ValidationError' },
+          '401': { $ref: '#/components/responses/UnauthorizedError' },
+          '403': { $ref: '#/components/responses/ForbiddenError' },
+          '409': { $ref: '#/components/responses/ConflictError' },
+        },
+      },
+    },
+    '/admin/articles/{articleId}': {
+      get: {
+        operationId: 'getAdminArticle',
+        summary: 'Get full editorial article detail',
+        tags: ['Editorial CMS'],
+        security: [{ bearerAuth: [] }],
+        parameters: [articleIdParameter],
+        responses: {
+          '200': {
+            description: 'Administrative article detail.',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/AdminArticleDetailResponse' },
+              },
+            },
+          },
+          '401': { $ref: '#/components/responses/UnauthorizedError' },
+          '403': { $ref: '#/components/responses/ForbiddenError' },
+          '404': { $ref: '#/components/responses/NotFoundError' },
+        },
+      },
+      patch: {
+        operationId: 'updateArticle',
+        summary: 'Edit an article using optimistic concurrency',
+        tags: ['Editorial CMS'],
+        security: [{ bearerAuth: [] }],
+        parameters: [articleIdParameter],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': { schema: { $ref: '#/components/schemas/ArticleUpdateRequest' } },
+          },
+        },
+        responses: {
+          '200': {
+            description: 'Updated article and new revision.',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/AdminArticleDetailResponse' },
+              },
+            },
+          },
+          '400': { $ref: '#/components/responses/ValidationError' },
+          '401': { $ref: '#/components/responses/UnauthorizedError' },
+          '403': { $ref: '#/components/responses/ForbiddenError' },
+          '404': { $ref: '#/components/responses/NotFoundError' },
+          '409': { $ref: '#/components/responses/ConflictError' },
+        },
+      },
+    },
+    '/admin/articles/{articleId}/teams': {
+      put: {
+        operationId: 'replaceArticleTeams',
+        summary: 'Replace active NFL team tags',
+        tags: ['Editorial CMS'],
+        security: [{ bearerAuth: [] }],
+        parameters: [articleIdParameter],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': { schema: { $ref: '#/components/schemas/ArticleTeamsRequest' } },
+          },
+        },
+        responses: {
+          '200': {
+            description: 'Article with updated tags and revision.',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/AdminArticleDetailResponse' },
+              },
+            },
+          },
+          '400': { $ref: '#/components/responses/ValidationError' },
+          '401': { $ref: '#/components/responses/UnauthorizedError' },
+          '403': { $ref: '#/components/responses/ForbiddenError' },
+          '404': { $ref: '#/components/responses/NotFoundError' },
+          '409': { $ref: '#/components/responses/ConflictError' },
+        },
+      },
+    },
+    '/admin/articles/{articleId}/publish': articleActionPath(
+      'publishArticle',
+      'Publish an article',
+      false,
+    ),
+    '/admin/articles/{articleId}/unpublish': articleActionPath(
+      'unpublishArticle',
+      'Unpublish an article',
+      false,
+    ),
+    '/admin/articles/{articleId}/archive': articleActionPath(
+      'archiveArticle',
+      'Archive an article (admin only)',
+      false,
+    ),
+    '/admin/articles/{articleId}/restore': articleActionPath(
+      'restoreArticle',
+      'Restore an archived article (admin only)',
+      false,
+    ),
+    '/admin/articles/{articleId}/schedule': articleActionPath(
+      'scheduleArticle',
+      'Schedule future publication',
+      true,
+    ),
+    '/admin/articles/{articleId}/revisions': {
+      get: {
+        operationId: 'listArticleRevisions',
+        summary: 'List immutable article revisions',
+        tags: ['Editorial CMS'],
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          articleIdParameter,
+          {
+            name: 'limit',
+            in: 'query',
+            schema: { type: 'integer', minimum: 1, maximum: 50, default: 25 },
+          },
+          { name: 'cursor', in: 'query', schema: { type: 'string', format: 'uuid' } },
+        ],
+        responses: {
+          '200': {
+            description: 'Article revision page.',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/ArticleRevisionListResponse' },
+              },
+            },
+          },
+          '401': { $ref: '#/components/responses/UnauthorizedError' },
+          '403': { $ref: '#/components/responses/ForbiddenError' },
+          '404': { $ref: '#/components/responses/NotFoundError' },
+        },
+      },
+    },
+    '/admin/articles/{articleId}/revisions/{revisionId}': {
+      get: {
+        operationId: 'getArticleRevision',
+        summary: 'Get one immutable article revision',
+        tags: ['Editorial CMS'],
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          articleIdParameter,
+          {
+            name: 'revisionId',
+            in: 'path',
+            required: true,
+            schema: { type: 'string', format: 'uuid' },
+          },
+        ],
+        responses: {
+          '200': {
+            description: 'Article revision.',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/ArticleRevisionResponse' },
+              },
+            },
+          },
+          '401': { $ref: '#/components/responses/UnauthorizedError' },
+          '403': { $ref: '#/components/responses/ForbiddenError' },
+          '404': { $ref: '#/components/responses/NotFoundError' },
         },
       },
     },
@@ -532,7 +966,8 @@ export const openApiDocument = {
           {
             name: 'entityType',
             in: 'query',
-            description: 'Editors must supply GAME; admins may omit this filter.',
+            description:
+              'Editors may supply GAME, or ARTICLE together with entityId; admins may omit this filter.',
             schema: { type: 'string' },
           },
           { name: 'entityId', in: 'query', schema: { type: 'string' } },
@@ -1304,6 +1739,247 @@ export const openApiDocument = {
           },
         },
       },
+      ArticleType: {
+        type: 'string',
+        enum: ['ORIGINAL', 'CURATED', 'ANNOUNCEMENT'],
+      },
+      ArticleStatus: {
+        type: 'string',
+        enum: ['DRAFT', 'SCHEDULED', 'PUBLISHED', 'UNPUBLISHED', 'ARCHIVED'],
+      },
+      ArticleTeamSummary: {
+        type: 'object',
+        required: ['id', 'abbreviation', 'fullName'],
+        properties: {
+          id: { type: 'string', format: 'uuid' },
+          abbreviation: { type: 'string' },
+          fullName: { type: 'string' },
+        },
+      },
+      PublicArticleListItem: {
+        type: 'object',
+        required: [
+          'id',
+          'slug',
+          'type',
+          'title',
+          'summary',
+          'sourceName',
+          'sourceUrl',
+          'sourcePublishedAt',
+          'heroImageUrl',
+          'heroImageAlt',
+          'isFeatured',
+          'publishedAt',
+          'teams',
+        ],
+        properties: {
+          id: { type: 'string', format: 'uuid' },
+          slug: { type: 'string' },
+          type: { $ref: '#/components/schemas/ArticleType' },
+          title: { type: 'string' },
+          summary: { type: ['string', 'null'] },
+          sourceName: { type: ['string', 'null'] },
+          sourceUrl: { type: ['string', 'null'], format: 'uri' },
+          sourcePublishedAt: { type: ['string', 'null'], format: 'date-time' },
+          heroImageUrl: { type: ['string', 'null'], format: 'uri' },
+          heroImageAlt: { type: ['string', 'null'] },
+          isFeatured: { type: 'boolean' },
+          publishedAt: { type: 'string', format: 'date-time' },
+          teams: { type: 'array', items: { $ref: '#/components/schemas/ArticleTeamSummary' } },
+        },
+      },
+      PublicArticleDetail: {
+        allOf: [
+          { $ref: '#/components/schemas/PublicArticleListItem' },
+          {
+            type: 'object',
+            required: [
+              'body',
+              'seoTitle',
+              'seoDescription',
+              'heroImageAttribution',
+              'heroImageAttributionUrl',
+            ],
+            properties: {
+              body: {
+                type: ['string', 'null'],
+                description: 'Sanitized Markdown source; render with a safe Markdown renderer.',
+              },
+              seoTitle: { type: ['string', 'null'] },
+              seoDescription: { type: ['string', 'null'] },
+              heroImageAttribution: { type: ['string', 'null'] },
+              heroImageAttributionUrl: { type: ['string', 'null'], format: 'uri' },
+            },
+          },
+        ],
+      },
+      PublicArticleListResponse: articleListResponse('#/components/schemas/PublicArticleListItem'),
+      PublicArticleDetailResponse: dataResponse('#/components/schemas/PublicArticleDetail'),
+      AdminArticleListItem: {
+        type: 'object',
+        required: [
+          'id',
+          'slug',
+          'type',
+          'status',
+          'version',
+          'title',
+          'summary',
+          'isFeatured',
+          'featuredPriority',
+          'publishedAt',
+          'scheduledFor',
+          'teams',
+          'createdAt',
+          'updatedAt',
+        ],
+        properties: {
+          id: { type: 'string', format: 'uuid' },
+          slug: { type: 'string' },
+          type: { $ref: '#/components/schemas/ArticleType' },
+          status: { $ref: '#/components/schemas/ArticleStatus' },
+          version: { type: 'integer', minimum: 1 },
+          title: { type: 'string' },
+          summary: { type: ['string', 'null'] },
+          isFeatured: { type: 'boolean' },
+          featuredPriority: { type: ['integer', 'null'], minimum: 1, maximum: 1000 },
+          publishedAt: { type: ['string', 'null'], format: 'date-time' },
+          scheduledFor: { type: ['string', 'null'], format: 'date-time' },
+          teams: { type: 'array', items: { $ref: '#/components/schemas/ArticleTeamSummary' } },
+          createdAt: { type: 'string', format: 'date-time' },
+          updatedAt: { type: 'string', format: 'date-time' },
+        },
+      },
+      AdminArticleDetail: {
+        allOf: [
+          { $ref: '#/components/schemas/AdminArticleListItem' },
+          {
+            type: 'object',
+            required: [
+              'body',
+              'sourceName',
+              'sourceUrl',
+              'sourcePublishedAt',
+              'heroImageUrl',
+              'heroImageAlt',
+              'heroImageAttribution',
+              'heroImageAttributionUrl',
+              'seoTitle',
+              'seoDescription',
+              'featuredStartsAt',
+              'featuredEndsAt',
+            ],
+            properties: {
+              body: { type: ['string', 'null'] },
+              sourceName: { type: ['string', 'null'] },
+              sourceUrl: { type: ['string', 'null'], format: 'uri' },
+              sourcePublishedAt: { type: ['string', 'null'], format: 'date-time' },
+              heroImageUrl: { type: ['string', 'null'], format: 'uri' },
+              heroImageAlt: { type: ['string', 'null'] },
+              heroImageAttribution: { type: ['string', 'null'] },
+              heroImageAttributionUrl: { type: ['string', 'null'], format: 'uri' },
+              seoTitle: { type: ['string', 'null'] },
+              seoDescription: { type: ['string', 'null'] },
+              featuredStartsAt: { type: ['string', 'null'], format: 'date-time' },
+              featuredEndsAt: { type: ['string', 'null'], format: 'date-time' },
+            },
+          },
+        ],
+      },
+      AdminArticleListResponse: articleListResponse('#/components/schemas/AdminArticleListItem'),
+      AdminArticleDetailResponse: dataResponse('#/components/schemas/AdminArticleDetail'),
+      ArticleCreateRequest: {
+        type: 'object',
+        additionalProperties: false,
+        required: [
+          'type',
+          'title',
+          'summary',
+          'body',
+          'sourceName',
+          'sourceUrl',
+          'sourcePublishedAt',
+          'heroImageUrl',
+          'heroImageAlt',
+          'heroImageAttribution',
+          'heroImageAttributionUrl',
+          'seoTitle',
+          'seoDescription',
+          'isFeatured',
+          'featuredPriority',
+          'featuredStartsAt',
+          'featuredEndsAt',
+        ],
+        properties: articleEditorialProperties,
+      },
+      ArticleUpdateRequest: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['expectedVersion'],
+        properties: {
+          ...articleEditorialProperties,
+          expectedVersion: { type: 'integer', minimum: 1 },
+          changeSummary: { type: ['string', 'null'], maxLength: 500 },
+        },
+      },
+      ArticleTeamsRequest: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['expectedVersion', 'teamIds'],
+        properties: {
+          expectedVersion: { type: 'integer', minimum: 1 },
+          teamIds: {
+            type: 'array',
+            maxItems: 32,
+            uniqueItems: true,
+            items: { type: 'string', format: 'uuid' },
+          },
+          changeSummary: { type: ['string', 'null'], maxLength: 500 },
+        },
+      },
+      ArticleVersionActionRequest: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['expectedVersion'],
+        properties: {
+          expectedVersion: { type: 'integer', minimum: 1 },
+          changeSummary: { type: ['string', 'null'], maxLength: 500 },
+        },
+      },
+      ArticleScheduleRequest: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['expectedVersion', 'scheduledFor'],
+        properties: {
+          expectedVersion: { type: 'integer', minimum: 1 },
+          scheduledFor: { type: 'string', format: 'date-time' },
+          changeSummary: { type: ['string', 'null'], maxLength: 500 },
+        },
+      },
+      ArticleRevision: {
+        type: 'object',
+        required: [
+          'id',
+          'articleId',
+          'revisionNumber',
+          'editorSnapshot',
+          'snapshot',
+          'changeSummary',
+          'createdAt',
+        ],
+        properties: {
+          id: { type: 'string', format: 'uuid' },
+          articleId: { type: 'string', format: 'uuid' },
+          revisionNumber: { type: 'integer', minimum: 1 },
+          editorSnapshot: { type: 'string' },
+          snapshot: { type: 'object', additionalProperties: true },
+          changeSummary: { type: ['string', 'null'] },
+          createdAt: { type: 'string', format: 'date-time' },
+        },
+      },
+      ArticleRevisionListResponse: articleListResponse('#/components/schemas/ArticleRevision'),
+      ArticleRevisionResponse: dataResponse('#/components/schemas/ArticleRevision'),
       AuditEventListResponse: {
         type: 'object',
         required: ['data', 'meta'],

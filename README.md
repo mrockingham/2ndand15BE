@@ -2,7 +2,7 @@
 
 Backend REST API for the 2nd and 15 consumer NFL platform.
 
-The implemented backend includes the TypeScript/Express foundation, normalized NFL team and game catalogs, a fixture-backed mock provider, an explicit API-Sports synchronization adapter, email/password authentication, rotating database-backed refresh sessions, password reset, favorite-team personalization, and role-protected schedule administration with provenance, overrides, imports, and audit history.
+The implemented backend includes the TypeScript/Express foundation, normalized NFL team and game catalogs, a fixture-backed mock provider, an explicit API-Sports synchronization adapter, email/password authentication, rotating database-backed refresh sessions, password reset, favorite-team personalization, role-protected schedule administration, and an internal revisioned editorial CMS for original, curated, and announcement content.
 
 ## Requirements
 
@@ -65,6 +65,10 @@ The API defaults to `http://localhost:3000`. The PostgreSQL credentials in `.env
 - `GET /api/v1/games` — bounded, filterable normalized NFL game catalog
 - `GET /api/v1/games/:gameId` — one game by internal UUID
 - `GET /api/v1/teams/:teamId/games` — games involving one active team
+- `GET /api/v1/articles` — bounded public article summaries
+- `GET /api/v1/articles/featured` — active featured placement in deterministic order
+- `GET /api/v1/articles/:slug` — one publicly visible article with Markdown content
+- `GET /api/v1/teams/:teamId/articles` — public articles tagged to one active team
 - `POST /api/v1/auth/register` — register and immediately create a session
 - `POST /api/v1/auth/login` — authenticate with email and password
 - `POST /api/v1/auth/refresh` — rotate the cookie-backed refresh session
@@ -74,6 +78,7 @@ The API defaults to `http://localhost:3000`. The PostgreSQL credentials in `.env
 - `GET /api/v1/users/me` — return the authenticated active user and favorite team
 - `PATCH /api/v1/users/me/favorite-team` — set, replace, or clear the authenticated user's favorite team
 - `/api/v1/admin/*` — role-protected schedule, override, verification, import, and audit operations
+- `/api/v1/admin/articles/*` — role-protected drafts, publishing, scheduling, tagging, and revisions
 - `GET /api/v1/docs` — interactive OpenAPI documentation
 - `GET /api/v1/docs/openapi.json` — OpenAPI JSON document
 
@@ -164,6 +169,8 @@ The same seed then synchronizes a small, explicitly fictional development schedu
 Game timestamps are stored and returned as UTC ISO 8601 values. The backend does not infer a display timezone. `GET /games` defaults to `CURRENT_NFL_SEASON` and the next 14 days, so unavailable current-season data produces an empty normalized list rather than historical fallback. `?season=2024` remains an explicit historical query. Date filters must be supplied together and may span at most 31 days. Cursor pagination is ordered by start time and internal game ID.
 
 Public game values resolve editorial overrides over normalized base values without changing the response shape. Manually maintained games remain visible alongside the configured real provider, while fictional fixture visibility remains separately controlled. See [schedule imports](docs/schedule-imports.md) and [administrative authorization](docs/administration.md).
+
+The editorial CMS stores constrained Markdown and external image/source metadata without fetching it. Scheduled visibility is derived during public reads, every mutation uses optimistic concurrency and creates an immutable revision, and public list DTOs omit bodies and editorial metadata. See [the editorial CMS guide](docs/editorial-cms.md).
 
 API-Sports is available only through explicit synchronization commands; public routes never call it. In API-Sports mode, real teams are matched to the existing 32-team catalog and game reads exclude fictional mock records through private provider mappings. One team sync uses one provider call, one game sync uses one, and a combined sync normally uses two before bounded retries. Commands support `-- --dry-run`. See [the API-Sports integration guide](docs/api-sports.md) for configuration, status mapping, rate-limit behavior, fixture separation, failure recovery, and safe live verification.
 

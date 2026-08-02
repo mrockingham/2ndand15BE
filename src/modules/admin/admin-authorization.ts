@@ -12,7 +12,14 @@ export type AdministrativeCapability =
   | 'VIEW_SCHEDULE_AUDIT'
   | 'REMOVE_OVERRIDE'
   | 'VIEW_FULL_AUDIT'
-  | 'MANAGE_ROLES';
+  | 'MANAGE_ROLES'
+  | 'VIEW_EDITORIAL_CONTENT'
+  | 'CREATE_ARTICLE'
+  | 'EDIT_ARTICLE'
+  | 'PUBLISH_ARTICLE'
+  | 'FEATURE_ARTICLE'
+  | 'ARCHIVE_ARTICLE'
+  | 'VIEW_EDITORIAL_AUDIT';
 
 export interface AdministrativePrincipal {
   readonly userId: string;
@@ -32,6 +39,12 @@ const capabilitiesByRole: Readonly<Record<UserRole, ReadonlySet<AdministrativeCa
     'IMPORT_SCHEDULE',
     'VERIFY_SCHEDULE',
     'VIEW_SCHEDULE_AUDIT',
+    'VIEW_EDITORIAL_CONTENT',
+    'CREATE_ARTICLE',
+    'EDIT_ARTICLE',
+    'PUBLISH_ARTICLE',
+    'FEATURE_ARTICLE',
+    'VIEW_EDITORIAL_AUDIT',
   ]),
   ADMIN: new Set([
     'VIEW_SCHEDULE',
@@ -42,6 +55,13 @@ const capabilitiesByRole: Readonly<Record<UserRole, ReadonlySet<AdministrativeCa
     'REMOVE_OVERRIDE',
     'VIEW_FULL_AUDIT',
     'MANAGE_ROLES',
+    'VIEW_EDITORIAL_CONTENT',
+    'CREATE_ARTICLE',
+    'EDIT_ARTICLE',
+    'PUBLISH_ARTICLE',
+    'FEATURE_ARTICLE',
+    'ARCHIVE_ARTICLE',
+    'VIEW_EDITORIAL_AUDIT',
   ]),
 };
 

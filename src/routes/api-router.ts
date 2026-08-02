@@ -7,6 +7,15 @@ import type { AppConfig } from '../config/env.js';
 import { createAdminRouter } from '../modules/admin/admin.routes.js';
 import type { AdministrativeIdentityReader } from '../modules/admin/admin-authorization.js';
 import type { AdministrativeScheduleService } from '../modules/admin/admin.service.js';
+import {
+  createAdminArticleRouter,
+  createPublicArticleRouter,
+  createTeamArticleRouter,
+} from '../modules/articles/article.routes.js';
+import type {
+  EditorialArticleService,
+  PublicArticleReader,
+} from '../modules/articles/article.service.js';
 import { openApiDocument } from '../docs/openapi.js';
 import type { HealthControllerOptions } from '../modules/health/health.controller.js';
 import { createGameRouter, createTeamGameRouter } from '../modules/games/game.routes.js';
@@ -31,6 +40,8 @@ export interface ApiRouterOptions {
   readonly passwordResetConfig: AppConfig['passwordReset'];
   readonly adminService?: AdministrativeScheduleService;
   readonly adminIdentities?: AdministrativeIdentityReader;
+  readonly articleReader?: PublicArticleReader;
+  readonly editorialArticleService?: EditorialArticleService;
 }
 
 export function createApiRouter(options: ApiRouterOptions): Router {
@@ -59,6 +70,16 @@ export function createApiRouter(options: ApiRouterOptions): Router {
     swaggerUi.setup(openApiDocument),
   );
   router.use('/health', createHealthRouter(options.health));
+  if (options.editorialArticleService !== undefined && options.adminIdentities !== undefined) {
+    router.use(
+      '/admin/articles',
+      createAdminArticleRouter({
+        authenticate: options.authenticate,
+        identities: options.adminIdentities,
+        service: options.editorialArticleService,
+      }),
+    );
+  }
   if (options.adminService !== undefined && options.adminIdentities !== undefined) {
     router.use(
       '/admin',
@@ -69,6 +90,10 @@ export function createApiRouter(options: ApiRouterOptions): Router {
         importRateLimit: options.authConfig.rateLimit,
       }),
     );
+  }
+  if (options.articleReader !== undefined) {
+    router.use('/articles', createPublicArticleRouter(options.articleReader));
+    router.use('/teams/:teamId/articles', createTeamArticleRouter(options.articleReader));
   }
   router.use('/games', createGameRouter(options.gameReader));
   router.use('/teams/:teamId/games', createTeamGameRouter(options.gameReader));

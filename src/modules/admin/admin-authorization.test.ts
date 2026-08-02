@@ -9,7 +9,11 @@ describe('administrative capabilities', () => {
     expect(roleHasCapability('EDITOR', 'VIEW_SCHEDULE_AUDIT')).toBe(true);
     expect(roleHasCapability('EDITOR', 'REMOVE_OVERRIDE')).toBe(false);
     expect(roleHasCapability('EDITOR', 'VIEW_FULL_AUDIT')).toBe(false);
+    expect(roleHasCapability('EDITOR', 'CREATE_ARTICLE')).toBe(true);
+    expect(roleHasCapability('EDITOR', 'PUBLISH_ARTICLE')).toBe(true);
+    expect(roleHasCapability('EDITOR', 'ARCHIVE_ARTICLE')).toBe(false);
     expect(roleHasCapability('ADMIN', 'REMOVE_OVERRIDE')).toBe(true);
     expect(roleHasCapability('ADMIN', 'MANAGE_ROLES')).toBe(true);
+    expect(roleHasCapability('ADMIN', 'ARCHIVE_ARTICLE')).toBe(true);
   });
 });

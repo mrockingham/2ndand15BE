@@ -140,6 +140,12 @@ describe('application middleware', () => {
         '/teams/{teamId}/games': {
           get: { operationId: 'listTeamGames' },
         },
+        '/articles': {
+          get: { operationId: 'listArticles' },
+        },
+        '/articles/{slug}': {
+          get: { operationId: 'getArticleBySlug' },
+        },
         '/auth/register': {
           post: { operationId: 'register' },
         },
@@ -165,6 +171,13 @@ describe('application middleware', () => {
         },
         '/admin/audit-events': {
           get: { operationId: 'listAdminAuditEvents' },
+        },
+        '/admin/articles': {
+          get: { operationId: 'listAdminArticles' },
+          post: { operationId: 'createArticle' },
+        },
+        '/admin/articles/{articleId}/publish': {
+          post: { operationId: 'publishArticle' },
         },
       },
     });

@@ -13,6 +13,10 @@ import type { AccessTokenService } from './common/security/access-token.js';
 import type { AuthenticationService } from './modules/auth/auth.service.js';
 import type { AdministrativeIdentityReader } from './modules/admin/admin-authorization.js';
 import type { AdministrativeScheduleService } from './modules/admin/admin.service.js';
+import type {
+  EditorialArticleService,
+  PublicArticleReader,
+} from './modules/articles/article.service.js';
 import type { HealthControllerOptions } from './modules/health/health.controller.js';
 import type { GameReader } from './modules/games/game.service.js';
 import type { TeamReader } from './modules/teams/team.service.js';
@@ -30,6 +34,8 @@ export interface CreateAppOptions {
   readonly accessTokens: AccessTokenService;
   readonly adminService?: AdministrativeScheduleService;
   readonly adminIdentities?: AdministrativeIdentityReader;
+  readonly articleReader?: PublicArticleReader;
+  readonly editorialArticleService?: EditorialArticleService;
 }
 
 export function createApp(options: CreateAppOptions): Express {
@@ -57,9 +63,14 @@ export function createApp(options: CreateAppOptions): Express {
       authenticate: createAuthenticationMiddleware(options.accessTokens),
       authConfig: options.config.auth,
       passwordResetConfig: options.config.passwordReset,
-      ...(options.adminService === undefined || options.adminIdentities === undefined
+      ...(options.adminService === undefined ? {} : { adminService: options.adminService }),
+      ...(options.adminIdentities === undefined
         ? {}
-        : { adminService: options.adminService, adminIdentities: options.adminIdentities }),
+        : { adminIdentities: options.adminIdentities }),
+      ...(options.articleReader === undefined ? {} : { articleReader: options.articleReader }),
+      ...(options.editorialArticleService === undefined
+        ? {}
+        : { editorialArticleService: options.editorialArticleService }),
       ...(options.health === undefined ? {} : { health: options.health }),
     }),
   );
