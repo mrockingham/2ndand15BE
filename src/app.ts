@@ -11,6 +11,8 @@ import { createRequestLogger } from './common/middleware/request-logger.js';
 import type { AppConfig } from './config/env.js';
 import type { AccessTokenService } from './common/security/access-token.js';
 import type { AuthenticationService } from './modules/auth/auth.service.js';
+import type { AdministrativeIdentityReader } from './modules/admin/admin-authorization.js';
+import type { AdministrativeScheduleService } from './modules/admin/admin.service.js';
 import type { HealthControllerOptions } from './modules/health/health.controller.js';
 import type { GameReader } from './modules/games/game.service.js';
 import type { TeamReader } from './modules/teams/team.service.js';
@@ -26,6 +28,8 @@ export interface CreateAppOptions {
   readonly authService: AuthenticationService;
   readonly userService: UserPersonalizationService;
   readonly accessTokens: AccessTokenService;
+  readonly adminService?: AdministrativeScheduleService;
+  readonly adminIdentities?: AdministrativeIdentityReader;
 }
 
 export function createApp(options: CreateAppOptions): Express {
@@ -53,6 +57,9 @@ export function createApp(options: CreateAppOptions): Express {
       authenticate: createAuthenticationMiddleware(options.accessTokens),
       authConfig: options.config.auth,
       passwordResetConfig: options.config.passwordReset,
+      ...(options.adminService === undefined || options.adminIdentities === undefined
+        ? {}
+        : { adminService: options.adminService, adminIdentities: options.adminIdentities }),
       ...(options.health === undefined ? {} : { health: options.health }),
     }),
   );

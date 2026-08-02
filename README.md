@@ -2,7 +2,7 @@
 
 Backend REST API for the 2nd and 15 consumer NFL platform.
 
-The implemented backend includes the TypeScript/Express foundation, normalized NFL team and game catalogs, a fixture-backed mock provider, an explicit API-Sports synchronization adapter, email/password authentication, rotating database-backed refresh sessions, password reset, and one favorite NFL team per user.
+The implemented backend includes the TypeScript/Express foundation, normalized NFL team and game catalogs, a fixture-backed mock provider, an explicit API-Sports synchronization adapter, email/password authentication, rotating database-backed refresh sessions, password reset, favorite-team personalization, and role-protected schedule administration with provenance, overrides, imports, and audit history.
 
 ## Requirements
 
@@ -73,6 +73,7 @@ The API defaults to `http://localhost:3000`. The PostgreSQL credentials in `.env
 - `POST /api/v1/auth/reset-password` — consume a single-use reset token
 - `GET /api/v1/users/me` — return the authenticated active user and favorite team
 - `PATCH /api/v1/users/me/favorite-team` — set, replace, or clear the authenticated user's favorite team
+- `/api/v1/admin/*` — role-protected schedule, override, verification, import, and audit operations
 - `GET /api/v1/docs` — interactive OpenAPI documentation
 - `GET /api/v1/docs/openapi.json` — OpenAPI JSON document
 
@@ -119,6 +120,8 @@ npm run sports:sync:games
 npm run sports:sync
 npm run sports:verify:live
 npm run sports:evaluate:api-sports -- --seasons=2024,2025,2026
+npm run admin:set-role -- --email=user@example.com --role=ADMIN
+npm run schedule:import -- --file=./data/import-templates/nfl-schedule.csv --dry-run
 ```
 
 Use `prisma:migrate` only when authoring a new migration in development. Use `prisma:deploy` to apply committed migrations, including against a hosted development database.
@@ -149,6 +152,7 @@ Configuration is validated at startup. See `.env.example` for the complete set.
 - `SPORTS_API` supplies the API-Sports credential. The key is required only when API-Sports is selected and must never be committed or logged.
 - `API_SPORTS_SYNC_SEASON` and `API_SPORTS_SYNC_SEASON_TYPE` select the synchronization scope. Provider plans may restrict season access.
 - API-Sports timeouts, bounded retries, base URL, and optional external-logo metadata are configured by the remaining `API_SPORTS_*` variables in `.env.example`.
+- `HIGHLIGHTLY_API_KEY` is private and required only by `sports:evaluate:highlightly`. The remaining `HIGHLIGHTLY_*` variables configure its HTTPS endpoint, timeout, bounded retries, and evaluation season without changing `SPORTS_PROVIDER`.
 - Never commit `.env`; only placeholder examples belong in `.env.example`.
 
 ## Team and game data
@@ -159,9 +163,13 @@ The same seed then synchronizes a small, explicitly fictional development schedu
 
 Game timestamps are stored and returned as UTC ISO 8601 values. The backend does not infer a display timezone. `GET /games` defaults to `CURRENT_NFL_SEASON` and the next 14 days, so unavailable current-season data produces an empty normalized list rather than historical fallback. `?season=2024` remains an explicit historical query. Date filters must be supplied together and may span at most 31 days. Cursor pagination is ordered by start time and internal game ID.
 
+Public game values resolve editorial overrides over normalized base values without changing the response shape. Manually maintained games remain visible alongside the configured real provider, while fictional fixture visibility remains separately controlled. See [schedule imports](docs/schedule-imports.md) and [administrative authorization](docs/administration.md).
+
 API-Sports is available only through explicit synchronization commands; public routes never call it. In API-Sports mode, real teams are matched to the existing 32-team catalog and game reads exclude fictional mock records through private provider mappings. One team sync uses one provider call, one game sync uses one, and a combined sync normally uses two before bounded retries. Commands support `-- --dry-run`. See [the API-Sports integration guide](docs/api-sports.md) for configuration, status mapping, rate-limit behavior, fixture separation, failure recovery, and safe live verification.
 
 Provider evaluations are read-only and never access Prisma. `sports:evaluate:api-sports` evaluates selected seasons and writes a sanitized report to `docs/provider-evaluations/api-sports-latest.md`. The reusable evaluation contract distinguishes verified, unavailable, and untested capabilities and records pass, warning, and failure findings. The approved baseline report is [API-Sports evaluation — August 1, 2026](docs/provider-evaluations/api-sports-2026-08-01.md).
+
+`npm run sports:evaluate:highlightly` performs a bounded, read-only Highlightly NFL evaluation. It stops after team and 2026 schedule discovery when current-season records are absent and otherwise uses no more than eight HTTP requests. It does not import Prisma, synchronize records, create mappings, or change the active provider. See [the Highlightly evaluation guide](docs/highlightly-evaluation.md).
 
 ## Frontend authentication contract
 
@@ -170,7 +178,7 @@ Provider evaluations are read-only and never access Prisma. `sports:evaluate:api
 - Browser calls to register, login, refresh, logout, and reset-password should use `credentials: 'include'` so cookies can be accepted, rotated, or cleared.
 - The refresh cookie is restricted to `/api/v1/auth`, lasts 30 days by default, and is replaced on every refresh.
 - A password reset does not authenticate the user. It revokes all refresh sessions, clears the current refresh cookie, and requires a new login.
-- User objects returned by registration, login, refresh, and `/users/me` contain `favoriteTeam`. New users and users who have cleared the relationship receive `favoriteTeam: null`.
+- User objects returned by registration, login, refresh, and `/users/me` contain `favoriteTeam` and the constrained `role`. Registration always creates `USER`; no public request may assign or change a role.
 - Set or replace a favorite with `{ "favoriteTeamId": "<internal-team-uuid>" }`; clear it with `{ "favoriteTeamId": null }`. Provider IDs and provider mappings are never part of this contract.
 
 ## Architecture

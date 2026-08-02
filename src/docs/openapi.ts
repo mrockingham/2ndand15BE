@@ -235,6 +235,322 @@ export const openApiDocument = {
         },
       },
     },
+    '/admin/games': {
+      get: {
+        operationId: 'listAdminGames',
+        summary: 'List schedule records with provenance and overrides',
+        tags: ['Administration'],
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: 'season',
+            in: 'query',
+            schema: { type: 'integer', minimum: 1920, maximum: 2100 },
+          },
+          {
+            name: 'limit',
+            in: 'query',
+            schema: { type: 'integer', minimum: 1, maximum: 100, default: 50 },
+          },
+          { name: 'cursor', in: 'query', schema: { type: 'string', format: 'uuid' } },
+        ],
+        responses: {
+          '200': {
+            description: 'Administrative game page.',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/AdminGameListResponse' },
+              },
+            },
+          },
+          '401': { $ref: '#/components/responses/UnauthorizedError' },
+          '403': { $ref: '#/components/responses/ForbiddenError' },
+        },
+      },
+      post: {
+        operationId: 'createAdminGame',
+        summary: 'Create a manually maintained NFL game',
+        tags: ['Administration'],
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: { $ref: '#/components/schemas/ManualGameCreateRequest' },
+            },
+          },
+        },
+        responses: {
+          '201': {
+            description: 'Manual game created and audited.',
+            content: {
+              'application/json': { schema: { $ref: '#/components/schemas/AdminGameResponse' } },
+            },
+          },
+          '400': { $ref: '#/components/responses/ValidationError' },
+          '401': { $ref: '#/components/responses/UnauthorizedError' },
+          '403': { $ref: '#/components/responses/ForbiddenError' },
+          '409': { $ref: '#/components/responses/ConflictError' },
+        },
+      },
+    },
+    '/admin/games/{gameId}': {
+      get: {
+        operationId: 'getAdminGame',
+        summary: 'Get one administrative game record',
+        tags: ['Administration'],
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: 'gameId',
+            in: 'path',
+            required: true,
+            schema: { type: 'string', format: 'uuid' },
+          },
+        ],
+        responses: {
+          '200': {
+            description: 'Administrative game detail.',
+            content: {
+              'application/json': { schema: { $ref: '#/components/schemas/AdminGameResponse' } },
+            },
+          },
+          '401': { $ref: '#/components/responses/UnauthorizedError' },
+          '403': { $ref: '#/components/responses/ForbiddenError' },
+          '404': {
+            description: 'Game not found.',
+            content: {
+              'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } },
+            },
+          },
+        },
+      },
+      patch: {
+        operationId: 'updateAdminGame',
+        summary: 'Edit a manually owned base game',
+        description: 'Provider-backed games must use an editorial override.',
+        tags: ['Administration'],
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: 'gameId',
+            in: 'path',
+            required: true,
+            schema: { type: 'string', format: 'uuid' },
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: { $ref: '#/components/schemas/ManualGameUpdateRequest' },
+            },
+          },
+        },
+        responses: {
+          '200': {
+            description: 'Manual game updated and verification cleared.',
+            content: {
+              'application/json': { schema: { $ref: '#/components/schemas/AdminGameResponse' } },
+            },
+          },
+          '400': { $ref: '#/components/responses/ValidationError' },
+          '401': { $ref: '#/components/responses/UnauthorizedError' },
+          '403': { $ref: '#/components/responses/ForbiddenError' },
+          '409': { $ref: '#/components/responses/ConflictError' },
+        },
+      },
+    },
+    '/admin/games/{gameId}/override': {
+      put: {
+        operationId: 'upsertGameOverride',
+        summary: 'Create or partially update an editorial game override',
+        tags: ['Administration'],
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: 'gameId',
+            in: 'path',
+            required: true,
+            schema: { type: 'string', format: 'uuid' },
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': { schema: { $ref: '#/components/schemas/GameOverrideRequest' } },
+          },
+        },
+        responses: {
+          '200': {
+            description: 'Override created or updated and audited.',
+            content: {
+              'application/json': { schema: { $ref: '#/components/schemas/AdminGameResponse' } },
+            },
+          },
+          '400': { $ref: '#/components/responses/ValidationError' },
+          '401': { $ref: '#/components/responses/UnauthorizedError' },
+          '403': { $ref: '#/components/responses/ForbiddenError' },
+        },
+      },
+      delete: {
+        operationId: 'deleteGameOverride',
+        summary: 'Remove an editorial game override (admin only)',
+        tags: ['Administration'],
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: 'gameId',
+            in: 'path',
+            required: true,
+            schema: { type: 'string', format: 'uuid' },
+          },
+        ],
+        responses: {
+          '200': {
+            description: 'Override removed and audited.',
+            content: {
+              'application/json': { schema: { $ref: '#/components/schemas/AdminGameResponse' } },
+            },
+          },
+          '401': { $ref: '#/components/responses/UnauthorizedError' },
+          '403': { $ref: '#/components/responses/ForbiddenError' },
+          '404': {
+            description: 'Game or override not found.',
+            content: {
+              'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } },
+            },
+          },
+        },
+      },
+    },
+    '/admin/games/{gameId}/verification': {
+      put: {
+        operationId: 'verifyAdminGame',
+        summary: 'Mark schedule facts as editor-verified',
+        tags: ['Administration'],
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: 'gameId',
+            in: 'path',
+            required: true,
+            schema: { type: 'string', format: 'uuid' },
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: { $ref: '#/components/schemas/GameVerificationRequest' },
+            },
+          },
+        },
+        responses: {
+          '200': {
+            description: 'Verification recorded and audited.',
+            content: {
+              'application/json': { schema: { $ref: '#/components/schemas/AdminGameResponse' } },
+            },
+          },
+          '400': { $ref: '#/components/responses/ValidationError' },
+          '401': { $ref: '#/components/responses/UnauthorizedError' },
+          '403': { $ref: '#/components/responses/ForbiddenError' },
+        },
+      },
+    },
+    '/admin/schedule-imports/validate': {
+      post: {
+        operationId: 'validateScheduleImport',
+        summary: 'Validate and match schedule rows without mutation',
+        tags: ['Administration'],
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': { schema: { $ref: '#/components/schemas/ScheduleImportRequest' } },
+          },
+        },
+        responses: {
+          '200': {
+            description: 'Sanitized dry-run summary.',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/ScheduleImportResponse' },
+              },
+            },
+          },
+          '400': { $ref: '#/components/responses/ValidationError' },
+          '401': { $ref: '#/components/responses/UnauthorizedError' },
+          '403': { $ref: '#/components/responses/ForbiddenError' },
+          '429': { $ref: '#/components/responses/RateLimitError' },
+        },
+      },
+    },
+    '/admin/schedule-imports': {
+      post: {
+        operationId: 'importSchedule',
+        summary: 'Validate and optionally write schedule rows',
+        tags: ['Administration'],
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': { schema: { $ref: '#/components/schemas/ScheduleImportRequest' } },
+          },
+        },
+        responses: {
+          '200': {
+            description: 'Sanitized import summary.',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/ScheduleImportResponse' },
+              },
+            },
+          },
+          '400': { $ref: '#/components/responses/ValidationError' },
+          '401': { $ref: '#/components/responses/UnauthorizedError' },
+          '403': { $ref: '#/components/responses/ForbiddenError' },
+          '429': { $ref: '#/components/responses/RateLimitError' },
+        },
+      },
+    },
+    '/admin/audit-events': {
+      get: {
+        operationId: 'listAdminAuditEvents',
+        summary: 'List game-scoped (editor) or complete (admin) audit history',
+        tags: ['Administration'],
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: 'limit',
+            in: 'query',
+            schema: { type: 'integer', minimum: 1, maximum: 100, default: 50 },
+          },
+          { name: 'cursor', in: 'query', schema: { type: 'string', format: 'uuid' } },
+          { name: 'action', in: 'query', schema: { type: 'string' } },
+          {
+            name: 'entityType',
+            in: 'query',
+            description: 'Editors must supply GAME; admins may omit this filter.',
+            schema: { type: 'string' },
+          },
+          { name: 'entityId', in: 'query', schema: { type: 'string' } },
+        ],
+        responses: {
+          '200': {
+            description: 'Paginated sanitized audit events.',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/AuditEventListResponse' },
+              },
+            },
+          },
+          '401': { $ref: '#/components/responses/UnauthorizedError' },
+          '403': { $ref: '#/components/responses/ForbiddenError' },
+        },
+      },
+    },
     '/health': {
       get: {
         operationId: 'getHealth',
@@ -458,6 +774,12 @@ export const openApiDocument = {
           'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } },
         },
       },
+      ForbiddenError: {
+        description: 'The authenticated account lacks the required administrative capability.',
+        content: {
+          'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } },
+        },
+      },
       ConflictError: {
         description: 'The requested resource conflicts with an existing resource.',
         content: {
@@ -519,6 +841,7 @@ export const openApiDocument = {
           'logoUrl',
           'logoSource',
           'isActive',
+          'role',
           'createdAt',
           'updatedAt',
         ],
@@ -536,6 +859,7 @@ export const openApiDocument = {
           logoUrl: { type: ['string', 'null'], format: 'uri' },
           logoSource: { type: ['string', 'null'] },
           isActive: { type: 'boolean' },
+          role: { type: 'string', enum: ['USER', 'EDITOR', 'ADMIN'] },
           createdAt: { type: 'string', format: 'date-time' },
           updatedAt: { type: 'string', format: 'date-time' },
         },
@@ -747,6 +1071,252 @@ export const openApiDocument = {
         properties: {
           token: { type: 'string', minLength: 32, maxLength: 512, writeOnly: true },
           password: { type: 'string', minLength: 12, maxLength: 128, writeOnly: true },
+        },
+      },
+      AdminGame: {
+        type: 'object',
+        required: ['id', 'resolved', 'base', 'providerManaged', 'provenance', 'override'],
+        properties: {
+          id: { type: 'string', format: 'uuid' },
+          resolved: { $ref: '#/components/schemas/Game' },
+          base: { $ref: '#/components/schemas/Game' },
+          providerManaged: { type: 'boolean' },
+          provenance: {
+            type: ['object', 'null'],
+            properties: {
+              sourceType: {
+                type: 'string',
+                enum: [
+                  'MANUAL_IMPORT',
+                  'MANUAL_ENTRY',
+                  'OFFICIAL_WEB',
+                  'PROVIDER',
+                  'EDITORIAL_OVERRIDE',
+                  'DEVELOPMENT_FIXTURE',
+                ],
+              },
+              sourceName: { type: 'string' },
+              sourceUrl: { type: ['string', 'null'], format: 'uri' },
+              externalReference: { type: ['string', 'null'] },
+              notes: { type: ['string', 'null'] },
+              importedAt: { type: 'string', format: 'date-time' },
+              verifiedAt: { type: ['string', 'null'], format: 'date-time' },
+              verifiedById: { type: ['string', 'null'], format: 'uuid' },
+            },
+          },
+          override: {
+            type: ['object', 'null'],
+            description:
+              'Internal editorial values and notes. Never included in public game responses.',
+          },
+        },
+      },
+      AdminGameResponse: {
+        type: 'object',
+        required: ['data'],
+        properties: { data: { $ref: '#/components/schemas/AdminGame' } },
+      },
+      AdminGameListResponse: {
+        type: 'object',
+        required: ['data', 'meta'],
+        properties: {
+          data: { type: 'array', items: { $ref: '#/components/schemas/AdminGame' } },
+          meta: {
+            type: 'object',
+            required: ['nextCursor'],
+            properties: { nextCursor: { type: ['string', 'null'], format: 'uuid' } },
+          },
+        },
+      },
+      ManualGameCreateRequest: {
+        type: 'object',
+        additionalProperties: false,
+        required: [
+          'season',
+          'seasonType',
+          'week',
+          'startTime',
+          'status',
+          'homeTeamId',
+          'awayTeamId',
+          'venueName',
+          'venueCity',
+          'broadcastNetwork',
+          'isNeutralSite',
+          'provenance',
+        ],
+        properties: {
+          season: { type: 'integer', minimum: 1920, maximum: 2100 },
+          seasonType: { type: 'string', enum: ['PRE', 'REG', 'POST'] },
+          week: { type: ['integer', 'null'], minimum: 1, maximum: 22 },
+          startTime: {
+            type: 'string',
+            format: 'date-time',
+            description: 'Offset or UTC timestamp required.',
+          },
+          status: { $ref: '#/components/schemas/GameStatus' },
+          homeTeamId: { type: 'string', format: 'uuid' },
+          awayTeamId: { type: 'string', format: 'uuid' },
+          venueName: { type: ['string', 'null'], maxLength: 160 },
+          venueCity: { type: ['string', 'null'], maxLength: 128 },
+          broadcastNetwork: { type: ['string', 'null'], maxLength: 64 },
+          isNeutralSite: { type: 'boolean' },
+          provenance: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['sourceName'],
+            properties: {
+              sourceName: { type: 'string', maxLength: 160 },
+              sourceUrl: { type: ['string', 'null'], format: 'uri' },
+              externalReference: { type: ['string', 'null'], maxLength: 256 },
+              notes: { type: ['string', 'null'], maxLength: 1000 },
+            },
+          },
+        },
+      },
+      ManualGameUpdateRequest: {
+        type: 'object',
+        additionalProperties: false,
+        minProperties: 1,
+        description:
+          'A partial subset of manual game fields from ManualGameCreateRequest, excluding provenance.',
+      },
+      GameOverrideRequest: {
+        type: 'object',
+        additionalProperties: false,
+        minProperties: 1,
+        properties: {
+          startTime: { type: ['string', 'null'], format: 'date-time' },
+          status: { oneOf: [{ $ref: '#/components/schemas/GameStatus' }, { type: 'null' }] },
+          week: { type: ['integer', 'null'], minimum: 1, maximum: 22 },
+          venueName: { type: ['string', 'null'], maxLength: 160 },
+          venueCity: { type: ['string', 'null'], maxLength: 128 },
+          broadcastNetwork: { type: ['string', 'null'], maxLength: 64 },
+          isNeutralSite: { type: ['boolean', 'null'] },
+          publicCorrectionNote: { type: ['string', 'null'], maxLength: 500 },
+          internalNote: { type: ['string', 'null'], maxLength: 1000 },
+        },
+      },
+      GameVerificationRequest: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['sourceName'],
+        properties: {
+          sourceName: { type: 'string', maxLength: 160 },
+          sourceUrl: { type: ['string', 'null'], format: 'uri' },
+          note: { type: ['string', 'null'], maxLength: 1000 },
+        },
+      },
+      ScheduleImportRow: {
+        type: 'object',
+        additionalProperties: false,
+        required: [
+          'season',
+          'seasonType',
+          'week',
+          'startTime',
+          'awayTeam',
+          'homeTeam',
+          'status',
+          'venueName',
+          'venueCity',
+          'broadcastNetwork',
+          'isNeutralSite',
+          'sourceName',
+          'sourceType',
+          'sourceUrl',
+          'externalReference',
+          'notes',
+        ],
+        properties: {
+          season: { type: 'integer', minimum: 1920, maximum: 2100 },
+          seasonType: { type: 'string', enum: ['PRE', 'REG', 'POST'] },
+          week: { type: ['integer', 'null'], minimum: 1, maximum: 22 },
+          startTime: { type: 'string', format: 'date-time' },
+          awayTeam: { type: 'string', description: 'Canonical abbreviation or documented alias.' },
+          homeTeam: { type: 'string', description: 'Canonical abbreviation or documented alias.' },
+          status: { $ref: '#/components/schemas/GameStatus' },
+          venueName: { type: ['string', 'null'] },
+          venueCity: { type: ['string', 'null'] },
+          broadcastNetwork: { type: ['string', 'null'] },
+          isNeutralSite: { type: 'boolean' },
+          sourceName: { type: 'string' },
+          sourceType: {
+            type: 'string',
+            enum: ['MANUAL_IMPORT', 'OFFICIAL_WEB', 'DEVELOPMENT_FIXTURE'],
+          },
+          sourceUrl: { type: ['string', 'null'], format: 'uri' },
+          externalReference: { type: ['string', 'null'] },
+          notes: { type: ['string', 'null'] },
+        },
+      },
+      ScheduleImportRequest: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['rows'],
+        properties: {
+          rows: {
+            type: 'array',
+            minItems: 1,
+            maxItems: 500,
+            items: { $ref: '#/components/schemas/ScheduleImportRow' },
+          },
+          dryRun: { type: 'boolean', default: true },
+        },
+      },
+      ScheduleImportResponse: {
+        type: 'object',
+        required: ['data'],
+        properties: {
+          data: {
+            type: 'object',
+            required: [
+              'dryRun',
+              'received',
+              'created',
+              'updated',
+              'skipped',
+              'warnings',
+              'failed',
+              'failures',
+            ],
+            properties: {
+              dryRun: { type: 'boolean' },
+              received: { type: 'integer', minimum: 0 },
+              created: { type: 'integer', minimum: 0 },
+              updated: { type: 'integer', minimum: 0 },
+              skipped: { type: 'integer', minimum: 0 },
+              warnings: { type: 'integer', minimum: 0 },
+              failed: { type: 'integer', minimum: 0 },
+              failures: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  required: ['row', 'code', 'message'],
+                  properties: {
+                    row: { type: 'integer' },
+                    code: { type: 'string' },
+                    message: { type: 'string' },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      AuditEventListResponse: {
+        type: 'object',
+        required: ['data', 'meta'],
+        properties: {
+          data: {
+            type: 'array',
+            items: { type: 'object', description: 'Sanitized immutable-style audit event.' },
+          },
+          meta: {
+            type: 'object',
+            required: ['nextCursor'],
+            properties: { nextCursor: { type: ['string', 'null'], format: 'uuid' } },
+          },
         },
       },
       MessageResponse: {

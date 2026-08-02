@@ -24,6 +24,7 @@ describe('createLogger', () => {
           authorization: 'Bearer raw-bearer-token',
           cookie: 'refresh_token=raw-refresh-token',
           'x-apisports-key': 'raw-api-sports-header',
+          'x-rapidapi-key': 'raw-highlightly-header',
         },
         tokenHash: 'hashed-token-value',
       },
@@ -36,6 +37,7 @@ describe('createLogger', () => {
     expect(output).not.toContain('hashed-token-value');
     expect(output).not.toContain('raw-api-sports-key');
     expect(output).not.toContain('raw-api-sports-header');
+    expect(output).not.toContain('raw-highlightly-header');
     expect(output).toContain('[REDACTED]');
   });
 });

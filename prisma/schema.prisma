@@ -40,19 +40,39 @@ enum GameStatus {
   SUSPENDED
 }
 
+enum UserRole {
+  USER
+  EDITOR
+  ADMIN
+}
+
+enum GameSourceType {
+  MANUAL_IMPORT
+  MANUAL_ENTRY
+  OFFICIAL_WEB
+  PROVIDER
+  EDITORIAL_OVERRIDE
+  DEVELOPMENT_FIXTURE
+}
+
 model User {
-  id                  String               @id @default(uuid()) @db.Uuid
-  email               String               @db.VarChar(254)
-  normalizedEmail     String               @unique(map: "users_normalized_email_key") @map("normalized_email") @db.VarChar(254)
-  passwordHash        String               @map("password_hash") @db.VarChar(255)
-  displayName         String?              @map("display_name") @db.VarChar(80)
-  isActive            Boolean              @default(true) @map("is_active")
-  favoriteTeamId      String?              @map("favorite_team_id") @db.Uuid
-  createdAt           DateTime             @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt           DateTime             @updatedAt @map("updated_at") @db.Timestamptz(3)
+  id                  String                  @id @default(uuid()) @db.Uuid
+  email               String                  @db.VarChar(254)
+  normalizedEmail     String                  @unique(map: "users_normalized_email_key") @map("normalized_email") @db.VarChar(254)
+  passwordHash        String                  @map("password_hash") @db.VarChar(255)
+  displayName         String?                 @map("display_name") @db.VarChar(80)
+  isActive            Boolean                 @default(true) @map("is_active")
+  role                UserRole                @default(USER)
+  favoriteTeamId      String?                 @map("favorite_team_id") @db.Uuid
+  createdAt           DateTime                @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt           DateTime                @updatedAt @map("updated_at") @db.Timestamptz(3)
   sessions            Session[]
   passwordResetTokens PasswordResetToken[]
-  favoriteTeam        Team?                @relation("UserFavoriteTeam", fields: [favoriteTeamId], references: [id], onDelete: SetNull)
+  favoriteTeam        Team?                   @relation("UserFavoriteTeam", fields: [favoriteTeamId], references: [id], onDelete: SetNull)
+  verifiedProvenances GameProvenance[]        @relation("GameProvenanceVerifier")
+  createdOverrides    GameEditorialOverride[] @relation("GameOverrideCreator")
+  updatedOverrides    GameEditorialOverride[] @relation("GameOverrideUpdater")
+  auditEvents         AdminAuditEvent[]       @relation("AdminAuditActor")
 
   @@index([isActive], map: "users_active_idx")
   @@index([favoriteTeamId], map: "users_favorite_team_id_idx")
@@ -120,35 +140,106 @@ model Team {
 }
 
 model Game {
-  id                    String                @id @default(uuid()) @db.Uuid
+  id                    String                 @id @default(uuid()) @db.Uuid
   league                League
   season                Int
-  seasonType            SeasonType            @map("season_type")
+  seasonType            SeasonType             @map("season_type")
   week                  Int?
-  startTime             DateTime              @map("start_time") @db.Timestamptz(3)
+  startTime             DateTime               @map("start_time") @db.Timestamptz(3)
   status                GameStatus
-  homeTeamId            String                @map("home_team_id") @db.Uuid
-  awayTeamId            String                @map("away_team_id") @db.Uuid
-  homeScore             Int?                  @map("home_score")
-  awayScore             Int?                  @map("away_score")
+  homeTeamId            String                 @map("home_team_id") @db.Uuid
+  awayTeamId            String                 @map("away_team_id") @db.Uuid
+  homeScore             Int?                   @map("home_score")
+  awayScore             Int?                   @map("away_score")
   quarter               Int?
-  clock                 String?               @db.VarChar(16)
-  venueName             String?               @map("venue_name") @db.VarChar(160)
-  venueCity             String?               @map("venue_city") @db.VarChar(128)
-  broadcastNetwork      String?               @map("broadcast_network") @db.VarChar(64)
-  isNeutralSite         Boolean               @default(false) @map("is_neutral_site")
-  providerLastUpdatedAt DateTime?             @map("provider_last_updated_at") @db.Timestamptz(3)
-  createdAt             DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt             DateTime              @updatedAt @map("updated_at") @db.Timestamptz(3)
-  homeTeam              Team                  @relation("HomeTeamGames", fields: [homeTeamId], references: [id], onDelete: Restrict)
-  awayTeam              Team                  @relation("AwayTeamGames", fields: [awayTeamId], references: [id], onDelete: Restrict)
+  clock                 String?                @db.VarChar(16)
+  venueName             String?                @map("venue_name") @db.VarChar(160)
+  venueCity             String?                @map("venue_city") @db.VarChar(128)
+  broadcastNetwork      String?                @map("broadcast_network") @db.VarChar(64)
+  isNeutralSite         Boolean                @default(false) @map("is_neutral_site")
+  providerLastUpdatedAt DateTime?              @map("provider_last_updated_at") @db.Timestamptz(3)
+  createdAt             DateTime               @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt             DateTime               @updatedAt @map("updated_at") @db.Timestamptz(3)
+  homeTeam              Team                   @relation("HomeTeamGames", fields: [homeTeamId], references: [id], onDelete: Restrict)
+  awayTeam              Team                   @relation("AwayTeamGames", fields: [awayTeamId], references: [id], onDelete: Restrict)
   providerMaps          GameProviderMapping[]
+  provenance            GameProvenance?
+  editorialOverride     GameEditorialOverride?
 
   @@index([league, season, seasonType, week, startTime], map: "games_schedule_idx")
   @@index([status, startTime], map: "games_status_start_time_idx")
   @@index([homeTeamId, startTime], map: "games_home_team_start_time_idx")
   @@index([awayTeamId, startTime], map: "games_away_team_start_time_idx")
   @@map("games")
+}
+
+model GameProvenance {
+  id                String         @id @default(uuid()) @db.Uuid
+  gameId            String         @unique(map: "game_provenances_game_id_key") @map("game_id") @db.Uuid
+  sourceType        GameSourceType @map("source_type")
+  sourceName        String         @map("source_name") @db.VarChar(160)
+  sourceUrl         String?        @map("source_url") @db.Text
+  externalReference String?        @map("external_reference") @db.VarChar(256)
+  notes             String?        @db.VarChar(1000)
+  importedAt        DateTime       @default(now()) @map("imported_at") @db.Timestamptz(3)
+  verifiedAt        DateTime?      @map("verified_at") @db.Timestamptz(3)
+  verifiedById      String?        @map("verified_by_id") @db.Uuid
+  createdAt         DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
+  game              Game           @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  verifiedBy        User?          @relation("GameProvenanceVerifier", fields: [verifiedById], references: [id], onDelete: SetNull)
+
+  @@unique([sourceName, externalReference], map: "game_provenances_source_reference_key")
+  @@index([sourceType, importedAt], map: "game_provenances_source_imported_idx")
+  @@index([verifiedById], map: "game_provenances_verified_by_idx")
+  @@map("game_provenances")
+}
+
+model GameEditorialOverride {
+  id                   String      @id @default(uuid()) @db.Uuid
+  gameId               String      @unique(map: "game_editorial_overrides_game_id_key") @map("game_id") @db.Uuid
+  startTime            DateTime?   @map("start_time") @db.Timestamptz(3)
+  status               GameStatus?
+  week                 Int?
+  venueName            String?     @map("venue_name") @db.VarChar(160)
+  venueCity            String?     @map("venue_city") @db.VarChar(128)
+  broadcastNetwork     String?     @map("broadcast_network") @db.VarChar(64)
+  isNeutralSite        Boolean?    @map("is_neutral_site")
+  publicCorrectionNote String?     @map("public_correction_note") @db.VarChar(500)
+  internalNote         String?     @map("internal_note") @db.VarChar(1000)
+  createdById          String?     @map("created_by_id") @db.Uuid
+  updatedById          String?     @map("updated_by_id") @db.Uuid
+  createdBySnapshot    String      @map("created_by_snapshot") @db.VarChar(254)
+  updatedBySnapshot    String      @map("updated_by_snapshot") @db.VarChar(254)
+  createdAt            DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt            DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
+  game                 Game        @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  createdBy            User?       @relation("GameOverrideCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedBy            User?       @relation("GameOverrideUpdater", fields: [updatedById], references: [id], onDelete: SetNull)
+
+  @@index([createdById], map: "game_editorial_overrides_created_by_idx")
+  @@index([updatedById], map: "game_editorial_overrides_updated_by_idx")
+  @@map("game_editorial_overrides")
+}
+
+model AdminAuditEvent {
+  id                 String   @id @default(uuid()) @db.Uuid
+  actorUserId        String?  @map("actor_user_id") @db.Uuid
+  actorEmailSnapshot String   @map("actor_email_snapshot") @db.VarChar(254)
+  action             String   @db.VarChar(96)
+  entityType         String   @map("entity_type") @db.VarChar(64)
+  entityId           String?  @map("entity_id") @db.VarChar(128)
+  beforeSnapshot     Json?    @map("before_snapshot") @db.JsonB
+  afterSnapshot      Json?    @map("after_snapshot") @db.JsonB
+  requestId          String?  @map("request_id") @db.VarChar(128)
+  reason             String?  @db.VarChar(500)
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  actor              User?    @relation("AdminAuditActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt, id], map: "admin_audit_events_created_idx")
+  @@index([entityType, entityId, createdAt], map: "admin_audit_events_entity_idx")
+  @@index([actorUserId, createdAt], map: "admin_audit_events_actor_idx")
+  @@map("admin_audit_events")
 }
 
 model GameProviderMapping {

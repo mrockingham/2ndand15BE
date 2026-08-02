@@ -47,13 +47,15 @@ function persistedGame(overrides: Partial<Game> = {}): Game {
   return game;
 }
 
-function createPrisma(existing?: Game, includeAwayMapping = true) {
+function createPrisma(existing?: Game, includeAwayMapping = true, hasEditorialOverride = false) {
   const createGame = vi.fn().mockResolvedValue({ id: 'new-game-id' });
   const updateGame = vi.fn().mockResolvedValue({});
   const createMapping = vi.fn().mockResolvedValue({});
+  const createProvenance = vi.fn().mockResolvedValue({});
   const transaction = {
     game: { create: createGame, update: updateGame },
     gameProviderMapping: { create: createMapping },
+    gameProvenance: { create: createProvenance },
   };
   const runTransaction = vi.fn((callback: (value: typeof transaction) => Promise<void>) =>
     callback(transaction),
@@ -70,17 +72,23 @@ function createPrisma(existing?: Game, includeAwayMapping = true) {
         ]),
     },
     gameProviderMapping: {
-      findMany: vi
-        .fn()
-        .mockResolvedValue(
-          existing === undefined
-            ? []
-            : [{ providerGameId: normalized.providerGameId, game: existing }],
-        ),
+      findMany: vi.fn().mockResolvedValue(
+        existing === undefined
+          ? []
+          : [
+              {
+                providerGameId: normalized.providerGameId,
+                game: {
+                  ...existing,
+                  editorialOverride: hasEditorialOverride ? { id: 'override-id' } : null,
+                },
+              },
+            ],
+      ),
     },
     $transaction: runTransaction,
   } as unknown as PrismaClient;
-  return { prisma, createGame, updateGame, createMapping, runTransaction };
+  return { prisma, createGame, updateGame, createMapping, createProvenance, runTransaction };
 }
 
 describe('syncGames', () => {
@@ -94,6 +102,7 @@ describe('syncGames', () => {
     });
     expect(harness.createGame).toHaveBeenCalledOnce();
     expect(harness.createMapping).toHaveBeenCalledOnce();
+    expect(harness.createProvenance).toHaveBeenCalledOnce();
   });
 
   it('preserves the internal ID and skips an unchanged repeated synchronization', async () => {
@@ -119,6 +128,16 @@ describe('syncGames', () => {
       expect.objectContaining({ where: { id: existing.id } }),
     );
     expect(harness.createMapping).not.toHaveBeenCalled();
+  });
+
+  it('preserves editorial overrides and reports provider updates hidden by them', async () => {
+    const existing = persistedGame({ status: 'PREGAME' });
+    const harness = createPrisma(existing, true, true);
+    await expect(syncGames(createProvider(), harness.prisma)).resolves.toMatchObject({
+      updated: 1,
+      hiddenByEditorialOverrides: 1,
+    });
+    expect(harness.updateGame).toHaveBeenCalledOnce();
   });
 
   it('reports a missing provider-team mapping without writing a partial game', async () => {

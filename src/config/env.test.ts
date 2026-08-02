@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { EnvironmentValidationError, loadConfig } from './env.js';
+import { EnvironmentValidationError, loadConfig, loadHighlightlyEvaluationConfig } from './env.js';
 
 const requiredEnvironment = {
   DATABASE_URL: 'postgresql://test:test@localhost:5432/test?schema=public',
@@ -192,5 +192,43 @@ describe('loadConfig', () => {
         API_SPORTS_KEY: 'different-secret',
       }),
     ).toThrow(EnvironmentValidationError);
+  });
+});
+
+describe('loadHighlightlyEvaluationConfig', () => {
+  it('loads a private evaluation-only configuration without database or app secrets', () => {
+    expect(
+      loadHighlightlyEvaluationConfig({
+        HIGHLIGHTLY_API_KEY: 'private-test-key',
+        HIGHLIGHTLY_EVALUATION_SEASON: '2026',
+      }),
+    ).toEqual({
+      logLevel: 'info',
+      apiKey: 'private-test-key',
+      baseUrl: 'https://american-football.highlightly.net',
+      requestTimeoutMs: 10_000,
+      maxRetries: 1,
+      evaluationSeason: 2026,
+    });
+  });
+
+  it('fails safely when the key or season is missing and rejects insecure transport', () => {
+    expect(() => loadHighlightlyEvaluationConfig({})).toThrow(EnvironmentValidationError);
+    expect(() =>
+      loadHighlightlyEvaluationConfig({
+        HIGHLIGHTLY_API_KEY: 'secret-not-for-errors',
+        HIGHLIGHTLY_EVALUATION_SEASON: '2026',
+        HIGHLIGHTLY_BASE_URL: 'http://example.test',
+      }),
+    ).toThrow(EnvironmentValidationError);
+  });
+
+  it('uses the explicit application season when an evaluation-specific season is omitted', () => {
+    expect(
+      loadHighlightlyEvaluationConfig({
+        HIGHLIGHTLY_API_KEY: 'private-test-key',
+        CURRENT_NFL_SEASON: '2026',
+      }).evaluationSeason,
+    ).toBe(2026);
   });
 });

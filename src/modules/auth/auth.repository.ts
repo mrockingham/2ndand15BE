@@ -92,6 +92,7 @@ export class PrismaAuthRepository implements AuthRepository {
             normalizedEmail: input.normalizedEmail,
             passwordHash: input.passwordHash,
             displayName: input.displayName,
+            role: 'USER',
           },
           include: userWithFavoriteTeamInclude,
         });

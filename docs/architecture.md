@@ -2,11 +2,11 @@
 
 ## Status
 
-This document defines the backend architecture through the API-Sports synchronization milestone. The service foundation, normalized mock/API-Sports-backed team and game catalogs, authentication lifecycle, database-backed refresh sessions, password-reset flow, and favorite-team personalization are implemented.
+This document defines the backend architecture through the administrative schedule milestone. The service foundation, normalized mock/API-Sports-backed team and game catalogs, authentication lifecycle, favorite-team personalization, role-protected schedule maintenance, provenance, editorial overrides, imports, and audit history are implemented.
 
 ## System context
 
-The backend is a Node.js/TypeScript REST service. A separately deployed consumer frontend calls it over HTTPS. PostgreSQL is the system of record for users, refresh sessions, teams, games, and provider mappings. Local fixture data remains the default; API-Sports can be selected for explicit synchronization commands.
+The backend is a Node.js/TypeScript REST service. A separately deployed consumer frontend calls it over HTTPS. PostgreSQL is the system of record for users, refresh sessions, teams, games, provenance, editorial overrides, audit events, and provider mappings. Local fixture data remains the default; API-Sports can be selected for explicit synchronization commands.
 
 ```text
 Frontend
@@ -194,22 +194,30 @@ Provider status adapters map into `SCHEDULED`, `PREGAME`, `IN_PROGRESS`, `HALFTI
 
 All initial routes are under `/api/v1`.
 
-| Method | Path                      | Authentication        | Purpose                                                    |
-| ------ | ------------------------- | --------------------- | ---------------------------------------------------------- |
-| GET    | `/health`                 | None                  | Process health; dependency readiness can be separate later |
-| POST   | `/auth/register`          | None                  | Create a user and return authentication result             |
-| POST   | `/auth/login`             | None                  | Authenticate credentials and return authentication result  |
-| POST   | `/auth/refresh`           | Refresh token         | Rotate a refresh token and issue a new access token        |
-| POST   | `/auth/logout`            | Refresh token/session | Revoke the current refresh session                         |
-| POST   | `/auth/forgot-password`   | None                  | Return a generic reset-request response                    |
-| POST   | `/auth/reset-password`    | Reset token in body   | Replace the password and revoke all sessions               |
-| GET    | `/users/me`               | Access token          | Return the authenticated active user                       |
-| PATCH  | `/users/me/favorite-team` | Access token          | Set, replace, or optionally clear the favorite team        |
-| GET    | `/teams`                  | None                  | Return active normalized teams                             |
-| GET    | `/teams/:teamId`          | None                  | Return one normalized team                                 |
-| GET    | `/games`                  | None                  | Return a bounded, filterable page of normalized games      |
-| GET    | `/games/:gameId`          | None                  | Return one normalized game                                 |
-| GET    | `/teams/:teamId/games`    | None                  | Return games involving one active team                     |
+| Method | Path                                | Authentication        | Purpose                                                     |
+| ------ | ----------------------------------- | --------------------- | ----------------------------------------------------------- |
+| GET    | `/health`                           | None                  | Process health; dependency readiness can be separate later  |
+| POST   | `/auth/register`                    | None                  | Create a user and return authentication result              |
+| POST   | `/auth/login`                       | None                  | Authenticate credentials and return authentication result   |
+| POST   | `/auth/refresh`                     | Refresh token         | Rotate a refresh token and issue a new access token         |
+| POST   | `/auth/logout`                      | Refresh token/session | Revoke the current refresh session                          |
+| POST   | `/auth/forgot-password`             | None                  | Return a generic reset-request response                     |
+| POST   | `/auth/reset-password`              | Reset token in body   | Replace the password and revoke all sessions                |
+| GET    | `/users/me`                         | Access token          | Return the authenticated active user                        |
+| PATCH  | `/users/me/favorite-team`           | Access token          | Set, replace, or optionally clear the favorite team         |
+| GET    | `/teams`                            | None                  | Return active normalized teams                              |
+| GET    | `/teams/:teamId`                    | None                  | Return one normalized team                                  |
+| GET    | `/games`                            | None                  | Return a bounded, filterable page of normalized games       |
+| GET    | `/games/:gameId`                    | None                  | Return one normalized game                                  |
+| GET    | `/teams/:teamId/games`              | None                  | Return games involving one active team                      |
+| GET    | `/admin/games`                      | Editor/Admin          | View games with internal provenance and overrides           |
+| POST   | `/admin/games`                      | Editor/Admin          | Create a manually owned game                                |
+| PATCH  | `/admin/games/:gameId`              | Editor/Admin          | Edit a manually owned base game                             |
+| PUT    | `/admin/games/:gameId/override`     | Editor/Admin          | Create or partially update an editorial override            |
+| DELETE | `/admin/games/:gameId/override`     | Admin                 | Remove an editorial override                                |
+| PUT    | `/admin/games/:gameId/verification` | Editor/Admin          | Record factual verification                                 |
+| POST   | `/admin/schedule-imports`           | Editor/Admin          | Validate or import bounded schedule rows                    |
+| GET    | `/admin/audit-events`               | Editor/Admin          | Read game-scoped (editor) or complete (admin) audit history |
 
 The favorite-team endpoint accepts `favoriteTeamId: null` to clear the favorite. Every non-null value must reference an existing, active internal team.
 
@@ -336,6 +344,18 @@ API-Sports teams are matched to stable internal teams by existing mapping, abbre
 
 Provider evaluation is a separate read-only boundary. Evaluators produce validated, sanitized reports with explicit verified, unavailable, and untested evidence states plus pass/warning/failure findings. Evaluation never mutates PostgreSQL or stores request credentials. Reports live under `docs/provider-evaluations/` so future providers can be assessed before adapter approval.
 
+The Highlightly evaluator is intentionally not a `SportsDataProvider` adapter. Its evaluation-only client validates the limited external payloads it inspects, authenticates through a private header, counts requests, applies timeouts and bounded idempotent retries, and has no database dependency. Running it cannot change `SPORTS_PROVIDER`, public DTOs, routes, mappings, or persisted sports data.
+
+## Administrative schedule architecture
+
+`User.role` is constrained to `USER`, `EDITOR`, or `ADMIN` and defaults to `USER`. Registration writes `USER` explicitly. Access-token claims remain limited to user/session identity; administrative middleware reads the active user's current role from PostgreSQL and checks an explicit capability map, so demotions do not wait for token expiry. Role management remains a deliberately narrow audited CLI operation.
+
+`GameProvenance` records source type/name, optional source URL and external reference, import time, notes, and factual verification. Existing mock games are classified as `DEVELOPMENT_FIXTURE`; API-Sports games are classified as `PROVIDER`. `GameEditorialOverride` is one-to-one with a game and stores only supported schedule corrections. Nullable override fields fall back to the normalized base record. `AdminAuditEvent` is append-only through application APIs and retains actor snapshots even if relational actor IDs are later set null.
+
+Public game reads fetch overrides with teams in one bounded query. Effective date, week, and status filtering and kickoff ordering use override values before base values. Candidate resolution is capped at 1,000 records; an overbroad query fails explicitly. Public DTOs expose only the effective game and retain their existing schema.
+
+CSV and JSON imports validate complete batches before writing. CLI imports default to dry-run and require `--write`. Matching uses source external reference and then schedule identity. Manually owned matches update the base record; provider-backed matches create or update an editorial override, leaving provider mappings and base synchronization intact. See `docs/schedule-imports.md` and `docs/administration.md`.
+
 ## Deferred architecture
 
-The game fixture is development-only and is not official current NFL information. Automated scheduling, live polling, WebSockets, play-by-play, drives, statistics, standings, news, injuries, odds, predictions, fantasy, notifications, distributed caches, and queues remain deferred. These features need their own requirements around latency, licensing, provenance, corrections, cost, and historical auditability.
+The game fixture is development-only and is not official current NFL information. An admin frontend, automated scheduling, live polling, WebSockets, play-by-play, drives, statistics, standings, news, injuries, odds, predictions, fantasy, notifications, distributed caches, and queues remain deferred. These features need their own requirements around latency, licensing, provenance, corrections, cost, and historical auditability.

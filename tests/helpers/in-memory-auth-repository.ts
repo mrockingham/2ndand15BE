@@ -38,6 +38,7 @@ export class InMemoryAuthRepository implements AuthRepository, UserRepository {
       passwordHash: input.passwordHash,
       displayName: input.displayName,
       isActive: true,
+      role: 'USER',
       favoriteTeamId: null,
       createdAt: now,
       updatedAt: now,

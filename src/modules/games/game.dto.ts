@@ -1,8 +1,12 @@
 import type { Prisma } from '../../generated/prisma/client.js';
 
-export type GameWithTeams = Prisma.GameGetPayload<{
-  include: { homeTeam: true; awayTeam: true };
-}>;
+export const publicGameInclude = {
+  homeTeam: true,
+  awayTeam: true,
+  editorialOverride: true,
+} satisfies Prisma.GameInclude;
+
+export type GameWithTeams = Prisma.GameGetPayload<{ include: typeof publicGameInclude }>;
 
 export interface GameTeamSummaryDto {
   readonly id: string;
@@ -41,23 +45,27 @@ export interface GameDto {
 }
 
 export function toGameDto(game: GameWithTeams): GameDto {
+  const override = game.editorialOverride;
   return {
     id: game.id,
     league: game.league,
     season: game.season,
     seasonType: game.seasonType,
-    week: game.week,
-    startTime: game.startTime.toISOString(),
-    status: game.status,
+    week: override?.week ?? game.week,
+    startTime: (override?.startTime ?? game.startTime).toISOString(),
+    status: override?.status ?? game.status,
     homeTeam: toTeamSummary(game.homeTeam),
     awayTeam: toTeamSummary(game.awayTeam),
     homeScore: game.homeScore,
     awayScore: game.awayScore,
     quarter: game.quarter,
     clock: game.clock,
-    venue: { name: game.venueName, city: game.venueCity },
-    broadcastNetwork: game.broadcastNetwork,
-    isNeutralSite: game.isNeutralSite,
+    venue: {
+      name: override?.venueName ?? game.venueName,
+      city: override?.venueCity ?? game.venueCity,
+    },
+    broadcastNetwork: override?.broadcastNetwork ?? game.broadcastNetwork,
+    isNeutralSite: override?.isNeutralSite ?? game.isNeutralSite,
   };
 }
 

@@ -4,7 +4,8 @@ import type {
   PrismaClient,
   SeasonType,
 } from '../../generated/prisma/client.js';
-import type { GameWithTeams } from './game.dto.js';
+import { AppError } from '../../common/errors/app-error.js';
+import { publicGameInclude, type GameWithTeams } from './game.dto.js';
 
 export interface GameListFilters {
   readonly season?: number;
@@ -26,7 +27,7 @@ export interface GameRepository {
   findGameById(gameId: string): Promise<GameWithTeams | null>;
   activeTeamExists(teamId: string): Promise<boolean>;
 }
-const includeTeams = { homeTeam: true, awayTeam: true } as const;
+const MAX_RESOLVED_QUERY_CANDIDATES = 1_000;
 export type GameDataSource = 'mock' | 'api-sports' | 'future-provider' | 'none';
 export interface PublicGameSourcePolicy {
   readonly provider: 'mock' | 'api-sports';
@@ -43,33 +44,38 @@ export class PrismaGameRepository implements GameRepository {
     private readonly sourceProvider?: GameDataSource,
   ) {}
   async findGames(filters: GameListFilters): Promise<GamePage> {
-    const games = await this.prisma.game.findMany({
+    const candidates = await this.prisma.game.findMany({
       where: {
         league: 'NFL',
-        ...toSourceWhere(this.sourceProvider),
         ...(filters.season === undefined ? {} : { season: filters.season }),
         ...(filters.seasonType === undefined ? {} : { seasonType: filters.seasonType }),
-        ...(filters.week === undefined ? {} : { week: filters.week }),
-        ...(filters.status === undefined ? {} : { status: filters.status }),
-        ...(filters.startTime === undefined && filters.endTime === undefined
-          ? {}
-          : {
-              startTime: {
-                ...(filters.startTime === undefined ? {} : { gte: filters.startTime }),
-                ...(filters.endTime === undefined ? {} : { lte: filters.endTime }),
-              },
-            }),
-        ...(filters.teamId === undefined
-          ? {}
-          : { OR: [{ homeTeamId: filters.teamId }, { awayTeamId: filters.teamId }] }),
+        AND: [
+          toSourceWhere(this.sourceProvider),
+          ...(filters.teamId === undefined
+            ? []
+            : [{ OR: [{ homeTeamId: filters.teamId }, { awayTeamId: filters.teamId }] }]),
+        ],
       },
-      include: includeTeams,
-      orderBy: [{ startTime: 'asc' }, { id: 'asc' }],
-      take: filters.limit + 1,
-      ...(filters.cursor === undefined ? {} : { cursor: { id: filters.cursor }, skip: 1 }),
+      include: publicGameInclude,
+      orderBy: { id: 'asc' },
+      take: MAX_RESOLVED_QUERY_CANDIDATES + 1,
     });
-    const hasMore = games.length > filters.limit;
-    const pageGames = hasMore ? games.slice(0, filters.limit) : games;
+    if (candidates.length > MAX_RESOLVED_QUERY_CANDIDATES) {
+      throw new AppError({
+        code: 'GAME_QUERY_TOO_BROAD',
+        message: 'The game query is too broad. Add season or date filters.',
+        statusCode: 400,
+      });
+    }
+    const games = candidates
+      .filter((game) => matchesResolvedFilters(game, filters))
+      .sort(compareResolvedKickoff);
+    const cursorIndex =
+      filters.cursor === undefined ? -1 : games.findIndex((game) => game.id === filters.cursor);
+    const afterCursor =
+      filters.cursor === undefined ? games : cursorIndex < 0 ? [] : games.slice(cursorIndex + 1);
+    const hasMore = afterCursor.length > filters.limit;
+    const pageGames = hasMore ? afterCursor.slice(0, filters.limit) : afterCursor;
     return { games: pageGames, nextCursor: hasMore ? (pageGames.at(-1)?.id ?? null) : null };
   }
   findGameById(gameId: string): Promise<GameWithTeams | null> {
@@ -78,7 +84,7 @@ export class PrismaGameRepository implements GameRepository {
         id: gameId,
         ...toSourceWhere(this.sourceProvider),
       },
-      include: includeTeams,
+      include: publicGameInclude,
     });
   }
   async activeTeamExists(teamId: string): Promise<boolean> {
@@ -90,8 +96,33 @@ export class PrismaGameRepository implements GameRepository {
 
 function toSourceWhere(source: GameDataSource | undefined): Prisma.GameWhereInput {
   if (source === undefined) return {};
+  const manuallyMaintained: Prisma.GameWhereInput = {
+    provenance: {
+      is: { sourceType: { in: ['MANUAL_IMPORT', 'MANUAL_ENTRY', 'OFFICIAL_WEB'] } },
+    },
+  };
   if (source === 'none') {
-    return { providerMaps: { some: { provider: '__disabled_public_game_source__' } } };
+    return manuallyMaintained;
   }
-  return { providerMaps: { some: { provider: source } } };
+  return {
+    OR: [{ providerMaps: { some: { provider: source } } }, manuallyMaintained],
+  };
+}
+
+function matchesResolvedFilters(game: GameWithTeams, filters: GameListFilters): boolean {
+  const override = game.editorialOverride;
+  const startTime = override?.startTime ?? game.startTime;
+  return (
+    (filters.week === undefined || (override?.week ?? game.week) === filters.week) &&
+    (filters.status === undefined || (override?.status ?? game.status) === filters.status) &&
+    (filters.startTime === undefined || startTime >= filters.startTime) &&
+    (filters.endTime === undefined || startTime <= filters.endTime)
+  );
+}
+
+function compareResolvedKickoff(left: GameWithTeams, right: GameWithTeams): number {
+  const difference =
+    (left.editorialOverride?.startTime ?? left.startTime).getTime() -
+    (right.editorialOverride?.startTime ?? right.startTime).getTime();
+  return difference === 0 ? left.id.localeCompare(right.id) : difference;
 }

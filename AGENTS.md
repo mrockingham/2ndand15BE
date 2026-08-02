@@ -20,6 +20,9 @@ Keep the current milestone small. Do not implement future product ideas merely b
 - Internal `Team.id` values are the stable keys used by users and other product data.
 - Provider identifiers belong in `TeamProviderMapping` and must not become foreign keys in product-facing models.
 - Internal `Game.id` values are public game keys; provider game IDs belong only in `GameProviderMapping`.
+- Public game fields resolve editorial overrides before normalized base values; provider synchronization must never delete or overwrite override rows.
+- Public registration always creates role `USER`; administrative capabilities come from the current persisted role, never request input or stale token claims.
+- Audit and provenance metadata, internal editorial notes, and actor snapshots must remain private to authorized administrative routes.
 - Public game queries without an explicit season must be constrained to `CURRENT_NFL_SEASON`; historical seasons require an explicit query.
 - Development fixture games must remain hidden unless `FIXTURE_DATA_ENABLED` is explicitly enabled.
 - A user may have zero or one favorite team during the MVP.
@@ -92,6 +95,7 @@ Lower layers must not import higher layers. Avoid cross-module access to another
 - Use a transaction when a use case makes multiple writes that must succeed or fail together.
 - Seed teams idempotently using stable internal identifiers or another documented stable key. Re-running a seed must not create duplicate teams or mappings.
 - Synchronize games idempotently through provider mappings, resolve teams to internal IDs, and never delete games solely because a provider response omits them.
+- Schedule imports must be bounded, validated, dry-run capable, idempotent, and audited; source URLs are metadata and must never be fetched automatically.
 - Review migration SQL before committing it. Never edit an already-applied migration to change production history; add a new migration.
 
 ## Sports data providers
@@ -102,6 +106,7 @@ Lower layers must not import higher layers. Avoid cross-module access to another
 - The API-Sports provider key is `api-sports`; its credential is supplied by `SPORTS_API` and must never be logged, committed, or exposed through API/OpenAPI contracts.
 - API-Sports may be called only by explicit synchronization or opt-in verification commands, never by public request handlers.
 - Provider evaluations are read-only, sanitized, credential-free, and stored under `docs/provider-evaluations/`; unavailable and untested capabilities must not be presented as verified.
+- Evaluation-only Highlightly code must remain outside provider composition and persistence; it must not become an active `SportsDataProvider` without a separately approved milestone.
 - A normalized record may carry an internal ID where the domain already has one; provider IDs must remain explicit mapping metadata and must not masquerade as internal IDs.
 - Preserve attribution and asset-source metadata required by provider terms.
 - Keep API-Sports logo storage disabled unless provider terms have been reviewed and `API_SPORTS_STORE_LOGO_URLS` is explicitly enabled.

@@ -8,6 +8,8 @@ import { CryptoOpaqueTokenService } from './common/security/opaque-token.js';
 import { Argon2idPasswordHasher } from './common/security/password-hasher.js';
 import { loadConfig } from './config/env.js';
 import { PrismaAuthRepository } from './modules/auth/auth.repository.js';
+import { PrismaAdminRepository } from './modules/admin/admin.repository.js';
+import { AdminService } from './modules/admin/admin.service.js';
 import { AuthService } from './modules/auth/auth.service.js';
 import { DevelopmentEmailService } from './modules/email/in-memory-email.service.js';
 import {
@@ -23,6 +25,8 @@ import { UserService } from './modules/users/user.service.js';
 const config = loadConfig();
 const logger = createLogger(config);
 const prisma = createPrismaClient(config.databaseUrl);
+const adminRepository = new PrismaAdminRepository(prisma);
+const adminService = new AdminService(adminRepository);
 const teamReader = new TeamService(new PrismaTeamRepository(prisma));
 const publicGameSource = resolvePublicGameDataSource(config.sports);
 const gameReader = new GameService(
@@ -60,6 +64,8 @@ const app = createApp({
   authService,
   userService,
   accessTokens,
+  adminService,
+  adminIdentities: adminRepository,
 });
 
 const server = app.listen(config.port, config.host, (error?: Error) => {

@@ -30,6 +30,7 @@ const authResponseSchema = z
             email: z.email(),
             displayName: z.string().nullable(),
             isActive: z.boolean(),
+            role: z.enum(['USER', 'EDITOR', 'ADMIN']),
             favoriteTeam: z
               .object({
                 id: z.uuid(),
@@ -104,6 +105,7 @@ describe('authentication routes', () => {
     expect(response.status).toBe(201);
     const body = authResponseSchema.parse(response.body);
     expect(body.data.user).toMatchObject({ email: 'User@Example.com', displayName: 'Michael' });
+    expect(body.data.user.role).toBe('USER');
     expect(body.data.user.favoriteTeam).toBeNull();
     expect(repository.users[0]?.passwordHash).not.toContain('a secure password');
     const setCookie = getFirstSetCookie(response.headers['set-cookie']);

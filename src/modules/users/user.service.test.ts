@@ -72,6 +72,7 @@ function createHarness(overrides: Partial<User> = {}) {
     passwordHash: 'not-public',
     displayName: null,
     isActive: true,
+    role: 'USER',
     favoriteTeamId: null,
     createdAt: now,
     updatedAt: now,

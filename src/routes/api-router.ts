@@ -4,6 +4,9 @@ import swaggerUi from 'swagger-ui-express';
 
 import { createApiRateLimiter } from '../common/middleware/rate-limit.js';
 import type { AppConfig } from '../config/env.js';
+import { createAdminRouter } from '../modules/admin/admin.routes.js';
+import type { AdministrativeIdentityReader } from '../modules/admin/admin-authorization.js';
+import type { AdministrativeScheduleService } from '../modules/admin/admin.service.js';
 import { openApiDocument } from '../docs/openapi.js';
 import type { HealthControllerOptions } from '../modules/health/health.controller.js';
 import { createGameRouter, createTeamGameRouter } from '../modules/games/game.routes.js';
@@ -26,6 +29,8 @@ export interface ApiRouterOptions {
   readonly authenticate: RequestHandler;
   readonly authConfig: AppConfig['auth'];
   readonly passwordResetConfig: AppConfig['passwordReset'];
+  readonly adminService?: AdministrativeScheduleService;
+  readonly adminIdentities?: AdministrativeIdentityReader;
 }
 
 export function createApiRouter(options: ApiRouterOptions): Router {
@@ -54,6 +59,17 @@ export function createApiRouter(options: ApiRouterOptions): Router {
     swaggerUi.setup(openApiDocument),
   );
   router.use('/health', createHealthRouter(options.health));
+  if (options.adminService !== undefined && options.adminIdentities !== undefined) {
+    router.use(
+      '/admin',
+      createAdminRouter({
+        authenticate: options.authenticate,
+        identities: options.adminIdentities,
+        service: options.adminService,
+        importRateLimit: options.authConfig.rateLimit,
+      }),
+    );
+  }
   router.use('/games', createGameRouter(options.gameReader));
   router.use('/teams/:teamId/games', createTeamGameRouter(options.gameReader));
   router.use('/teams', createTeamRouter(options.teamReader));

@@ -69,6 +69,39 @@ const optionalSecretSchema = z.preprocess(
   z.string().min(1).max(1024).optional(),
 );
 
+const optionalSeasonSchema = z.preprocess(
+  (value) => (value === '' || value === undefined ? undefined : value),
+  z.coerce.number().int().min(1920).max(2100).optional(),
+);
+
+const highlightlyEvaluationEnvironmentSchema = z
+  .object({
+    LOG_LEVEL: z
+      .enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'])
+      .default('info'),
+    HIGHLIGHTLY_API_KEY: z.string().min(1).max(1024),
+    HIGHLIGHTLY_BASE_URL: z
+      .url()
+      .refine((value) => new URL(value).protocol === 'https:', 'Must use HTTPS')
+      .default('https://american-football.highlightly.net'),
+    HIGHLIGHTLY_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(100).max(60_000).default(10_000),
+    HIGHLIGHTLY_MAX_RETRIES: z.coerce.number().int().min(0).max(3).default(1),
+    HIGHLIGHTLY_EVALUATION_SEASON: optionalSeasonSchema,
+    CURRENT_NFL_SEASON: optionalSeasonSchema,
+  })
+  .superRefine((value, context) => {
+    if (
+      value.HIGHLIGHTLY_EVALUATION_SEASON === undefined &&
+      value.CURRENT_NFL_SEASON === undefined
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['HIGHLIGHTLY_EVALUATION_SEASON'],
+        message: 'Is required when CURRENT_NFL_SEASON is not configured',
+      });
+    }
+  });
+
 const databaseEnvironmentSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   DATABASE_URL: postgresUrlSchema,
@@ -217,6 +250,15 @@ export interface SportsSyncConfig extends DatabaseConfig {
   readonly sports: SportsConfig;
 }
 
+export interface HighlightlyEvaluationConfig {
+  readonly logLevel: DatabaseConfig['logLevel'];
+  readonly apiKey: string;
+  readonly baseUrl: string;
+  readonly requestTimeoutMs: number;
+  readonly maxRetries: number;
+  readonly evaluationSeason: number;
+}
+
 export interface RateLimitConfig {
   readonly windowMs: number;
   readonly max: number;
@@ -253,6 +295,24 @@ export function loadSportsSyncConfig(
     databaseUrl: data.DATABASE_URL,
     logLevel: data.LOG_LEVEL,
     sports: toSportsConfig(data),
+  };
+}
+
+export function loadHighlightlyEvaluationConfig(
+  environment: Record<string, string | undefined> = process.env,
+): HighlightlyEvaluationConfig {
+  const data = parseEnvironment(highlightlyEvaluationEnvironmentSchema, environment);
+  const evaluationSeason = data.HIGHLIGHTLY_EVALUATION_SEASON ?? data.CURRENT_NFL_SEASON;
+  if (evaluationSeason === undefined) {
+    throw new EnvironmentValidationError(['HIGHLIGHTLY_EVALUATION_SEASON: Is required']);
+  }
+  return {
+    logLevel: data.LOG_LEVEL,
+    apiKey: data.HIGHLIGHTLY_API_KEY,
+    baseUrl: data.HIGHLIGHTLY_BASE_URL,
+    requestTimeoutMs: data.HIGHLIGHTLY_REQUEST_TIMEOUT_MS,
+    maxRetries: data.HIGHLIGHTLY_MAX_RETRIES,
+    evaluationSeason,
   };
 }
 

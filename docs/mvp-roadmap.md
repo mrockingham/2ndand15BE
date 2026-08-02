@@ -195,6 +195,50 @@ Exit criteria:
 - No credential or credential header appears in tracked evaluation output.
 - All quality and hosted verification gates pass.
 
+## Highlightly NFL provider evaluation
+
+Goal: evaluate Highlightly's 2026 NFL schedule, game detail, play events, statistics, standings, operational behavior, and licensing constraints without implementing an adapter or touching persisted data.
+
+**Status:** Complete on August 1, 2026. The live read-only evaluation passed current-season schedule suitability with warnings; Highlightly is not approved as the primary provider pending written data-publication, storage, transformation, and logo-rights confirmation.
+
+Boundaries:
+
+- Evaluation-only configuration and HTTP client
+- Official documentation and OpenAPI version recorded
+- Eight-request maximum per evaluation run with a two-request early stop when 2026 is absent
+- Explicit runtime schemas and sanitized coverage analysis
+- No Prisma, synchronization, mappings, migration, active-provider, or public API changes
+
+## Milestone 7 — Administrative schedule stewardship
+
+Goal: make PostgreSQL the editorial source of truth for NFL schedules without coupling corrections to one sports provider.
+
+**Status:** Complete on August 2, 2026. The hosted migration, fictional dry-run/write/idempotency import, HTTP smoke, and full verification gates passed.
+
+Deliverables:
+
+- `USER`, `EDITOR`, and `ADMIN` roles with current-role capability checks
+- Safe audited role-promotion CLI for existing users
+- Game provenance and factual verification metadata
+- Separate one-per-game editorial overrides with field-by-field public resolution
+- Provider-sync preservation and hidden-base-update summaries
+- Bounded CSV/JSON schedule validation, dry-run, deterministic matching, and idempotent import
+- Protected administrative schedule, override, verification, import, and audit endpoints
+- Immutable-style sanitized administrative audit history
+
+Boundaries:
+
+- No administrative frontend, score override, scraping, scheduled sync, or media ingestion
+- Highlightly remains evaluation-only
+- Public game DTOs and provider identifiers remain unchanged
+
+Exit criteria:
+
+- Existing users migrate to `USER`, registration cannot assign roles, and authorization boundaries are tested.
+- Fictional imports are dry-run verified, applied once, and skipped idempotently on repeat.
+- Provider mappings survive imports and sync; editorial overrides retain precedence.
+- Migration, hosted checks, HTTP smoke tests, OpenAPI, documentation, and all quality gates pass.
+
 ## Later roadmap themes
 
 After the first slice is stable, define separate milestones for:

@@ -14,6 +14,7 @@ export interface GameSyncResult {
   readonly updated: number;
   readonly skipped: number;
   readonly failed: number;
+  readonly hiddenByEditorialOverrides: number;
   readonly failures: readonly GameSyncFailure[];
   readonly dryRun: boolean;
 }
@@ -52,7 +53,7 @@ export async function syncGames(
       provider: providerName,
       providerGameId: { in: games.map((game) => game.providerGameId) },
     },
-    include: { game: true },
+    include: { game: { include: { editorialOverride: true } } },
   });
   const existingByProviderGameId = new Map(
     existingMappings.map((mapping) => [mapping.providerGameId, mapping.game]),
@@ -67,6 +68,7 @@ export async function syncGames(
     homeTeamId: string;
     awayTeamId: string;
     existing: Game | undefined;
+    hasEditorialOverride: boolean;
   }[] = [];
 
   for (const game of games) {
@@ -88,12 +90,16 @@ export async function syncGames(
       homeTeamId,
       awayTeamId,
       existing: existingByProviderGameId.get(game.providerGameId),
+      hasEditorialOverride:
+        (existingMappings.find((mapping) => mapping.providerGameId === game.providerGameId)?.game
+          .editorialOverride ?? null) !== null,
     });
   }
 
   let created = 0;
   let updated = 0;
   let skipped = Math.max(0, batch.received - games.length - batch.failures.length);
+  let hiddenByEditorialOverrides = 0;
 
   for (const item of ready) {
     const data = toGameWrite(item.normalized, item.homeTeamId, item.awayTeamId);
@@ -111,6 +117,13 @@ export async function syncGames(
             providerGameId: item.normalized.providerGameId,
           },
         });
+        await transaction.gameProvenance.create({
+          data: {
+            gameId: game.id,
+            sourceType: item.normalized.provider === 'mock' ? 'DEVELOPMENT_FIXTURE' : 'PROVIDER',
+            sourceName: item.normalized.provider,
+          },
+        });
       });
       created += 1;
     } else if (matchesPersistedGame(item.existing, data)) {
@@ -123,6 +136,7 @@ export async function syncGames(
         await transaction.game.update({ where: { id: existingId }, data });
       });
       updated += 1;
+      if (item.hasEditorialOverride) hiddenByEditorialOverrides += 1;
     }
   }
 
@@ -133,6 +147,7 @@ export async function syncGames(
     updated,
     skipped,
     failed: failures.length,
+    hiddenByEditorialOverrides,
     failures,
     dryRun: options.dryRun ?? false,
   };

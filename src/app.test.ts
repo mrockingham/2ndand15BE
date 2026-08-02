@@ -152,6 +152,20 @@ describe('application middleware', () => {
         '/users/me/favorite-team': {
           patch: { operationId: 'updateFavoriteTeam' },
         },
+        '/admin/games': {
+          get: { operationId: 'listAdminGames' },
+          post: { operationId: 'createAdminGame' },
+        },
+        '/admin/games/{gameId}/override': {
+          put: { operationId: 'upsertGameOverride' },
+          delete: { operationId: 'deleteGameOverride' },
+        },
+        '/admin/schedule-imports': {
+          post: { operationId: 'importSchedule' },
+        },
+        '/admin/audit-events': {
+          get: { operationId: 'listAdminAuditEvents' },
+        },
       },
     });
   });

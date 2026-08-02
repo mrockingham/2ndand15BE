@@ -14,6 +14,7 @@ export interface UserDto {
   readonly email: string;
   readonly displayName: string | null;
   readonly isActive: boolean;
+  readonly role: 'USER' | 'EDITOR' | 'ADMIN';
   readonly favoriteTeam: TeamDto | null;
   readonly createdAt: string;
   readonly updatedAt: string;
@@ -25,6 +26,7 @@ export function toUserDto(user: UserWithFavoriteTeam): UserDto {
     email: user.email,
     displayName: user.displayName,
     isActive: user.isActive,
+    role: user.role,
     favoriteTeam: user.favoriteTeam === null ? null : toTeamDto(user.favoriteTeam),
     createdAt: user.createdAt.toISOString(),
     updatedAt: user.updatedAt.toISOString(),

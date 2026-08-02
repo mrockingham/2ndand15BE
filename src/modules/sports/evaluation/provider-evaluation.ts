@@ -80,7 +80,7 @@ export function serializeProviderEvaluationReport(
 ): string {
   const validated = providerEvaluationReportSchema.parse(report);
   const serialized = `${renderSummary(validated)}\n\n\`\`\`json\n${JSON.stringify(validated, null, 2)}\n\`\`\`\n`;
-  assertCredentialSafe(serialized, forbiddenSecrets);
+  assertCredentialSafeText(serialized, forbiddenSecrets);
   return serialized;
 }
 
@@ -104,8 +104,11 @@ export function untestedFact<T>(note: string): EvaluationFact<T> {
   return { state: 'untested', value: null, note };
 }
 
-function assertCredentialSafe(serialized: string, forbiddenSecrets: readonly string[]): void {
-  if (/x-apisports-key|authorization\s*:/i.test(serialized)) {
+export function assertCredentialSafeText(
+  serialized: string,
+  forbiddenSecrets: readonly string[],
+): void {
+  if (/x-apisports-key|x-rapidapi-key|authorization\s*:/i.test(serialized)) {
     throw new Error('Provider evaluation report contains a credential header name.');
   }
   for (const secret of forbiddenSecrets) {

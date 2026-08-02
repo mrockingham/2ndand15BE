@@ -34,6 +34,7 @@ export function createGameRecord(overrides: Partial<Game> = {}): GameWithTeams {
     providerLastUpdatedAt: null,
     createdAt: new Date('2026-07-31T12:00:00.000Z'),
     updatedAt: new Date('2026-07-31T12:00:00.000Z'),
+    editorialOverride: null,
     homeTeam,
     awayTeam,
     ...overrides,

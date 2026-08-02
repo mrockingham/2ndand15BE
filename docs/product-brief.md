@@ -95,7 +95,7 @@ The initial team source is a version-controlled local fixture accessed through t
 - Player, injury, or transaction data
 - Fantasy-provider imports and fantasy recommendations
 - Additional followed teams
-- Production email-vendor integration, email verification, password change for authenticated users, social login, roles, or administration
+- Production email-vendor integration, email verification, password change for authenticated users, social login, or an administrative frontend
 - Paid contests, wagering, and cash prizes
 - Frontend implementation
 
