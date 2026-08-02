@@ -1,0 +1,2 @@
+season,seasonType,week,startTime,awayTeam,homeTeam,status,venueName,venueCity,broadcastNetwork,isNeutralSite,sourceName,sourceType,sourceUrl,externalReference,notes
+2099,PRE,1,2099-08-14T23:00:00Z,MIA,BUF,SCHEDULED,Development Stadium,Example City,,false,2nd and 15 development fixture,DEVELOPMENT_FIXTURE,,milestone7-fictional-2099-001,Fictional example only

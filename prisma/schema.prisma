@@ -1,0 +1,273 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum League {
+  NFL
+}
+
+enum Conference {
+  AFC
+  NFC
+}
+
+enum Division {
+  East
+  North
+  South
+  West
+}
+
+enum SeasonType {
+  PRE
+  REG
+  POST
+}
+
+enum GameStatus {
+  SCHEDULED
+  PREGAME
+  IN_PROGRESS
+  HALFTIME
+  FINAL
+  POSTPONED
+  CANCELED
+  SUSPENDED
+}
+
+enum UserRole {
+  USER
+  EDITOR
+  ADMIN
+}
+
+enum GameSourceType {
+  MANUAL_IMPORT
+  MANUAL_ENTRY
+  OFFICIAL_WEB
+  PROVIDER
+  EDITORIAL_OVERRIDE
+  DEVELOPMENT_FIXTURE
+}
+
+model User {
+  id                  String                  @id @default(uuid()) @db.Uuid
+  email               String                  @db.VarChar(254)
+  normalizedEmail     String                  @unique(map: "users_normalized_email_key") @map("normalized_email") @db.VarChar(254)
+  passwordHash        String                  @map("password_hash") @db.VarChar(255)
+  displayName         String?                 @map("display_name") @db.VarChar(80)
+  isActive            Boolean                 @default(true) @map("is_active")
+  role                UserRole                @default(USER)
+  favoriteTeamId      String?                 @map("favorite_team_id") @db.Uuid
+  createdAt           DateTime                @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt           DateTime                @updatedAt @map("updated_at") @db.Timestamptz(3)
+  sessions            Session[]
+  passwordResetTokens PasswordResetToken[]
+  favoriteTeam        Team?                   @relation("UserFavoriteTeam", fields: [favoriteTeamId], references: [id], onDelete: SetNull)
+  verifiedProvenances GameProvenance[]        @relation("GameProvenanceVerifier")
+  createdOverrides    GameEditorialOverride[] @relation("GameOverrideCreator")
+  updatedOverrides    GameEditorialOverride[] @relation("GameOverrideUpdater")
+  auditEvents         AdminAuditEvent[]       @relation("AdminAuditActor")
+
+  @@index([isActive], map: "users_active_idx")
+  @@index([favoriteTeamId], map: "users_favorite_team_id_idx")
+  @@map("users")
+}
+
+model Session {
+  id               String    @id @default(uuid()) @db.Uuid
+  userId           String    @map("user_id") @db.Uuid
+  refreshTokenHash String    @unique(map: "sessions_refresh_token_hash_key") @map("refresh_token_hash") @db.Char(64)
+  expiresAt        DateTime  @map("expires_at") @db.Timestamptz(3)
+  revokedAt        DateTime? @map("revoked_at") @db.Timestamptz(3)
+  lastUsedAt       DateTime? @map("last_used_at") @db.Timestamptz(3)
+  userAgent        String?   @map("user_agent") @db.VarChar(512)
+  ipAddress        String?   @map("ip_address") @db.VarChar(64)
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, revokedAt, expiresAt], map: "sessions_user_state_idx")
+  @@index([expiresAt], map: "sessions_expires_at_idx")
+  @@map("sessions")
+}
+
+model PasswordResetToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  tokenHash String    @unique(map: "password_reset_tokens_hash_key") @map("token_hash") @db.Char(64)
+  expiresAt DateTime  @map("expires_at") @db.Timestamptz(3)
+  usedAt    DateTime? @map("used_at") @db.Timestamptz(3)
+  userAgent String?   @map("user_agent") @db.VarChar(512)
+  ipAddress String?   @map("ip_address") @db.VarChar(64)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, usedAt], map: "password_reset_tokens_user_state_idx")
+  @@index([expiresAt], map: "password_reset_tokens_expires_at_idx")
+  @@map("password_reset_tokens")
+}
+
+model Team {
+  id             String                @id @default(uuid()) @db.Uuid
+  league         League
+  city           String                @db.VarChar(64)
+  name           String                @db.VarChar(64)
+  fullName       String                @map("full_name") @db.VarChar(128)
+  abbreviation   String                @db.VarChar(8)
+  conference     Conference
+  division       Division
+  primaryColor   String                @map("primary_color") @db.VarChar(7)
+  secondaryColor String                @map("secondary_color") @db.VarChar(7)
+  logoUrl        String?               @map("logo_url") @db.Text
+  logoSource     String?               @map("logo_source") @db.VarChar(128)
+  isActive       Boolean               @default(true) @map("is_active")
+  createdAt      DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime              @updatedAt @map("updated_at") @db.Timestamptz(3)
+  providerMaps   TeamProviderMapping[]
+  homeGames      Game[]                @relation("HomeTeamGames")
+  awayGames      Game[]                @relation("AwayTeamGames")
+  favoritedBy    User[]                @relation("UserFavoriteTeam")
+
+  @@unique([league, abbreviation], map: "teams_league_abbreviation_key")
+  @@index([league, isActive, conference, division, fullName], map: "teams_catalog_order_idx")
+  @@map("teams")
+}
+
+model Game {
+  id                    String                 @id @default(uuid()) @db.Uuid
+  league                League
+  season                Int
+  seasonType            SeasonType             @map("season_type")
+  week                  Int?
+  startTime             DateTime               @map("start_time") @db.Timestamptz(3)
+  status                GameStatus
+  homeTeamId            String                 @map("home_team_id") @db.Uuid
+  awayTeamId            String                 @map("away_team_id") @db.Uuid
+  homeScore             Int?                   @map("home_score")
+  awayScore             Int?                   @map("away_score")
+  quarter               Int?
+  clock                 String?                @db.VarChar(16)
+  venueName             String?                @map("venue_name") @db.VarChar(160)
+  venueCity             String?                @map("venue_city") @db.VarChar(128)
+  broadcastNetwork      String?                @map("broadcast_network") @db.VarChar(64)
+  isNeutralSite         Boolean                @default(false) @map("is_neutral_site")
+  providerLastUpdatedAt DateTime?              @map("provider_last_updated_at") @db.Timestamptz(3)
+  createdAt             DateTime               @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt             DateTime               @updatedAt @map("updated_at") @db.Timestamptz(3)
+  homeTeam              Team                   @relation("HomeTeamGames", fields: [homeTeamId], references: [id], onDelete: Restrict)
+  awayTeam              Team                   @relation("AwayTeamGames", fields: [awayTeamId], references: [id], onDelete: Restrict)
+  providerMaps          GameProviderMapping[]
+  provenance            GameProvenance?
+  editorialOverride     GameEditorialOverride?
+
+  @@index([league, season, seasonType, week, startTime], map: "games_schedule_idx")
+  @@index([status, startTime], map: "games_status_start_time_idx")
+  @@index([homeTeamId, startTime], map: "games_home_team_start_time_idx")
+  @@index([awayTeamId, startTime], map: "games_away_team_start_time_idx")
+  @@map("games")
+}
+
+model GameProvenance {
+  id                String         @id @default(uuid()) @db.Uuid
+  gameId            String         @unique(map: "game_provenances_game_id_key") @map("game_id") @db.Uuid
+  sourceType        GameSourceType @map("source_type")
+  sourceName        String         @map("source_name") @db.VarChar(160)
+  sourceUrl         String?        @map("source_url") @db.Text
+  externalReference String?        @map("external_reference") @db.VarChar(256)
+  notes             String?        @db.VarChar(1000)
+  importedAt        DateTime       @default(now()) @map("imported_at") @db.Timestamptz(3)
+  verifiedAt        DateTime?      @map("verified_at") @db.Timestamptz(3)
+  verifiedById      String?        @map("verified_by_id") @db.Uuid
+  createdAt         DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
+  game              Game           @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  verifiedBy        User?          @relation("GameProvenanceVerifier", fields: [verifiedById], references: [id], onDelete: SetNull)
+
+  @@unique([sourceName, externalReference], map: "game_provenances_source_reference_key")
+  @@index([sourceType, importedAt], map: "game_provenances_source_imported_idx")
+  @@index([verifiedById], map: "game_provenances_verified_by_idx")
+  @@map("game_provenances")
+}
+
+model GameEditorialOverride {
+  id                   String      @id @default(uuid()) @db.Uuid
+  gameId               String      @unique(map: "game_editorial_overrides_game_id_key") @map("game_id") @db.Uuid
+  startTime            DateTime?   @map("start_time") @db.Timestamptz(3)
+  status               GameStatus?
+  week                 Int?
+  venueName            String?     @map("venue_name") @db.VarChar(160)
+  venueCity            String?     @map("venue_city") @db.VarChar(128)
+  broadcastNetwork     String?     @map("broadcast_network") @db.VarChar(64)
+  isNeutralSite        Boolean?    @map("is_neutral_site")
+  publicCorrectionNote String?     @map("public_correction_note") @db.VarChar(500)
+  internalNote         String?     @map("internal_note") @db.VarChar(1000)
+  createdById          String?     @map("created_by_id") @db.Uuid
+  updatedById          String?     @map("updated_by_id") @db.Uuid
+  createdBySnapshot    String      @map("created_by_snapshot") @db.VarChar(254)
+  updatedBySnapshot    String      @map("updated_by_snapshot") @db.VarChar(254)
+  createdAt            DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt            DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
+  game                 Game        @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  createdBy            User?       @relation("GameOverrideCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedBy            User?       @relation("GameOverrideUpdater", fields: [updatedById], references: [id], onDelete: SetNull)
+
+  @@index([createdById], map: "game_editorial_overrides_created_by_idx")
+  @@index([updatedById], map: "game_editorial_overrides_updated_by_idx")
+  @@map("game_editorial_overrides")
+}
+
+model AdminAuditEvent {
+  id                 String   @id @default(uuid()) @db.Uuid
+  actorUserId        String?  @map("actor_user_id") @db.Uuid
+  actorEmailSnapshot String   @map("actor_email_snapshot") @db.VarChar(254)
+  action             String   @db.VarChar(96)
+  entityType         String   @map("entity_type") @db.VarChar(64)
+  entityId           String?  @map("entity_id") @db.VarChar(128)
+  beforeSnapshot     Json?    @map("before_snapshot") @db.JsonB
+  afterSnapshot      Json?    @map("after_snapshot") @db.JsonB
+  requestId          String?  @map("request_id") @db.VarChar(128)
+  reason             String?  @db.VarChar(500)
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  actor              User?    @relation("AdminAuditActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt, id], map: "admin_audit_events_created_idx")
+  @@index([entityType, entityId, createdAt], map: "admin_audit_events_entity_idx")
+  @@index([actorUserId, createdAt], map: "admin_audit_events_actor_idx")
+  @@map("admin_audit_events")
+}
+
+model GameProviderMapping {
+  id             String   @id @default(uuid()) @db.Uuid
+  gameId         String   @map("game_id") @db.Uuid
+  provider       String   @db.VarChar(64)
+  providerGameId String   @map("provider_game_id") @db.VarChar(128)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  game           Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerGameId], map: "game_provider_mappings_provider_id_key")
+  @@unique([gameId, provider], map: "game_provider_mappings_game_provider_key")
+  @@index([gameId], map: "game_provider_mappings_game_id_idx")
+  @@map("game_provider_mappings")
+}
+
+model TeamProviderMapping {
+  id             String   @id @default(uuid()) @db.Uuid
+  teamId         String   @map("team_id") @db.Uuid
+  provider       String   @db.VarChar(64)
+  providerTeamId String   @map("provider_team_id") @db.VarChar(128)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  team           Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerTeamId], map: "team_provider_mappings_provider_id_key")
+  @@index([teamId], map: "team_provider_mappings_team_id_idx")
+  @@index([teamId, provider], map: "team_provider_mappings_team_provider_idx")
+  @@map("team_provider_mappings")
+}
