@@ -302,10 +302,14 @@ export class AdminService implements AdministrativeScheduleService {
   }
 
   async listAuditEvents(query: AuditListQuery, principal: AdministrativePrincipal) {
-    if (!roleHasCapability(principal.role, 'VIEW_FULL_AUDIT') && query.entityType !== 'GAME') {
+    if (
+      !roleHasCapability(principal.role, 'VIEW_FULL_AUDIT') &&
+      query.entityType !== 'GAME' &&
+      !(query.entityType === 'ARTICLE' && query.entityId !== undefined)
+    ) {
       throw new AppError({
         code: 'ADMIN_AUDIT_SCOPE_REQUIRED',
-        message: 'Editors may view audit history only for game records.',
+        message: 'Editors may view game events or audit history scoped to one article.',
         statusCode: 403,
       });
     }

@@ -13,6 +13,7 @@ The long-term product may include:
 - Live and upcoming NFL games
 - Schedules, scores, standings, and statistics
 - Fast NFL news with visible source attribution
+- Original articles, attributed curated links, announcements, team tags, and featured editorial placement
 - AI-generated news summaries
 - Pregame predictions, projected scores, confidence, and historical accuracy
 - Live play-by-play and a custom animated top-down play visualizer
@@ -95,7 +96,7 @@ The initial team source is a version-controlled local fixture accessed through t
 - Player, injury, or transaction data
 - Fantasy-provider imports and fantasy recommendations
 - Additional followed teams
-- Production email-vendor integration, email verification, password change for authenticated users, social login, or an administrative frontend
+- Production email-vendor integration, email verification, password change for authenticated users, social login, or an administrative CMS frontend
 - Paid contests, wagering, and cash prizes
 - Frontend implementation
 

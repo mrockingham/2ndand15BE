@@ -23,6 +23,8 @@ Keep the current milestone small. Do not implement future product ideas merely b
 - Public game fields resolve editorial overrides before normalized base values; provider synchronization must never delete or overwrite override rows.
 - Public registration always creates role `USER`; administrative capabilities come from the current persisted role, never request input or stale token claims.
 - Audit and provenance metadata, internal editorial notes, and actor snapshots must remain private to authorized administrative routes.
+- Public article routes expose only derived-visible published/scheduled content; drafts, unpublished, archived, revisions, actor snapshots, and audit data remain private.
+- Curated articles store attribution and original summaries/commentary only. Never copy third-party article bodies or fetch source/image URLs automatically.
 - Public game queries without an explicit season must be constrained to `CURRENT_NFL_SEASON`; historical seasons require an explicit query.
 - Development fixture games must remain hidden unless `FIXTURE_DATA_ENABLED` is explicitly enabled.
 - A user may have zero or one favorite team during the MVP.
@@ -96,6 +98,7 @@ Lower layers must not import higher layers. Avoid cross-module access to another
 - Seed teams idempotently using stable internal identifiers or another documented stable key. Re-running a seed must not create duplicate teams or mappings.
 - Synchronize games idempotently through provider mappings, resolve teams to internal IDs, and never delete games solely because a provider response omits them.
 - Schedule imports must be bounded, validated, dry-run capable, idempotent, and audited; source URLs are metadata and must never be fetched automatically.
+- Article mutations must use optimistic concurrency, create immutable numbered revisions transactionally, and write compact audits without duplicating large bodies.
 - Review migration SQL before committing it. Never edit an already-applied migration to change production history; add a new migration.
 
 ## Sports data providers

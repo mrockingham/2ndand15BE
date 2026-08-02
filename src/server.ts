@@ -10,6 +10,8 @@ import { loadConfig } from './config/env.js';
 import { PrismaAuthRepository } from './modules/auth/auth.repository.js';
 import { PrismaAdminRepository } from './modules/admin/admin.repository.js';
 import { AdminService } from './modules/admin/admin.service.js';
+import { PrismaArticleRepository } from './modules/articles/article.repository.js';
+import { ArticleService } from './modules/articles/article.service.js';
 import { AuthService } from './modules/auth/auth.service.js';
 import { DevelopmentEmailService } from './modules/email/in-memory-email.service.js';
 import {
@@ -27,6 +29,7 @@ const logger = createLogger(config);
 const prisma = createPrismaClient(config.databaseUrl);
 const adminRepository = new PrismaAdminRepository(prisma);
 const adminService = new AdminService(adminRepository);
+const articleService = new ArticleService(new PrismaArticleRepository(prisma));
 const teamReader = new TeamService(new PrismaTeamRepository(prisma));
 const publicGameSource = resolvePublicGameDataSource(config.sports);
 const gameReader = new GameService(
@@ -66,6 +69,8 @@ const app = createApp({
   accessTokens,
   adminService,
   adminIdentities: adminRepository,
+  articleReader: articleService,
+  editorialArticleService: articleService,
 });
 
 const server = app.listen(config.port, config.host, (error?: Error) => {

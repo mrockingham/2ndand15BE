@@ -155,6 +155,12 @@ describe('audit event scope', () => {
     await expect(
       service.listAuditEvents({ limit: 50, entityType: 'GAME' }, editor),
     ).resolves.toMatchObject({ events: [] });
+    await expect(
+      service.listAuditEvents({ limit: 50, entityType: 'ARTICLE', entityId: 'article-1' }, editor),
+    ).resolves.toMatchObject({ events: [] });
+    await expect(
+      service.listAuditEvents({ limit: 50, entityType: 'ARTICLE' }, editor),
+    ).rejects.toMatchObject({ code: 'ADMIN_AUDIT_SCOPE_REQUIRED' });
     await expect(service.listAuditEvents({ limit: 50 }, admin)).resolves.toMatchObject({
       events: [],
     });

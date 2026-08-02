@@ -55,6 +55,20 @@ enum GameSourceType {
   DEVELOPMENT_FIXTURE
 }
 
+enum ArticleType {
+  ORIGINAL
+  CURATED
+  ANNOUNCEMENT
+}
+
+enum ArticleStatus {
+  DRAFT
+  SCHEDULED
+  PUBLISHED
+  UNPUBLISHED
+  ARCHIVED
+}
+
 model User {
   id                  String                  @id @default(uuid()) @db.Uuid
   email               String                  @db.VarChar(254)
@@ -73,6 +87,9 @@ model User {
   createdOverrides    GameEditorialOverride[] @relation("GameOverrideCreator")
   updatedOverrides    GameEditorialOverride[] @relation("GameOverrideUpdater")
   auditEvents         AdminAuditEvent[]       @relation("AdminAuditActor")
+  createdArticles     Article[]               @relation("ArticleCreator")
+  updatedArticles     Article[]               @relation("ArticleUpdater")
+  articleRevisions    ArticleRevision[]       @relation("ArticleRevisionEditor")
 
   @@index([isActive], map: "users_active_idx")
   @@index([favoriteTeamId], map: "users_favorite_team_id_idx")
@@ -133,6 +150,7 @@ model Team {
   homeGames      Game[]                @relation("HomeTeamGames")
   awayGames      Game[]                @relation("AwayTeamGames")
   favoritedBy    User[]                @relation("UserFavoriteTeam")
+  articles       ArticleTeam[]
 
   @@unique([league, abbreviation], map: "teams_league_abbreviation_key")
   @@index([league, isActive, conference, division, fullName], map: "teams_catalog_order_idx")
@@ -240,6 +258,81 @@ model AdminAuditEvent {
   @@index([entityType, entityId, createdAt], map: "admin_audit_events_entity_idx")
   @@index([actorUserId, createdAt], map: "admin_audit_events_actor_idx")
   @@map("admin_audit_events")
+}
+
+model Article {
+  id                      String            @id @default(uuid()) @db.Uuid
+  slug                    String            @unique(map: "articles_slug_key") @db.VarChar(160)
+  type                    ArticleType
+  status                  ArticleStatus     @default(DRAFT)
+  version                 Int               @default(1)
+  title                   String            @db.VarChar(180)
+  summary                 String?           @db.VarChar(1000)
+  body                    String?           @db.Text
+  sourceName              String?           @map("source_name") @db.VarChar(160)
+  sourceUrl               String?           @map("source_url") @db.Text
+  sourcePublishedAt       DateTime?         @map("source_published_at") @db.Timestamptz(3)
+  heroImageUrl            String?           @map("hero_image_url") @db.Text
+  heroImageAlt            String?           @map("hero_image_alt") @db.VarChar(300)
+  heroImageAttribution    String?           @map("hero_image_attribution") @db.VarChar(500)
+  heroImageAttributionUrl String?           @map("hero_image_attribution_url") @db.Text
+  seoTitle                String?           @map("seo_title") @db.VarChar(180)
+  seoDescription          String?           @map("seo_description") @db.VarChar(320)
+  isFeatured              Boolean           @default(false) @map("is_featured")
+  featuredPriority        Int?              @map("featured_priority")
+  featuredStartsAt        DateTime?         @map("featured_starts_at") @db.Timestamptz(3)
+  featuredEndsAt          DateTime?         @map("featured_ends_at") @db.Timestamptz(3)
+  publishedAt             DateTime?         @map("published_at") @db.Timestamptz(3)
+  scheduledFor            DateTime?         @map("scheduled_for") @db.Timestamptz(3)
+  createdById             String?           @map("created_by_id") @db.Uuid
+  updatedById             String?           @map("updated_by_id") @db.Uuid
+  createdBySnapshot       String            @map("created_by_snapshot") @db.VarChar(254)
+  updatedBySnapshot       String            @map("updated_by_snapshot") @db.VarChar(254)
+  createdAt               DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt               DateTime          @updatedAt @map("updated_at") @db.Timestamptz(3)
+  createdBy               User?             @relation("ArticleCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedBy               User?             @relation("ArticleUpdater", fields: [updatedById], references: [id], onDelete: SetNull)
+  teams                   ArticleTeam[]
+  revisions               ArticleRevision[]
+
+  @@unique([id, version], map: "articles_id_version_key")
+  @@index([status, publishedAt, id], map: "articles_status_published_idx")
+  @@index([type, publishedAt, id], map: "articles_type_published_idx")
+  @@index([isFeatured, featuredPriority, publishedAt, id], map: "articles_featured_idx")
+  @@index([scheduledFor, id], map: "articles_scheduled_idx")
+  @@index([createdById, createdAt, id], map: "articles_creator_created_idx")
+  @@index([updatedAt, id], map: "articles_updated_idx")
+  @@map("articles")
+}
+
+model ArticleTeam {
+  articleId String   @map("article_id") @db.Uuid
+  teamId    String   @map("team_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  article   Article  @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  team      Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@id([articleId, teamId])
+  @@index([teamId, articleId], map: "article_teams_team_article_idx")
+  @@map("article_teams")
+}
+
+model ArticleRevision {
+  id             String   @id @default(uuid()) @db.Uuid
+  articleId      String   @map("article_id") @db.Uuid
+  revisionNumber Int      @map("revision_number")
+  editorUserId   String?  @map("editor_user_id") @db.Uuid
+  editorSnapshot String   @map("editor_snapshot") @db.VarChar(254)
+  snapshot       Json     @db.JsonB
+  changeSummary  String?  @map("change_summary") @db.VarChar(500)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  article        Article  @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  editor         User?    @relation("ArticleRevisionEditor", fields: [editorUserId], references: [id], onDelete: SetNull)
+
+  @@unique([articleId, revisionNumber], map: "article_revisions_article_number_key")
+  @@index([articleId, createdAt, id], map: "article_revisions_article_created_idx")
+  @@index([editorUserId, createdAt], map: "article_revisions_editor_created_idx")
+  @@map("article_revisions")
 }
 
 model GameProviderMapping {

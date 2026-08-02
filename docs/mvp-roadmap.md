@@ -239,6 +239,36 @@ Exit criteria:
 - Provider mappings survive imports and sync; editorial overrides retain precedence.
 - Migration, hosted checks, HTTP smoke tests, OpenAPI, documentation, and all quality gates pass.
 
+## Milestone 9 — News and editorial CMS
+
+Goal: provide a secure PostgreSQL-backed editorial source of truth for original, curated, and announcement content without adding a third-party CMS or automated ingestion.
+
+**Status:** Complete on August 2, 2026. The hosted migration, fictional lifecycle and visibility smoke, cleanup verification, full Neon integration suite, and quality gates passed.
+
+Deliverables:
+
+- Constrained article types and draft/scheduled/published/unpublished/archived lifecycle
+- Safe normalized Markdown and HTTP(S)-only source/image metadata
+- Active internal-team tagging and deterministic featured placement
+- Version-based optimistic concurrency and immutable transactional revisions
+- Compact `ARTICLE` administrative audits without duplicated bodies
+- Editor article management and admin-only archive/restore operations
+- Public list, detail, featured, and team-article endpoints with private-field isolation
+- Derived scheduled visibility without cron, queues, workers, or GET-time mutations
+
+Boundaries:
+
+- No CMS frontend, uploads, image proxying, scraping, RSS/news API ingestion, or copied third-party bodies
+- No AI drafts/summaries, notifications, Redis, jobs, or provider synchronization
+- Existing authentication, sports, schedule administration, and public contracts remain backward compatible
+
+Exit criteria:
+
+- Hosted constraints, joins, status transitions, concurrency, revisions, visibility, and audits pass.
+- A fictional draft exercises publish/unpublish/archive/schedule behavior and is cleaned up.
+- Unauthorized/editor/admin HTTP boundaries and public privacy behavior pass.
+- OpenAPI, documentation, migrations, full tests, build, dependency audit, credential scan, and diff checks pass.
+
 ## Later roadmap themes
 
 After the first slice is stable, define separate milestones for:

@@ -2,7 +2,7 @@
 
 All administrative HTTP routes are below `/api/v1/admin`, require a valid access token, and load the current role from PostgreSQL for every request. Roles are `USER`, `EDITOR`, and `ADMIN`; they are never accepted by registration or public profile updates.
 
-Editors may view administrative schedules, create and edit manually owned games, maintain overrides, verify schedule facts, run JSON schedule imports, and read audit events when the request is explicitly scoped to `entityType=GAME`. Admins additionally remove overrides and read the complete audit trail. Role changes are intentionally CLI-only:
+Editors may maintain schedules and editorial articles, publish or schedule content, inspect revisions, and read game audit events or one explicitly identified article's audit events. Admins additionally remove overrides, archive/restore articles, and read the complete audit trail. Role changes are intentionally CLI-only:
 
 ```sh
 npm run admin:set-role -- --email=user@example.com --role=ADMIN
