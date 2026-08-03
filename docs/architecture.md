@@ -2,7 +2,7 @@
 
 ## Status
 
-This document defines the backend architecture through the editorial CMS milestone. The service foundation, normalized mock/API-Sports-backed team and game catalogs, authentication lifecycle, favorite-team personalization, role-protected schedule maintenance, and revisioned original/curated editorial content are implemented.
+This document defines the backend architecture through the controlled news-source inbox milestone. The service foundation, normalized mock/API-Sports-backed team and game catalogs, authentication lifecycle, favorite-team personalization, role-protected schedule maintenance, revisioned original/curated editorial content, and manual RSS/Atom candidate workflow are implemented.
 
 ## System context
 
@@ -16,11 +16,14 @@ Frontend
 Express API
    |-- Auth / Users services ------> PostgreSQL via Prisma
    |-- Teams / Games services -----> PostgreSQL via Prisma
+   |-- News inbox service ---------> approved RSS/Atom feeds (manual trigger only)
    `-- Sports provider interface -+-> Mock fixture adapter
                                   `-> API-Sports adapter (sync commands only)
 ```
 
 Raw provider records stop at the adapter boundary. The frontend sees only API DTOs derived from normalized domain data.
+
+News feeds use a separate metadata-only boundary and never become sports providers. The feed client validates public DNS destinations and redirects, the SAX parser normalizes bounded RSS/Atom fields, and the repository performs idempotent candidate writes. Public requests never trigger feed fetches.
 
 ## Technology direction
 
@@ -368,6 +371,10 @@ The Highlightly evaluator is intentionally not a `SportsDataProvider` adapter. I
 Public game reads fetch overrides with teams in one bounded query. Effective date, week, and status filtering and kickoff ordering use override values before base values. Candidate resolution is capped at 1,000 records; an overbroad query fails explicitly. Public DTOs expose only the effective game and retain their existing schema.
 
 CSV and JSON imports validate complete batches before writing. CLI imports default to dry-run and require `--write`. Matching uses source external reference and then schedule identity. Manually owned matches update the base record; provider-backed matches create or update an editorial override, leaving provider mappings and base synchronization intact. See `docs/schedule-imports.md` and `docs/administration.md`.
+
+Version-controlled factual schedule baselines are provider-independent inputs to that same import boundary. `schedule:review` is a pure, read-only aggregate check: it reads and validates CSV, resolves the canonical 32-team catalog and documented aliases, and reports counts, byes, duplicates, offsets, neutral sites, missing optional fields, notes, and blockers without importing Prisma or connecting to PostgreSQL. A baseline is not eligible for dry-run/write approval until it has 272 regular-season games, 18 weeks, 17 games and one bye per team, no duplicate/team-week conflicts, and stable external references. A kickoff is either an explicit-offset ISO timestamp or the literal CSV value `TBD`; `TBD` persists as a nullable `Game.startTime` and is returned publicly as `startTime: null`. Neither an NFL/ESPN date-only placeholder nor a default local time is persisted as a kickoff. Null kickoffs sort after dated games and do not match date-range filters.
+
+The 2026 baseline uses `OFFICIAL_WEB`, NFL.com week pages, canonical team abbreviations, and references shaped as `nfl-2026-{pre|reg}-wNN-away-home`. UTC values come from the official event timestamps; international venue/time samples receive explicit review. Providers do not create this baseline, source URLs are not fetched by review/import commands, and Highlightly remains evaluation-only.
 
 ## Editorial CMS architecture
 

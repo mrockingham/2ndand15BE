@@ -22,6 +22,7 @@ import type { GameReader } from './modules/games/game.service.js';
 import type { TeamReader } from './modules/teams/team.service.js';
 import type { UserPersonalizationService } from './modules/users/user.service.js';
 import { createApiRouter } from './routes/api-router.js';
+import type { NewsInboxServiceContract } from './modules/news-inbox/news.service.js';
 
 export interface CreateAppOptions {
   readonly config: AppConfig;
@@ -36,6 +37,7 @@ export interface CreateAppOptions {
   readonly adminIdentities?: AdministrativeIdentityReader;
   readonly articleReader?: PublicArticleReader;
   readonly editorialArticleService?: EditorialArticleService;
+  readonly newsInboxService?: NewsInboxServiceContract;
 }
 
 export function createApp(options: CreateAppOptions): Express {
@@ -71,6 +73,9 @@ export function createApp(options: CreateAppOptions): Express {
       ...(options.editorialArticleService === undefined
         ? {}
         : { editorialArticleService: options.editorialArticleService }),
+      ...(options.newsInboxService === undefined
+        ? {}
+        : { newsInboxService: options.newsInboxService }),
       ...(options.health === undefined ? {} : { health: options.health }),
     }),
   );

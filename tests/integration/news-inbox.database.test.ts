@@ -1,0 +1,437 @@
+import 'dotenv/config';
+
+import { randomUUID } from 'node:crypto';
+
+import pino from 'pino';
+import request from 'supertest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+
+import { createApp } from '../../src/app.js';
+import { createPrismaClient } from '../../src/common/database/prisma.js';
+import { JwtAccessTokenService } from '../../src/common/security/access-token.js';
+import { loadConfig } from '../../src/config/env.js';
+import type { PrismaClient, UserRole } from '../../src/generated/prisma/client.js';
+import { PrismaAdminRepository } from '../../src/modules/admin/admin.repository.js';
+import { PrismaArticleRepository } from '../../src/modules/articles/article.repository.js';
+import { ArticleService } from '../../src/modules/articles/article.service.js';
+import { SafeFeedClient, type FeedFetch } from '../../src/modules/news-inbox/feed-client.js';
+import { PrismaNewsInboxRepository } from '../../src/modules/news-inbox/news.repository.js';
+import { NewsInboxService } from '../../src/modules/news-inbox/news.service.js';
+import { PrismaGameRepository } from '../../src/modules/games/game.repository.js';
+import { GameService } from '../../src/modules/games/game.service.js';
+import { PrismaTeamRepository } from '../../src/modules/teams/team.repository.js';
+import { TeamService } from '../../src/modules/teams/team.service.js';
+import { createTestAuthService, createTestUserService } from '../helpers/test-config.js';
+
+const databaseTestsEnabled = process.env.RUN_DATABASE_TESTS === 'true';
+
+describe.skipIf(!databaseTestsEnabled)('news inbox database and HTTP integration', () => {
+  let prisma: PrismaClient | undefined;
+  const userIds = new Set<string>();
+  const sourceIds = new Set<string>();
+  const candidateIds = new Set<string>();
+  const articleIds = new Set<string>();
+  const auditPrefix = `news-inbox-${randomUUID()}`;
+
+  beforeAll(() => {
+    prisma = createPrismaClient(loadConfig().databaseUrl);
+  });
+
+  afterAll(async () => {
+    const client = requirePrisma(prisma);
+    if (candidateIds.size > 0) {
+      await client.newsCandidate.deleteMany({ where: { id: { in: [...candidateIds] } } });
+    }
+    if (articleIds.size > 0) {
+      await client.article.deleteMany({ where: { id: { in: [...articleIds] } } });
+    }
+    if (sourceIds.size > 0) {
+      await client.newsIngestionRun.deleteMany({ where: { sourceId: { in: [...sourceIds] } } });
+      await client.newsSource.deleteMany({ where: { id: { in: [...sourceIds] } } });
+    }
+    await client.adminAuditEvent.deleteMany({
+      where: {
+        OR: [
+          { requestId: { startsWith: auditPrefix } },
+          { actorUserId: { in: [...userIds] } },
+          { entityId: { in: [...sourceIds, ...candidateIds, ...articleIds] } },
+        ],
+      },
+    });
+    if (userIds.size > 0) await client.user.deleteMany({ where: { id: { in: [...userIds] } } });
+    await client.$disconnect();
+  });
+
+  it('enforces permissions, ingests idempotently, preserves review state, and converts transactionally', async () => {
+    const client = requirePrisma(prisma);
+    const config = loadConfig();
+    const accessTokens = new JwtAccessTokenService({
+      secret: config.auth.accessTokenSecret,
+      expiresInSeconds: config.auth.accessTokenTtlSeconds,
+    });
+    let fetchNumber = 0;
+    const fetch = vi.fn<FeedFetch>().mockImplementation(() => {
+      fetchNumber += 1;
+      if (fetchNumber === 3) return Promise.resolve(new Response(null, { status: 304 }));
+      return Promise.resolve(
+        new Response(fetchNumber === 2 ? updatedRss() : initialRss(), {
+          status: 200,
+          headers: {
+            'content-type': 'application/rss+xml; charset=utf-8',
+            etag: '"fixture-v1"',
+            'last-modified': 'Sat, 01 Aug 2026 00:00:00 GMT',
+          },
+        }),
+      );
+    });
+    const repository = new PrismaNewsInboxRepository(client);
+    const newsService = new NewsInboxService(
+      repository,
+      new SafeFeedClient(fetch, () => Promise.resolve(['93.184.216.34'])),
+      () => new Date('2026-08-02T12:00:00.000Z'),
+    );
+    const articleService = new ArticleService(new PrismaArticleRepository(client));
+    const app = createApp({
+      config: { ...config, auth: { ...config.auth, rateLimit: { windowMs: 60_000, max: 100 } } },
+      logger: pino({ level: 'silent' }),
+      teamReader: new TeamService(new PrismaTeamRepository(client)),
+      gameReader: new GameService(new PrismaGameRepository(client, 'none'), () => new Date(), {
+        currentNflSeason: 2099,
+        allowHistoricalDefaultGameResults: false,
+      }),
+      authService: createTestAuthService(),
+      userService: createTestUserService(),
+      accessTokens,
+      adminIdentities: new PrismaAdminRepository(client),
+      articleReader: articleService,
+      editorialArticleService: articleService,
+      newsInboxService: newsService,
+    });
+    const editor = await createUser(client, 'EDITOR', userIds);
+    const admin = await createUser(client, 'ADMIN', userIds);
+    const normal = await createUser(client, 'USER', userIds);
+    const editorToken = await accessTokens.sign({ userId: editor.id, sessionId: randomUUID() });
+    const adminToken = await accessTokens.sign({ userId: admin.id, sessionId: randomUUID() });
+    const normalToken = await accessTokens.sign({ userId: normal.id, sessionId: randomUUID() });
+    const bearer = (token: string) => ({ authorization: `Bearer ${token}` });
+    const buffalo = await client.team.findUniqueOrThrow({
+      where: { league_abbreviation: { league: 'NFL', abbreviation: 'BUF' } },
+    });
+
+    await request(app).get('/api/v1/admin/news-sources').expect(401);
+    await request(app).get('/api/v1/admin/news-sources').set(bearer(normalToken)).expect(403);
+    await request(app)
+      .post('/api/v1/admin/news-sources')
+      .set(bearer(editorToken))
+      .send(sourceBody(`editor-forbidden-${randomUUID()}`))
+      .expect(403);
+    await request(app)
+      .post('/api/v1/admin/news-sources')
+      .set(bearer(adminToken))
+      .send({ ...sourceBody(`private-${randomUUID()}`), feedUrl: 'http://127.0.0.1/feed' })
+      .expect(400);
+
+    const createdSource = await request(app)
+      .post('/api/v1/admin/news-sources')
+      .set(bearer(adminToken))
+      .set('x-request-id', `${auditPrefix}-source-create`)
+      .send(sourceBody(`fictional-${randomUUID()}`))
+      .expect(201);
+    const sourceId = (createdSource.body as { data: { id: string } }).data.id;
+    sourceIds.add(sourceId);
+
+    const firstRun = await request(app)
+      .post(`/api/v1/admin/news-sources/${sourceId}/ingest`)
+      .set(bearer(editorToken))
+      .set('x-request-id', `${auditPrefix}-ingest-1`)
+      .send({})
+      .expect(200);
+    expect(
+      (firstRun.body as { data: { run: { fetchedCount: number; createdCount: number } } }).data.run,
+    ).toMatchObject({ fetchedCount: 2, createdCount: 2 });
+    const firstCandidates = await client.newsCandidate.findMany({
+      where: { sourceId },
+      include: { suggestedTeams: true },
+      orderBy: { sourceExternalId: 'asc' },
+    });
+    expect(firstCandidates).toHaveLength(2);
+    firstCandidates.forEach(({ id }) => candidateIds.add(id));
+    const billsCandidate = firstCandidates.find(
+      ({ sourceExternalId }) => sourceExternalId === 'fixture-guid-1',
+    );
+    const cityOnlyCandidate = firstCandidates.find(
+      ({ sourceExternalId }) => sourceExternalId === 'fixture-guid-2',
+    );
+    expect(billsCandidate?.suggestedTeams).toEqual([
+      expect.objectContaining({ teamId: buffalo.id, rule: 'EXACT_FULL_NAME' }),
+    ]);
+    expect(cityOnlyCandidate?.suggestedTeams).toHaveLength(0);
+
+    await request(app)
+      .post(`/api/v1/admin/news-candidates/${requireId(billsCandidate?.id)}/dismiss`)
+      .set(bearer(editorToken))
+      .set('x-request-id', `${auditPrefix}-dismiss`)
+      .send({ reason: 'Fictional duplicate retained for audit.' })
+      .expect(200);
+
+    const secondRun = await request(app)
+      .post(`/api/v1/admin/news-sources/${sourceId}/ingest`)
+      .set(bearer(editorToken))
+      .set('x-request-id', `${auditPrefix}-ingest-2`)
+      .send({})
+      .expect(200);
+    expect(
+      (
+        secondRun.body as {
+          data: { run: { createdCount: number; updatedCount: number; skippedCount: number } };
+        }
+      ).data.run,
+    ).toMatchObject({ createdCount: 0, updatedCount: 1, skippedCount: 1 });
+    const dismissedAfterRefresh = await client.newsCandidate.findUniqueOrThrow({
+      where: { id: requireId(billsCandidate?.id) },
+    });
+    expect(dismissedAfterRefresh).toMatchObject({
+      status: 'DISMISSED',
+      headline: 'Buffalo Bills update the fictional training session',
+    });
+
+    const thirdRun = await request(app)
+      .post(`/api/v1/admin/news-sources/${sourceId}/ingest`)
+      .set(bearer(editorToken))
+      .set('x-request-id', `${auditPrefix}-ingest-304`)
+      .send({})
+      .expect(200);
+    expect(
+      (thirdRun.body as { data: { notModified: boolean; run: { status: string } } }).data,
+    ).toMatchObject({ notModified: true, run: { status: 'SUCCEEDED' } });
+
+    const fetchesBeforeManual = fetch.mock.calls.length;
+    const manual = await request(app)
+      .post('/api/v1/admin/news-candidates/manual')
+      .set(bearer(editorToken))
+      .set('x-request-id', `${auditPrefix}-manual`)
+      .send(manualBody(buffalo.id))
+      .expect(201);
+    const manualId = (manual.body as { data: { id: string } }).data.id;
+    candidateIds.add(manualId);
+    expect(fetch).toHaveBeenCalledTimes(fetchesBeforeManual);
+    await request(app)
+      .post('/api/v1/admin/news-candidates/manual')
+      .set(bearer(editorToken))
+      .send(manualBody(buffalo.id))
+      .expect(409);
+    await request(app)
+      .post(`/api/v1/admin/news-candidates/${manualId}/review`)
+      .set(bearer(editorToken))
+      .send({})
+      .expect(200);
+    await request(app)
+      .post(`/api/v1/admin/news-candidates/${manualId}/save`)
+      .set(bearer(editorToken))
+      .send({})
+      .expect(200);
+    await request(app)
+      .post(`/api/v1/admin/news-candidates/${manualId}/convert`)
+      .set(bearer(editorToken))
+      .send({ ...conversionBody(buffalo.id), originalSummary: 'Manual source metadata only.' })
+      .expect(400);
+
+    const conversion = await request(app)
+      .post(`/api/v1/admin/news-candidates/${manualId}/convert`)
+      .set(bearer(editorToken))
+      .set('x-request-id', `${auditPrefix}-convert`)
+      .send(conversionBody(buffalo.id))
+      .expect(201);
+    const converted = (
+      conversion.body as {
+        data: {
+          candidate: { status: string; convertedArticleId: string };
+          article: { id: string; status: string; type: string; body: string | null };
+        };
+      }
+    ).data;
+    articleIds.add(converted.article.id);
+    expect(converted.candidate).toMatchObject({
+      status: 'CONVERTED',
+      convertedArticleId: converted.article.id,
+    });
+    expect(converted.article).toMatchObject({
+      status: 'DRAFT',
+      type: 'CURATED',
+      body: 'Original 2nd & 15 commentary.',
+    });
+    await request(app)
+      .post(`/api/v1/admin/news-candidates/${manualId}/convert`)
+      .set(bearer(editorToken))
+      .send(conversionBody(buffalo.id))
+      .expect(409);
+    await request(app).get(`/api/v1/articles/${conversionSlug()}`).expect(404);
+
+    const article = await client.article.findUniqueOrThrow({
+      where: { id: converted.article.id },
+      include: { revisions: true, teams: true },
+    });
+    expect(article).toMatchObject({
+      type: 'CURATED',
+      status: 'DRAFT',
+      sourceName: 'Fictional Publisher',
+      sourceUrl: 'https://manual.example.com/story?id=42',
+    });
+    expect(article.revisions).toHaveLength(1);
+    expect(article.teams.map(({ teamId }) => teamId)).toEqual([buffalo.id]);
+    expect(JSON.stringify(article)).not.toContain('full source body');
+    expect(article.heroImageUrl).toBeNull();
+
+    await request(app)
+      .post(`/api/v1/admin/news-sources/${sourceId}/test`)
+      .set(bearer(editorToken))
+      .set('x-request-id', `${auditPrefix}-test`)
+      .send({})
+      .expect(200);
+    expect(await client.newsCandidate.count({ where: { sourceId } })).toBe(2);
+    expect(await client.newsIngestionRun.count({ where: { sourceId } })).toBe(4);
+
+    const leaseId = randomUUID();
+    await client.newsSource.update({
+      where: { id: sourceId },
+      data: {
+        ingestionLeaseId: leaseId,
+        ingestionLeaseStartedAt: new Date('2026-08-02T11:59:00.000Z'),
+      },
+    });
+    await request(app)
+      .post(`/api/v1/admin/news-sources/${sourceId}/ingest`)
+      .set(bearer(editorToken))
+      .send({})
+      .expect(409);
+    await client.newsSource.update({
+      where: { id: sourceId },
+      data: { ingestionLeaseId: null, ingestionLeaseStartedAt: null },
+    });
+
+    await request(app)
+      .post(`/api/v1/admin/news-sources/${sourceId}/pause`)
+      .set(bearer(editorToken))
+      .send({})
+      .expect(403);
+    await request(app)
+      .post(`/api/v1/admin/news-sources/${sourceId}/pause`)
+      .set(bearer(adminToken))
+      .set('x-request-id', `${auditPrefix}-pause`)
+      .send({})
+      .expect(200);
+    await request(app)
+      .post(`/api/v1/admin/news-sources/${sourceId}/resume`)
+      .set(bearer(adminToken))
+      .set('x-request-id', `${auditPrefix}-resume`)
+      .send({})
+      .expect(200);
+
+    const audits = await client.adminAuditEvent.findMany({
+      where: { requestId: { startsWith: auditPrefix } },
+    });
+    expect(audits.map(({ action }) => action)).toEqual(
+      expect.arrayContaining([
+        'NEWS_SOURCE_CREATED',
+        'NEWS_INGESTION_INITIATED',
+        'NEWS_CANDIDATE_DISMISSED',
+        'NEWS_CANDIDATE_MANUALLY_SUBMITTED',
+        'NEWS_CANDIDATE_CONVERTED',
+        'NEWS_SOURCE_TESTED',
+        'NEWS_SOURCE_PAUSED',
+        'NEWS_SOURCE_RESUMED',
+        'ARTICLE_CREATED',
+      ]),
+    );
+    const auditJson = JSON.stringify(audits);
+    expect(auditJson).not.toContain('full source body');
+    expect(auditJson).not.toContain('Manual source metadata only.');
+    expect(auditJson).not.toContain('Original 2nd & 15 commentary.');
+  }, 30_000);
+});
+
+function sourceBody(slug: string) {
+  return {
+    name: 'Fictional RSS Source',
+    slug,
+    kind: 'RSS',
+    status: 'ACTIVE',
+    feedUrl: 'https://news.example.com/feed.xml',
+    siteUrl: 'https://news.example.com/',
+    publisherName: 'Fictional Publisher',
+    defaultTeamId: null,
+    isOfficialLeague: false,
+    isOfficialTeam: false,
+    allowsDescriptionUse: false,
+    notes: 'Integration-only source.',
+  };
+}
+
+function initialRss(): string {
+  return `<?xml version="1.0" encoding="UTF-8"?><rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/"><channel><title>Fixture</title><item><guid>fixture-guid-1</guid><title>Buffalo Bills open the fictional training session</title><link>https://news.example.com/story/one?utm_source=test</link><description>Short metadata one.</description><pubDate>Sat, 01 Aug 2026 12:00:00 GMT</pubDate><content:encoded><![CDATA[full source body]]></content:encoded></item><item><guid>fixture-guid-2</guid><title>New York football operations update</title><link>https://news.example.com/story/two</link><description>Short metadata two.</description></item></channel></rss>`;
+}
+
+function updatedRss(): string {
+  return initialRss().replace(
+    'Buffalo Bills open the fictional training session',
+    'Buffalo Bills update the fictional training session',
+  );
+}
+
+function manualBody(teamId: string) {
+  return {
+    url: 'https://manual.example.com/story?id=42&utm_campaign=test#top',
+    headline: 'Fictional editor-submitted story',
+    sourceName: 'Fictional Publisher',
+    sourceId: null,
+    sourceDescription: 'Manual source metadata only.',
+    sourceAuthor: 'Fixture Reporter',
+    sourcePublishedAt: '2026-08-01T10:00:00.000Z',
+    suggestedTeamIds: [teamId],
+  };
+}
+
+const articleSlug = `fictional-curated-${randomUUID()}`;
+
+function conversionSlug(): string {
+  return articleSlug;
+}
+
+function conversionBody(teamId: string) {
+  return {
+    title: 'An original fictional curated headline',
+    slug: conversionSlug(),
+    originalSummary: 'An original 2nd & 15 summary written after reviewing the source metadata.',
+    originalCommentary: 'Original 2nd & 15 commentary.',
+    confirmedTeamIds: [teamId],
+    heroImageUrl: null,
+    heroImageAlt: null,
+    heroImageAttribution: null,
+    heroImageAttributionUrl: null,
+    changeSummary: 'Converted from a fictional inbox candidate.',
+  };
+}
+
+async function createUser(client: PrismaClient, role: UserRole, ids: Set<string>) {
+  const email = `news-${role.toLowerCase()}-${randomUUID()}@example.com`;
+  const user = await client.user.create({
+    data: {
+      email,
+      normalizedEmail: email,
+      passwordHash: 'integration-test-not-a-real-password-hash',
+      role,
+    },
+  });
+  ids.add(user.id);
+  return user;
+}
+
+function requireId(value: string | undefined): string {
+  if (value === undefined) throw new Error('Expected integration record was not created.');
+  return value;
+}
+
+function requirePrisma(client: PrismaClient | undefined): PrismaClient {
+  if (client === undefined) throw new Error('Prisma client was not initialized.');
+  return client;
+}

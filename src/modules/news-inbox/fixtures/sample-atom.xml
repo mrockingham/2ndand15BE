@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>Development Atom News</title>
+  <id>https://atom.example.com/</id>
+  <updated>2026-08-01T16:00:00Z</updated>
+  <entry>
+    <id>fictional-atom-1</id>
+    <title>JAX announces a fictional community event</title>
+    <link rel="alternate" href="https://atom.example.com/items/one?utm_medium=rss" />
+    <summary type="html"><![CDATA[<p>A bounded <em>Atom</em> summary.</p>]]></summary>
+    <author><name>Atom Reporter</name></author>
+    <published>2026-08-01T15:30:00Z</published>
+  </entry>
+</feed>

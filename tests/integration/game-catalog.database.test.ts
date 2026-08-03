@@ -4,7 +4,11 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createPrismaClient } from '../../src/common/database/prisma.js';
 import { loadDatabaseConfig } from '../../src/config/env.js';
 import type { PrismaClient } from '../../src/generated/prisma/client.js';
-import { PrismaGameRepository } from '../../src/modules/games/game.repository.js';
+import {
+  PrismaGameRepository,
+  type GameListFilters,
+} from '../../src/modules/games/game.repository.js';
+import type { GameWithTeams } from '../../src/modules/games/game.dto.js';
 import { GameService } from '../../src/modules/games/game.service.js';
 import type { NormalizedGame } from '../../src/modules/sports/normalized-game.js';
 import { MockSportsDataProvider } from '../../src/modules/sports/providers/mock/mock-sports-data-provider.js';
@@ -92,14 +96,23 @@ describe.skipIf(!databaseTestsEnabled)('game catalog database', () => {
   it('queries by season, type, week, UTC range, team, status, and limit', async () => {
     const client = requirePrisma(prisma);
     const repository = new PrismaGameRepository(client, 'mock');
+    const fixtureGameIds = await findFixtureGameIds(client);
     const buffalo = await client.teamProviderMapping.findUniqueOrThrow({
       where: { provider_providerTeamId: { provider: 'mock', providerTeamId: 'nfl-buf' } },
       select: { teamId: true },
     });
-    expect((await repository.findGames({ season: 2026, limit: 100 })).games).toHaveLength(9);
-    expect((await repository.findGames({ seasonType: 'PRE', limit: 100 })).games).toHaveLength(3);
     expect(
-      (await repository.findGames({ week: 1, limit: 100 })).games.length,
+      fixtureGames(await findAllGames(repository, { season: 2026 }), fixtureGameIds),
+    ).toHaveLength(9);
+    expect(
+      fixtureGames(
+        (await repository.findGames({ seasonType: 'PRE', limit: 100 })).games,
+        fixtureGameIds,
+      ),
+    ).toHaveLength(3);
+    expect(
+      fixtureGames((await repository.findGames({ week: 1, limit: 100 })).games, fixtureGameIds)
+        .length,
     ).toBeGreaterThanOrEqual(4);
     expect(
       (
@@ -108,11 +121,14 @@ describe.skipIf(!databaseTestsEnabled)('game catalog database', () => {
           endTime: new Date('2026-09-30T23:59:59.999Z'),
           limit: 100,
         })
-      ).games,
+      ).games.filter((game) => fixtureGameIds.has(game.id)),
     ).toHaveLength(4);
-    expect((await repository.findGames({ teamId: buffalo.teamId, limit: 100 })).games).toHaveLength(
-      2,
-    );
+    expect(
+      fixtureGames(
+        (await repository.findGames({ teamId: buffalo.teamId, limit: 100 })).games,
+        fixtureGameIds,
+      ),
+    ).toHaveLength(2);
     const finals = (await repository.findGames({ status: 'FINAL', limit: 100 })).games;
     expect(finals).toHaveLength(1);
     expect(finals.at(0)).toMatchObject({ homeScore: 27, awayScore: 20 });
@@ -122,12 +138,14 @@ describe.skipIf(!databaseTestsEnabled)('game catalog database', () => {
   });
 
   it('returns the bounded default window and public DTOs without provider mappings', async () => {
+    const client = requirePrisma(prisma);
+    const fixtureGameIds = await findFixtureGameIds(client);
     const service = new GameService(
-      new PrismaGameRepository(requirePrisma(prisma), 'mock'),
+      new PrismaGameRepository(client, 'mock'),
       () => new Date('2026-07-31T12:00:00.000Z'),
     );
     const result = await service.listGames({ limit: 20 });
-    expect(result.games).toHaveLength(3);
+    expect(fixtureGames(result.games, fixtureGameIds)).toHaveLength(3);
     expect(result.games[0]).not.toHaveProperty('providerMaps');
     expect(result.games[0]?.homeTeam).not.toHaveProperty('providerMaps');
     expect(result.games.find((game) => game.status === 'SCHEDULED')).toMatchObject({
@@ -219,4 +237,40 @@ function firstFixtureGame(): NormalizedGame {
 function requireValue<T>(value: T | undefined, message: string): T {
   if (value === undefined) throw new Error(message);
   return value;
+}
+
+async function findFixtureGameIds(client: PrismaClient): Promise<ReadonlySet<string>> {
+  return new Set(
+    (
+      await client.gameProviderMapping.findMany({
+        where: { provider: 'mock' },
+        select: { gameId: true },
+      })
+    ).map((mapping) => mapping.gameId),
+  );
+}
+
+function fixtureGames<T extends { readonly id: string }>(
+  games: readonly T[],
+  fixtureGameIds: ReadonlySet<string>,
+): T[] {
+  return games.filter((game) => fixtureGameIds.has(game.id));
+}
+
+async function findAllGames(
+  repository: PrismaGameRepository,
+  filters: Omit<GameListFilters, 'limit' | 'cursor'>,
+): Promise<readonly GameWithTeams[]> {
+  const games: GameWithTeams[] = [];
+  let cursor: string | undefined;
+  do {
+    const page = await repository.findGames({
+      ...filters,
+      limit: 100,
+      ...(cursor === undefined ? {} : { cursor }),
+    });
+    games.push(...page.games);
+    cursor = page.nextCursor ?? undefined;
+  } while (cursor !== undefined);
+  return games;
 }

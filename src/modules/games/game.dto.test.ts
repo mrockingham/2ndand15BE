@@ -60,4 +60,8 @@ describe('resolved public game DTO', () => {
     } satisfies GameEditorialOverride;
     expect(toGameDto({ ...base, editorialOverride: override }).venue.name).toBe('Base Stadium');
   });
+
+  it('returns null instead of a fabricated time for an officially TBD kickoff', () => {
+    expect(toGameDto(createGameRecord({ startTime: null })).startTime).toBeNull();
+  });
 });

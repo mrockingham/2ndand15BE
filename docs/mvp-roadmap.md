@@ -269,6 +269,46 @@ Exit criteria:
 - Unauthorized/editor/admin HTTP boundaries and public privacy behavior pass.
 - OpenAPI, documentation, migrations, full tests, build, dependency audit, credential scan, and diff checks pass.
 
+## Milestone 11 — Verified 2026 NFL schedule baseline
+
+Goal: prepare, review, and import a provider-independent 2026 preseason and regular-season schedule from official factual sources.
+
+**Status:** Complete on August 2, 2026. The committed baseline validates 48 preseason and all 272 regular-season rows. NFL.com omits concrete kickoff times for four Week 16 games, four Week 17 games, and all 16 Week 18 games; ESPN independently labels the same 24 kickoffs TBD. The approved explicit-TBD policy stores no invented time: CSV `TBD` becomes nullable `Game.startTime` and public `startTime: null`.
+
+Delivered while blocked:
+
+- Exact-contract `data/schedules/nfl-2026.csv` with all 320 represented official rows
+- Read-only `schedule:review` aggregate validation and targeted dataset tests
+- Canonical team abbreviations, stable human-reviewable references, official provenance, and normalized network labels
+- Explicit review of all nine international/neutral-site games and DST/UTC samples
+- Human-readable source, count, missing-field, warning, import, API, and preservation report
+- Nullable-kickoff migration and public/OpenAPI semantics for honest TBD representation
+- Clean 320-row dry run; first write created 320 and identical second write skipped 320
+- Hosted counts, provenance, audits, provider mappings, overrides, CMS/auth/session preservation, public API privacy, pagination, and fixture isolation checks
+
+The Hall of Fame Game remains omitted with a documented warning because the product still has no separate Hall of Fame/preseason week convention. The 24 TBD rows require later editor updates and human verification after official kickoff assignment.
+
+## Milestone 13 — Controlled news-source inbox
+
+Goal: discover candidate NFL stories from explicitly approved RSS/Atom feeds or editor-supplied URLs without scraping, copying full text, or bypassing the existing CMS workflow.
+
+**Status:** Complete on August 2, 2026. The migration applied to Neon, the full hosted integration suite and local quality gates passed, the fictional end-to-end workflow cleaned up, and no live source was inserted by default.
+
+Deliverables:
+
+- Admin-managed `RSS`, `ATOM`, and `MANUAL_ONLY` source registry with private health/run history
+- Manually triggered SSRF-resistant, timeout/byte/redirect/depth/entry-bounded feed reads
+- Strict SAX parsing, plain-text descriptions, stable external-ID/canonical-URL deduplication, and conditional requests
+- Private candidate inbox with deterministic advisory team suggestions and terminal-aware review states
+- Manual metadata submission without page fetching
+- Transactional conversion to an existing `CURATED` `DRAFT`, revision 1, and compact CMS/candidate audits
+- Protected HTTP operations and a sequential five-source-bounded CLI
+
+Boundaries:
+
+- No frontend, article-page/image fetching, full-text storage, automatic publication, AI writing/tagging, social ingestion, cron, queue, worker, webhook, Redis, or production deployment changes
+- No inferred team feeds and no default active source without a documented live evaluation
+
 ## Later roadmap themes
 
 After the first slice is stable, define separate milestones for:

@@ -54,6 +54,61 @@ const articleVersionActionBody = {
   },
 } as const;
 
+const newsSourceIdParameter = {
+  name: 'sourceId',
+  in: 'path',
+  required: true,
+  schema: { type: 'string', format: 'uuid' },
+} as const;
+
+const newsCandidateIdParameter = {
+  name: 'candidateId',
+  in: 'path',
+  required: true,
+  schema: { type: 'string', format: 'uuid' },
+} as const;
+
+function newsActionPath(
+  operationId: string,
+  summary: string,
+  parameter: typeof newsSourceIdParameter | typeof newsCandidateIdParameter,
+  responseSchema: string,
+  requestSchema?: string,
+  created = false,
+) {
+  return {
+    post: {
+      operationId,
+      summary,
+      tags: ['News Source Inbox'],
+      security: [{ bearerAuth: [] }],
+      parameters: [parameter],
+      ...(requestSchema === undefined
+        ? {}
+        : {
+            requestBody: {
+              required: true,
+              content: {
+                'application/json': { schema: { $ref: requestSchema } },
+              },
+            },
+          }),
+      responses: {
+        [created ? '201' : '200']: {
+          description: created ? 'Resource created.' : 'Operation completed.',
+          content: { 'application/json': { schema: { $ref: responseSchema } } },
+        },
+        '400': { $ref: '#/components/responses/ValidationError' },
+        '401': { $ref: '#/components/responses/UnauthorizedError' },
+        '403': { $ref: '#/components/responses/ForbiddenError' },
+        '404': { $ref: '#/components/responses/NotFoundError' },
+        '409': { $ref: '#/components/responses/ConflictError' },
+        '429': { $ref: '#/components/responses/RateLimitError' },
+      },
+    },
+  };
+}
+
 function articleActionPath(operationId: string, summary: string, scheduled: boolean) {
   return {
     post: {
@@ -669,6 +724,257 @@ export const openApiDocument = {
         },
       },
     },
+    '/admin/news-sources': {
+      get: {
+        operationId: 'listNewsSources',
+        summary: 'List approved news sources and health summaries',
+        tags: ['News Source Inbox'],
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: 'limit',
+            in: 'query',
+            schema: { type: 'integer', minimum: 1, maximum: 100, default: 25 },
+          },
+          { name: 'cursor', in: 'query', schema: { type: 'string', format: 'uuid' } },
+          {
+            name: 'status',
+            in: 'query',
+            schema: { $ref: '#/components/schemas/NewsSourceStatus' },
+          },
+          { name: 'kind', in: 'query', schema: { $ref: '#/components/schemas/NewsSourceKind' } },
+        ],
+        responses: {
+          '200': {
+            description: 'Bounded source page.',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/NewsSourceListResponse' },
+              },
+            },
+          },
+          '401': { $ref: '#/components/responses/UnauthorizedError' },
+          '403': { $ref: '#/components/responses/ForbiddenError' },
+        },
+      },
+      post: {
+        operationId: 'createNewsSource',
+        summary: 'Create an approved source definition (admin only)',
+        tags: ['News Source Inbox'],
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: { $ref: '#/components/schemas/NewsSourceCreateRequest' },
+            },
+          },
+        },
+        responses: {
+          '201': {
+            description: 'Source created without automatic ingestion.',
+            content: {
+              'application/json': { schema: { $ref: '#/components/schemas/NewsSourceResponse' } },
+            },
+          },
+          '400': { $ref: '#/components/responses/ValidationError' },
+          '401': { $ref: '#/components/responses/UnauthorizedError' },
+          '403': { $ref: '#/components/responses/ForbiddenError' },
+          '409': { $ref: '#/components/responses/ConflictError' },
+        },
+      },
+    },
+    '/admin/news-sources/{sourceId}': {
+      get: {
+        operationId: 'getNewsSource',
+        summary: 'Get one source and its 20 most recent ingestion runs',
+        tags: ['News Source Inbox'],
+        security: [{ bearerAuth: [] }],
+        parameters: [newsSourceIdParameter],
+        responses: {
+          '200': {
+            description: 'Source health and bounded run history.',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/NewsSourceDetailResponse' },
+              },
+            },
+          },
+          '401': { $ref: '#/components/responses/UnauthorizedError' },
+          '403': { $ref: '#/components/responses/ForbiddenError' },
+          '404': { $ref: '#/components/responses/NotFoundError' },
+        },
+      },
+      patch: {
+        operationId: 'updateNewsSource',
+        summary: 'Update a source definition (admin only)',
+        tags: ['News Source Inbox'],
+        security: [{ bearerAuth: [] }],
+        parameters: [newsSourceIdParameter],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: { $ref: '#/components/schemas/NewsSourceUpdateRequest' },
+            },
+          },
+        },
+        responses: {
+          '200': {
+            description: 'Updated source.',
+            content: {
+              'application/json': { schema: { $ref: '#/components/schemas/NewsSourceResponse' } },
+            },
+          },
+          '400': { $ref: '#/components/responses/ValidationError' },
+          '401': { $ref: '#/components/responses/UnauthorizedError' },
+          '403': { $ref: '#/components/responses/ForbiddenError' },
+          '404': { $ref: '#/components/responses/NotFoundError' },
+          '409': { $ref: '#/components/responses/ConflictError' },
+        },
+      },
+    },
+    '/admin/news-sources/{sourceId}/test': newsActionPath(
+      'testNewsSource',
+      'Fetch and parse a source without writing candidates',
+      newsSourceIdParameter,
+      '#/components/schemas/NewsIngestionResponse',
+    ),
+    '/admin/news-sources/{sourceId}/ingest': newsActionPath(
+      'ingestNewsSource',
+      'Manually fetch a source and upsert candidate metadata',
+      newsSourceIdParameter,
+      '#/components/schemas/NewsIngestionResponse',
+    ),
+    '/admin/news-sources/{sourceId}/pause': newsActionPath(
+      'pauseNewsSource',
+      'Pause a source (admin only)',
+      newsSourceIdParameter,
+      '#/components/schemas/NewsSourceResponse',
+    ),
+    '/admin/news-sources/{sourceId}/resume': newsActionPath(
+      'resumeNewsSource',
+      'Resume a source (admin only)',
+      newsSourceIdParameter,
+      '#/components/schemas/NewsSourceResponse',
+    ),
+    '/admin/news-candidates': {
+      get: {
+        operationId: 'listNewsCandidates',
+        summary: 'List candidate-story inbox metadata',
+        tags: ['News Source Inbox'],
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: 'limit',
+            in: 'query',
+            schema: { type: 'integer', minimum: 1, maximum: 100, default: 25 },
+          },
+          { name: 'cursor', in: 'query', schema: { type: 'string', format: 'uuid' } },
+          {
+            name: 'status',
+            in: 'query',
+            schema: { $ref: '#/components/schemas/NewsCandidateStatus' },
+          },
+          { name: 'sourceId', in: 'query', schema: { type: 'string', format: 'uuid' } },
+          { name: 'teamId', in: 'query', schema: { type: 'string', format: 'uuid' } },
+          { name: 'publishedFrom', in: 'query', schema: { type: 'string', format: 'date-time' } },
+          { name: 'publishedTo', in: 'query', schema: { type: 'string', format: 'date-time' } },
+          { name: 'search', in: 'query', schema: { type: 'string', minLength: 2, maxLength: 100 } },
+        ],
+        responses: {
+          '200': {
+            description: 'Bounded candidate page without source descriptions.',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/NewsCandidateListResponse' },
+              },
+            },
+          },
+          '401': { $ref: '#/components/responses/UnauthorizedError' },
+          '403': { $ref: '#/components/responses/ForbiddenError' },
+        },
+      },
+    },
+    '/admin/news-candidates/manual': {
+      post: {
+        operationId: 'createManualNewsCandidate',
+        summary: 'Submit candidate metadata without fetching the article page',
+        tags: ['News Source Inbox'],
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: { $ref: '#/components/schemas/ManualNewsCandidateRequest' },
+            },
+          },
+        },
+        responses: {
+          '201': {
+            description: 'Manual candidate created and audited.',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/NewsCandidateResponse' },
+              },
+            },
+          },
+          '400': { $ref: '#/components/responses/ValidationError' },
+          '401': { $ref: '#/components/responses/UnauthorizedError' },
+          '403': { $ref: '#/components/responses/ForbiddenError' },
+          '409': { $ref: '#/components/responses/ConflictError' },
+        },
+      },
+    },
+    '/admin/news-candidates/{candidateId}': {
+      get: {
+        operationId: 'getNewsCandidate',
+        summary: 'Get one candidate with bounded source description',
+        tags: ['News Source Inbox'],
+        security: [{ bearerAuth: [] }],
+        parameters: [newsCandidateIdParameter],
+        responses: {
+          '200': {
+            description: 'Candidate detail.',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/NewsCandidateResponse' },
+              },
+            },
+          },
+          '401': { $ref: '#/components/responses/UnauthorizedError' },
+          '403': { $ref: '#/components/responses/ForbiddenError' },
+          '404': { $ref: '#/components/responses/NotFoundError' },
+        },
+      },
+    },
+    '/admin/news-candidates/{candidateId}/review': newsActionPath(
+      'reviewNewsCandidate',
+      'Move a candidate into review',
+      newsCandidateIdParameter,
+      '#/components/schemas/NewsCandidateResponse',
+    ),
+    '/admin/news-candidates/{candidateId}/save': newsActionPath(
+      'saveNewsCandidate',
+      'Save a candidate for later',
+      newsCandidateIdParameter,
+      '#/components/schemas/NewsCandidateResponse',
+    ),
+    '/admin/news-candidates/{candidateId}/dismiss': newsActionPath(
+      'dismissNewsCandidate',
+      'Dismiss a candidate with a retained reason',
+      newsCandidateIdParameter,
+      '#/components/schemas/NewsCandidateResponse',
+      '#/components/schemas/NewsCandidateDismissRequest',
+    ),
+    '/admin/news-candidates/{candidateId}/convert': newsActionPath(
+      'convertNewsCandidate',
+      'Create a CURATED CMS draft from editor-written content',
+      newsCandidateIdParameter,
+      '#/components/schemas/NewsCandidateConversionResponse',
+      '#/components/schemas/NewsCandidateConvertRequest',
+      true,
+    ),
     '/admin/games': {
       get: {
         operationId: 'listAdminGames',
@@ -1260,6 +1566,324 @@ export const openApiDocument = {
           },
         },
       },
+      NewsSourceKind: { type: 'string', enum: ['RSS', 'ATOM', 'MANUAL_ONLY'] },
+      NewsSourceStatus: {
+        type: 'string',
+        enum: ['ACTIVE', 'PAUSED', 'DISABLED', 'ERROR'],
+      },
+      NewsCandidateStatus: {
+        type: 'string',
+        enum: ['NEW', 'REVIEWING', 'SAVED', 'CONVERTED', 'DISMISSED'],
+      },
+      NewsSource: {
+        type: 'object',
+        required: [
+          'id',
+          'name',
+          'slug',
+          'kind',
+          'status',
+          'feedUrl',
+          'siteUrl',
+          'publisherName',
+          'defaultTeam',
+          'isOfficialLeague',
+          'isOfficialTeam',
+          'allowsDescriptionUse',
+          'notes',
+          'health',
+          'createdBySnapshot',
+          'updatedBySnapshot',
+          'createdAt',
+          'updatedAt',
+        ],
+        properties: {
+          id: { type: 'string', format: 'uuid' },
+          name: { type: 'string', maxLength: 160 },
+          slug: { type: 'string', maxLength: 96 },
+          kind: { $ref: '#/components/schemas/NewsSourceKind' },
+          status: { $ref: '#/components/schemas/NewsSourceStatus' },
+          feedUrl: { type: ['string', 'null'], format: 'uri' },
+          siteUrl: { type: 'string', format: 'uri' },
+          publisherName: { type: 'string', maxLength: 160 },
+          defaultTeam: { oneOf: [{ $ref: '#/components/schemas/ArticleTeam' }, { type: 'null' }] },
+          isOfficialLeague: { type: 'boolean' },
+          isOfficialTeam: { type: 'boolean' },
+          allowsDescriptionUse: { type: 'boolean' },
+          notes: { type: ['string', 'null'], maxLength: 1000 },
+          health: {
+            type: 'object',
+            required: [
+              'lastCheckedAt',
+              'lastSuccessfulAt',
+              'lastErrorCode',
+              'lastErrorSummary',
+              'lastItemCount',
+              'consecutiveFailureCount',
+              'hasEtag',
+              'hasModifiedValidator',
+              'runActive',
+            ],
+            properties: {
+              lastCheckedAt: { type: ['string', 'null'], format: 'date-time' },
+              lastSuccessfulAt: { type: ['string', 'null'], format: 'date-time' },
+              lastErrorCode: { type: ['string', 'null'] },
+              lastErrorSummary: { type: ['string', 'null'] },
+              lastItemCount: { type: 'integer', minimum: 0 },
+              consecutiveFailureCount: { type: 'integer', minimum: 0 },
+              hasEtag: { type: 'boolean' },
+              hasModifiedValidator: { type: 'boolean' },
+              runActive: { type: 'boolean' },
+            },
+          },
+          createdBySnapshot: { type: 'string' },
+          updatedBySnapshot: { type: 'string' },
+          createdAt: { type: 'string', format: 'date-time' },
+          updatedAt: { type: 'string', format: 'date-time' },
+        },
+      },
+      NewsSourceCreateRequest: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['name', 'slug', 'kind', 'feedUrl', 'siteUrl', 'publisherName'],
+        properties: {
+          name: { type: 'string', minLength: 1, maxLength: 160 },
+          slug: { type: 'string', pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$', maxLength: 96 },
+          kind: { $ref: '#/components/schemas/NewsSourceKind' },
+          status: { type: 'string', enum: ['ACTIVE', 'PAUSED', 'DISABLED'], default: 'PAUSED' },
+          feedUrl: { type: ['string', 'null'], format: 'uri' },
+          siteUrl: { type: 'string', format: 'uri' },
+          publisherName: { type: 'string', maxLength: 160 },
+          defaultTeamId: { type: ['string', 'null'], format: 'uuid' },
+          isOfficialLeague: { type: 'boolean', default: false },
+          isOfficialTeam: { type: 'boolean', default: false },
+          allowsDescriptionUse: { type: 'boolean', default: false },
+          notes: { type: ['string', 'null'], maxLength: 1000 },
+        },
+      },
+      NewsSourceUpdateRequest: {
+        description:
+          'Partial source update. At least one field is required; relationship rules are revalidated.',
+        type: 'object',
+        additionalProperties: false,
+        minProperties: 1,
+        properties: {
+          name: { type: 'string', minLength: 1, maxLength: 160 },
+          slug: { type: 'string', pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$', maxLength: 96 },
+          kind: { $ref: '#/components/schemas/NewsSourceKind' },
+          status: { type: 'string', enum: ['ACTIVE', 'PAUSED', 'DISABLED'] },
+          feedUrl: { type: ['string', 'null'], format: 'uri' },
+          siteUrl: { type: 'string', format: 'uri' },
+          publisherName: { type: 'string', maxLength: 160 },
+          defaultTeamId: { type: ['string', 'null'], format: 'uuid' },
+          isOfficialLeague: { type: 'boolean' },
+          isOfficialTeam: { type: 'boolean' },
+          allowsDescriptionUse: { type: 'boolean' },
+          notes: { type: ['string', 'null'], maxLength: 1000 },
+        },
+      },
+      NewsSourceResponse: {
+        type: 'object',
+        required: ['data'],
+        properties: { data: { $ref: '#/components/schemas/NewsSource' } },
+      },
+      NewsSourceListResponse: {
+        type: 'object',
+        required: ['data', 'meta'],
+        properties: {
+          data: { type: 'array', items: { $ref: '#/components/schemas/NewsSource' } },
+          meta: { $ref: '#/components/schemas/CursorMeta' },
+        },
+      },
+      NewsIngestionRun: {
+        type: 'object',
+        required: [
+          'id',
+          'sourceId',
+          'status',
+          'startedAt',
+          'completedAt',
+          'fetchedCount',
+          'createdCount',
+          'updatedCount',
+          'skippedCount',
+          'failedCount',
+          'responseBytes',
+          'hasResponseEtag',
+          'hasResponseModified',
+          'errorCode',
+          'errorSummary',
+          'initiatedBySnapshot',
+        ],
+        properties: {
+          id: { type: 'string', format: 'uuid' },
+          sourceId: { type: 'string', format: 'uuid' },
+          status: { type: 'string', enum: ['RUNNING', 'SUCCEEDED', 'PARTIAL', 'FAILED'] },
+          startedAt: { type: 'string', format: 'date-time' },
+          completedAt: { type: ['string', 'null'], format: 'date-time' },
+          fetchedCount: { type: 'integer', minimum: 0 },
+          createdCount: { type: 'integer', minimum: 0 },
+          updatedCount: { type: 'integer', minimum: 0 },
+          skippedCount: { type: 'integer', minimum: 0 },
+          failedCount: { type: 'integer', minimum: 0 },
+          responseBytes: { type: ['integer', 'null'], minimum: 0 },
+          hasResponseEtag: { type: 'boolean' },
+          hasResponseModified: { type: 'boolean' },
+          errorCode: { type: ['string', 'null'] },
+          errorSummary: { type: ['string', 'null'] },
+          initiatedBySnapshot: { type: 'string' },
+        },
+      },
+      NewsSourceDetailResponse: {
+        type: 'object',
+        required: ['data'],
+        properties: {
+          data: {
+            type: 'object',
+            required: ['source', 'recentRuns'],
+            properties: {
+              source: { $ref: '#/components/schemas/NewsSource' },
+              recentRuns: {
+                type: 'array',
+                maxItems: 20,
+                items: { $ref: '#/components/schemas/NewsIngestionRun' },
+              },
+            },
+          },
+        },
+      },
+      NewsCandidate: {
+        type: 'object',
+        required: [
+          'id',
+          'source',
+          'sourceName',
+          'canonicalUrl',
+          'headline',
+          'sourceAuthor',
+          'sourcePublishedAt',
+          'discoveredAt',
+          'status',
+          'convertedArticleId',
+          'suggestedTeams',
+          'updatedAt',
+        ],
+        properties: {
+          id: { type: 'string', format: 'uuid' },
+          source: { type: ['object', 'null'] },
+          sourceName: { type: 'string', maxLength: 160 },
+          canonicalUrl: { type: 'string', format: 'uri' },
+          headline: { type: 'string', maxLength: 300 },
+          sourceAuthor: { type: ['string', 'null'], maxLength: 160 },
+          sourcePublishedAt: { type: ['string', 'null'], format: 'date-time' },
+          discoveredAt: { type: 'string', format: 'date-time' },
+          status: { $ref: '#/components/schemas/NewsCandidateStatus' },
+          convertedArticleId: { type: ['string', 'null'], format: 'uuid' },
+          suggestedTeams: { type: 'array', maxItems: 32, items: { type: 'object' } },
+          sourceExternalId: { type: ['string', 'null'], maxLength: 512 },
+          sourceDescription: { type: ['string', 'null'], maxLength: 2000 },
+          dismissalReason: { type: ['string', 'null'], maxLength: 500 },
+          reviewedBySnapshot: { type: ['string', 'null'] },
+          reviewedAt: { type: ['string', 'null'], format: 'date-time' },
+          createdAt: { type: 'string', format: 'date-time' },
+          updatedAt: { type: 'string', format: 'date-time' },
+        },
+      },
+      NewsCandidateResponse: {
+        type: 'object',
+        required: ['data'],
+        properties: { data: { $ref: '#/components/schemas/NewsCandidate' } },
+      },
+      NewsCandidateListResponse: {
+        type: 'object',
+        required: ['data', 'meta'],
+        properties: {
+          data: { type: 'array', items: { $ref: '#/components/schemas/NewsCandidate' } },
+          meta: { $ref: '#/components/schemas/CursorMeta' },
+        },
+      },
+      ManualNewsCandidateRequest: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['url', 'headline', 'sourceName'],
+        properties: {
+          url: { type: 'string', format: 'uri' },
+          headline: { type: 'string', minLength: 1, maxLength: 300 },
+          sourceName: { type: 'string', minLength: 1, maxLength: 160 },
+          sourceId: { type: ['string', 'null'], format: 'uuid' },
+          sourceDescription: { type: ['string', 'null'], maxLength: 2000 },
+          sourceAuthor: { type: ['string', 'null'], maxLength: 160 },
+          sourcePublishedAt: { type: ['string', 'null'], format: 'date-time' },
+          suggestedTeamIds: {
+            type: 'array',
+            maxItems: 32,
+            items: { type: 'string', format: 'uuid' },
+          },
+        },
+      },
+      NewsCandidateDismissRequest: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['reason'],
+        properties: { reason: { type: 'string', minLength: 1, maxLength: 500 } },
+      },
+      NewsCandidateConvertRequest: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['title', 'originalSummary'],
+        properties: {
+          title: { type: 'string', minLength: 1, maxLength: 180 },
+          slug: { type: 'string', minLength: 1, maxLength: 160 },
+          originalSummary: { type: 'string', minLength: 1, maxLength: 1000 },
+          originalCommentary: {
+            type: ['string', 'null'],
+            maxLength: 2000,
+            description: 'Original Markdown only.',
+          },
+          confirmedTeamIds: {
+            type: 'array',
+            maxItems: 32,
+            items: { type: 'string', format: 'uuid' },
+          },
+          heroImageUrl: { type: ['string', 'null'], format: 'uri' },
+          heroImageAlt: { type: ['string', 'null'], maxLength: 300 },
+          heroImageAttribution: { type: ['string', 'null'], maxLength: 500 },
+          heroImageAttributionUrl: { type: ['string', 'null'], format: 'uri' },
+          changeSummary: { type: ['string', 'null'], maxLength: 500 },
+        },
+      },
+      NewsIngestionResponse: {
+        type: 'object',
+        required: ['data'],
+        properties: {
+          data: {
+            type: 'object',
+            required: ['sourceId', 'sourceSlug', 'testedOnly', 'notModified', 'feedKind', 'run'],
+            properties: {
+              sourceId: { type: 'string', format: 'uuid' },
+              sourceSlug: { type: 'string' },
+              testedOnly: { type: 'boolean' },
+              notModified: { type: 'boolean' },
+              feedKind: { type: ['string', 'null'], enum: ['RSS', 'ATOM', null] },
+              run: { $ref: '#/components/schemas/NewsIngestionRun' },
+            },
+          },
+        },
+      },
+      NewsCandidateConversionResponse: {
+        type: 'object',
+        required: ['data'],
+        properties: {
+          data: {
+            type: 'object',
+            required: ['candidate', 'article'],
+            properties: {
+              candidate: { $ref: '#/components/schemas/NewsCandidate' },
+              article: { $ref: '#/components/schemas/AdminArticleDetail' },
+            },
+          },
+        },
+      },
       Team: {
         type: 'object',
         required: [
@@ -1370,9 +1994,9 @@ export const openApiDocument = {
           seasonType: { type: 'string', enum: ['PRE', 'REG', 'POST'] },
           week: { type: ['integer', 'null'], minimum: 1, maximum: 22 },
           startTime: {
-            type: 'string',
+            type: ['string', 'null'],
             format: 'date-time',
-            description: 'UTC ISO 8601 timestamp.',
+            description: 'UTC ISO 8601 timestamp, or null while the official kickoff is TBD.',
           },
           status: { $ref: '#/components/schemas/GameStatus' },
           homeTeam: { $ref: '#/components/schemas/GameTeamSummary' },
@@ -1667,7 +2291,13 @@ export const openApiDocument = {
           season: { type: 'integer', minimum: 1920, maximum: 2100 },
           seasonType: { type: 'string', enum: ['PRE', 'REG', 'POST'] },
           week: { type: ['integer', 'null'], minimum: 1, maximum: 22 },
-          startTime: { type: 'string', format: 'date-time' },
+          startTime: {
+            oneOf: [
+              { type: 'string', format: 'date-time' },
+              { type: 'string', enum: ['TBD'] },
+            ],
+            description: 'Offset/UTC timestamp, or TBD when no official kickoff is assigned.',
+          },
           awayTeam: { type: 'string', description: 'Canonical abbreviation or documented alias.' },
           homeTeam: { type: 'string', description: 'Canonical abbreviation or documented alias.' },
           status: { $ref: '#/components/schemas/GameStatus' },

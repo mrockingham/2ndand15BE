@@ -29,7 +29,9 @@
     "sports:evaluate:api-sports": "tsx src/commands/evaluate-api-sports.ts",
     "sports:evaluate:highlightly": "tsx src/commands/evaluate-highlightly.ts",
     "schedule:import": "tsx src/commands/schedule-import.ts",
+    "schedule:review": "tsx src/commands/schedule-review.ts",
     "admin:set-role": "tsx src/commands/admin-set-role.ts",
+    "news:ingest": "tsx src/commands/news-ingest.ts",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest",
@@ -49,6 +51,7 @@
     "pg": "^8.22.0",
     "pino": "^10.3.1",
     "pino-http": "^11.0.0",
+    "saxes": "^6.0.0",
     "swagger-ui-express": "^5.0.1",
     "zod": "^4.4.3"
   },

@@ -111,6 +111,23 @@ describe('schedule import service', () => {
     expect(updateImportedGame).not.toHaveBeenCalled();
   });
 
+  it('preserves TBD as a null kickoff and skips an identical existing row', async () => {
+    const existing = createAdminGame();
+    existing.startTime = null;
+    const repository = createRepository({
+      findGameBySourceReference: vi.fn().mockResolvedValue(existing),
+    });
+    const result = await new AdminService(repository).importSchedule(
+      importRequest({ startTime: 'TBD' }),
+      editor,
+      null,
+    );
+
+    expect(result).toMatchObject({ created: 0, updated: 0, skipped: 1, failed: 0 });
+    expect(vi.mocked(repository.findGameBySourceReference)).toHaveBeenCalled();
+    expect(vi.mocked(repository.updateImportedGame)).not.toHaveBeenCalled();
+  });
+
   it('compares imported base fields independently of an editorial override', async () => {
     const existing = {
       ...createAdminGame(),

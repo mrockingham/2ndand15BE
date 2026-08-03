@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+  <channel>
+    <title>Development NFL News</title>
+    <link>https://news.example.com/</link>
+    <description>Fictional local test feed</description>
+    <item>
+      <guid isPermaLink="false">fictional-rss-1</guid>
+      <title>Buffalo Bills open fictional training session</title>
+      <link>https://news.example.com/story/one?utm_source=fixture&amp;edition=morning#top</link>
+      <description><![CDATA[<p>A <strong>short</strong> source description.</p>]]></description>
+      <dc:creator>Fixture Reporter</dc:creator>
+      <pubDate>Sat, 01 Aug 2026 14:00:00 GMT</pubDate>
+      <content:encoded><![CDATA[<article>This full fictional body must never be stored.</article>]]></content:encoded>
+    </item>
+    <item>
+      <guid isPermaLink="false">fictional-rss-2</guid>
+      <title>League shares a fictional preseason note</title>
+      <link>https://news.example.com/story/two</link>
+      <description>Metadata only.</description>
+    </item>
+  </channel>
+</rss>

@@ -2,7 +2,7 @@
 
 All administrative HTTP routes are below `/api/v1/admin`, require a valid access token, and load the current role from PostgreSQL for every request. Roles are `USER`, `EDITOR`, and `ADMIN`; they are never accepted by registration or public profile updates.
 
-Editors may maintain schedules and editorial articles, publish or schedule content, inspect revisions, and read game audit events or one explicitly identified article's audit events. Admins additionally remove overrides, archive/restore articles, and read the complete audit trail. Role changes are intentionally CLI-only:
+Editors may maintain schedules and editorial articles, publish or schedule content, inspect revisions, test/ingest approved news sources, review candidates, and convert candidates into drafts. Admins additionally remove overrides, archive/restore articles, manage source definitions, and read the complete audit trail. Role changes are intentionally CLI-only:
 
 ```sh
 npm run admin:set-role -- --email=user@example.com --role=ADMIN
@@ -29,3 +29,23 @@ Each maintained game can record source type/name, optional source URL and extern
 Administrative writes create immutable-style audit events with actor snapshots, action, entity identity, sanitized before/after snapshots, and correlation ID when supplied. Passwords, tokens, cookies, authorization headers, and provider credentials are redacted. Audit events have no update/delete API, and deleting a user sets relational actor IDs to null while retaining actor snapshots.
 
 Highlightly remains evaluation-only until publication, storage, caching, transformation, and logo rights are confirmed in writing.
+
+## Official schedule baseline and corrections
+
+The reviewed 2026 CSV is an imported provider-independent baseline, not immutable truth. Twenty-four official kickoffs are still TBD and are represented by a null base kickoff/public `startTime`, not placeholder timestamps. CLI-created rows remain unverified because `schedule-import-cli` is an audit snapshot, not a human verifying actor.
+
+For a later official schedule change:
+
+1. Find the game in `/admin/games/:gameId`.
+2. Edit a manually owned base game, or create an override for a provider-backed game.
+3. Record the official source name and URL and a concise correction note.
+4. Verify the corrected game as the authenticated editor/admin.
+5. Confirm the audit history retained the prior and updated values.
+
+The intentionally fictional 2099 import and other development fixtures remain stored for isolated development/audit coverage. They are hidden from normal current-season public results by `CURRENT_NFL_SEASON` and `FIXTURE_DATA_ENABLED=false`. They were not deleted because there is no approved audited deletion workflow and ad hoc destructive SQL is prohibited.
+
+## News-source capabilities
+
+`EDITOR` receives `VIEW_NEWS_SOURCES`, `RUN_NEWS_INGESTION`, `VIEW_NEWS_CANDIDATES`, `REVIEW_NEWS_CANDIDATES`, and `CONVERT_NEWS_CANDIDATE`. `ADMIN` also receives `MANAGE_NEWS_SOURCES`. Current persisted roles are checked on every request; none of these routes are public.
+
+Source and candidate changes reuse `AdminAuditEvent` with compact snapshots. Audits include source creation/update/test, ingestion initiation, pause/resume, manual submission, review transitions, dismissal, and conversion. They never contain raw XML, source descriptions, article bodies, validators, credentials, cookies, or authorization headers. See [news-source ingestion](news-source-ingestion.md).

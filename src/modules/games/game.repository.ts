@@ -115,14 +115,16 @@ function matchesResolvedFilters(game: GameWithTeams, filters: GameListFilters): 
   return (
     (filters.week === undefined || (override?.week ?? game.week) === filters.week) &&
     (filters.status === undefined || (override?.status ?? game.status) === filters.status) &&
-    (filters.startTime === undefined || startTime >= filters.startTime) &&
-    (filters.endTime === undefined || startTime <= filters.endTime)
+    (filters.startTime === undefined || (startTime !== null && startTime >= filters.startTime)) &&
+    (filters.endTime === undefined || (startTime !== null && startTime <= filters.endTime))
   );
 }
 
 function compareResolvedKickoff(left: GameWithTeams, right: GameWithTeams): number {
-  const difference =
-    (left.editorialOverride?.startTime ?? left.startTime).getTime() -
-    (right.editorialOverride?.startTime ?? right.startTime).getTime();
+  const leftStart = left.editorialOverride?.startTime ?? left.startTime;
+  const rightStart = right.editorialOverride?.startTime ?? right.startTime;
+  if (leftStart === null) return rightStart === null ? left.id.localeCompare(right.id) : 1;
+  if (rightStart === null) return -1;
+  const difference = leftStart.getTime() - rightStart.getTime();
   return difference === 0 ? left.id.localeCompare(right.id) : difference;
 }

@@ -53,6 +53,8 @@ Administrative routes live under `/api/v1/admin/articles`; exact request and res
 
 Each meaningful change stores a full editorial revision, including team IDs and publication metadata. `AdminAuditEvent` stores only compact status/title metadata, body length, and a SHA-256 body digest; it does not duplicate large article bodies. Revisions and audit events have no update/delete API and retain nullable actor relations plus actor snapshots.
 
+Candidate conversion is an additional entry point into this same lifecycle. It requires an editor-written title and original summary, creates a `CURATED` `DRAFT`, revision 1, and the normal `ARTICLE_CREATED` audit in one transaction with the terminal candidate link. Suggested teams are never applied unless the editor explicitly confirms them. Source descriptions, full feed content, and source images are never copied automatically. See [the controlled inbox guide](news-source-ingestion.md).
+
 ## Explicit exclusions
 
-This milestone adds no CMS frontend, media handling, rich-text HTML, scraping, RSS/news API integration, AI drafts or summaries, cron jobs, queues, Redis, notifications, provider synchronization, or production deployment changes.
+The CMS still adds no frontend, media handling, rich-text HTML, scraping, AI drafts or summaries, cron jobs, queues, Redis, notifications, provider synchronization, or production deployment changes. The separate controlled inbox supports bounded RSS/Atom metadata only; it does not fetch article pages or publish automatically.

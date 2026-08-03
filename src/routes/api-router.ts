@@ -27,6 +27,8 @@ import { createTeamRouter } from '../modules/teams/team.routes.js';
 import type { TeamReader } from '../modules/teams/team.service.js';
 import { createUserRouter } from '../modules/users/user.routes.js';
 import type { UserPersonalizationService } from '../modules/users/user.service.js';
+import { createNewsInboxRouters } from '../modules/news-inbox/news.routes.js';
+import type { NewsInboxServiceContract } from '../modules/news-inbox/news.service.js';
 
 export interface ApiRouterOptions {
   readonly rateLimit: AppConfig['rateLimit'];
@@ -42,6 +44,7 @@ export interface ApiRouterOptions {
   readonly adminIdentities?: AdministrativeIdentityReader;
   readonly articleReader?: PublicArticleReader;
   readonly editorialArticleService?: EditorialArticleService;
+  readonly newsInboxService?: NewsInboxServiceContract;
 }
 
 export function createApiRouter(options: ApiRouterOptions): Router {
@@ -70,6 +73,16 @@ export function createApiRouter(options: ApiRouterOptions): Router {
     swaggerUi.setup(openApiDocument),
   );
   router.use('/health', createHealthRouter(options.health));
+  if (options.newsInboxService !== undefined && options.adminIdentities !== undefined) {
+    const news = createNewsInboxRouters({
+      authenticate: options.authenticate,
+      identities: options.adminIdentities,
+      service: options.newsInboxService,
+      ingestionRateLimit: options.authConfig.rateLimit,
+    });
+    router.use('/admin/news-sources', news.sources);
+    router.use('/admin/news-candidates', news.candidates);
+  }
   if (options.editorialArticleService !== undefined && options.adminIdentities !== undefined) {
     router.use(
       '/admin/articles',

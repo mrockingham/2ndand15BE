@@ -31,7 +31,7 @@ export interface ImportGameWrite {
   readonly season: number;
   readonly seasonType: SeasonType;
   readonly week: number | null;
-  readonly startTime: Date;
+  readonly startTime: Date | null;
   readonly status: GameStatus;
   readonly homeTeamId: string;
   readonly awayTeamId: string;
@@ -173,10 +173,14 @@ export class PrismaAdminRepository implements AdminRepository {
         seasonType: input.seasonType,
         homeTeamId: input.homeTeamId,
         awayTeamId: input.awayTeamId,
-        startTime: {
-          gte: new Date(input.startTime.getTime() - tolerance),
-          lte: new Date(input.startTime.getTime() + tolerance),
-        },
+        ...(input.startTime === null
+          ? { week: input.week, startTime: null }
+          : {
+              startTime: {
+                gte: new Date(input.startTime.getTime() - tolerance),
+                lte: new Date(input.startTime.getTime() + tolerance),
+              },
+            }),
       },
       include: adminGameInclude,
       orderBy: { startTime: 'asc' },
@@ -553,7 +557,7 @@ function toImportedBaseData(input: ImportGameWrite) {
 
 function toImportOverride(input: ImportGameWrite, game: AdminGameRecord) {
   return {
-    startTime: input.startTime.getTime() === game.startTime.getTime() ? null : input.startTime,
+    startTime: sameDate(input.startTime, game.startTime) ? null : input.startTime,
     status: input.status === game.status ? null : input.status,
     week: input.week === game.week ? null : input.week,
     venueName: input.venueName === game.venueName ? null : input.venueName,
@@ -563,6 +567,10 @@ function toImportOverride(input: ImportGameWrite, game: AdminGameRecord) {
     isNeutralSite: input.isNeutralSite === game.isNeutralSite ? null : input.isNeutralSite,
     internalNote: input.notes,
   };
+}
+
+function sameDate(left: Date | null, right: Date | null): boolean {
+  return left === null || right === null ? left === right : left.getTime() === right.getTime();
 }
 
 async function createAudit(

@@ -2,7 +2,7 @@
 
 Backend REST API for the 2nd and 15 consumer NFL platform.
 
-The implemented backend includes the TypeScript/Express foundation, normalized NFL team and game catalogs, a fixture-backed mock provider, an explicit API-Sports synchronization adapter, email/password authentication, rotating database-backed refresh sessions, password reset, favorite-team personalization, role-protected schedule administration, and an internal revisioned editorial CMS for original, curated, and announcement content.
+The implemented backend includes the TypeScript/Express foundation, normalized NFL team and game catalogs, a fixture-backed mock provider, an explicit API-Sports synchronization adapter, email/password authentication, rotating database-backed refresh sessions, password reset, favorite-team personalization, role-protected schedule administration, an internal revisioned editorial CMS, and a controlled RSS/Atom/manual news-candidate inbox.
 
 ## Requirements
 
@@ -79,6 +79,8 @@ The API defaults to `http://localhost:3000`. The PostgreSQL credentials in `.env
 - `PATCH /api/v1/users/me/favorite-team` — set, replace, or clear the authenticated user's favorite team
 - `/api/v1/admin/*` — role-protected schedule, override, verification, import, and audit operations
 - `/api/v1/admin/articles/*` — role-protected drafts, publishing, scheduling, tagging, and revisions
+- `/api/v1/admin/news-sources/*` — approved source definitions, health, tests, and manual ingestion
+- `/api/v1/admin/news-candidates/*` — private candidate review, manual submission, dismissal, and draft conversion
 - `GET /api/v1/docs` — interactive OpenAPI documentation
 - `GET /api/v1/docs/openapi.json` — OpenAPI JSON document
 
@@ -126,7 +128,9 @@ npm run sports:sync
 npm run sports:verify:live
 npm run sports:evaluate:api-sports -- --seasons=2024,2025,2026
 npm run admin:set-role -- --email=user@example.com --role=ADMIN
+npm run schedule:review -- --file=./data/schedules/nfl-2026.csv
 npm run schedule:import -- --file=./data/import-templates/nfl-schedule.csv --dry-run
+npm run news:ingest -- --source=approved-source-slug --actor=editor@example.com
 ```
 
 Use `prisma:migrate` only when authoring a new migration in development. Use `prisma:deploy` to apply committed migrations, including against a hosted development database.
@@ -170,7 +174,11 @@ Game timestamps are stored and returned as UTC ISO 8601 values. The backend does
 
 Public game values resolve editorial overrides over normalized base values without changing the response shape. Manually maintained games remain visible alongside the configured real provider, while fictional fixture visibility remains separately controlled. See [schedule imports](docs/schedule-imports.md) and [administrative authorization](docs/administration.md).
 
+The committed `data/schedules/nfl-2026.csv` is a reviewed, provider-independent baseline from official NFL schedule pages. It contains 48 preseason and all 272 regular-season games. Twenty-four regular-season kickoffs still officially listed as TBD are stored as `null`, never as fabricated midnight timestamps; the public API returns `startTime: null` for those games. The August 2, 2026 import created 320 official rows, and an identical second write skipped all 320. See [the 2026 review report](docs/schedule-reviews/nfl-2026-review.md).
+
 The editorial CMS stores constrained Markdown and external image/source metadata without fetching it. Scheduled visibility is derived during public reads, every mutation uses optimistic concurrency and creates an immutable revision, and public list DTOs omit bodies and editorial metadata. See [the editorial CMS guide](docs/editorial-cms.md).
+
+The source inbox fetches only explicitly approved RSS/Atom URLs when an editor/admin triggers a test or ingestion. It stores bounded metadata, never fetches linked article pages or images, never auto-publishes, and requires editor-written original content for conversion into a `CURATED` draft. There is no cron, queue, worker, webhook, scraper, or AI authoring. See [the news-source ingestion guide](docs/news-source-ingestion.md).
 
 API-Sports is available only through explicit synchronization commands; public routes never call it. In API-Sports mode, real teams are matched to the existing 32-team catalog and game reads exclude fictional mock records through private provider mappings. One team sync uses one provider call, one game sync uses one, and a combined sync normally uses two before bounded retries. Commands support `-- --dry-run`. See [the API-Sports integration guide](docs/api-sports.md) for configuration, status mapping, rate-limit behavior, fixture separation, failure recovery, and safe live verification.
 

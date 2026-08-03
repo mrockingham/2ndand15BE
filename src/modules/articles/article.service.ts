@@ -167,8 +167,7 @@ export class ArticleService implements PublicArticleReader, EditorialArticleServ
   ): Promise<AdminArticleDetailDto> {
     requireDistinctTeams(input.teamIds);
     await this.requireActiveTeams(input.teamIds);
-    const fields = { ...toCreateFields(input), slug: normalizeSlug(input.slug ?? input.title) };
-    validateArticleFields(fields);
+    const fields = prepareArticleCreate(input);
     if ((await this.repository.findBySlug(fields.slug)) !== null) throw slugConflict();
     return toAdminArticleDetailDto(
       await this.repository.create(
@@ -495,6 +494,12 @@ export class ArticleService implements PublicArticleReader, EditorialArticleServ
     if (result === null) throw concurrencyConflict();
     return toAdminArticleDetailDto(result);
   }
+}
+
+export function prepareArticleCreate(input: ArticleCreateInput): ArticleWriteFields {
+  const fields = { ...toCreateFields(input), slug: normalizeSlug(input.slug ?? input.title) };
+  validateArticleFields(fields);
+  return fields;
 }
 
 function toCreateFields(input: ArticleCreateInput): ArticleWriteFields {
