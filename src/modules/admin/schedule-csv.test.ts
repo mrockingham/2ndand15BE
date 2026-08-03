@@ -25,6 +25,11 @@ describe('schedule CSV parsing', () => {
     ]);
   });
 
+  it('preserves an explicit TBD kickoff without fabricating a timestamp', () => {
+    const row = validRow.replace('2026-09-10T00:20:00Z', 'TBD');
+    expect(parseScheduleCsv(`${header}\n${row}\n`)[0]?.startTime).toBe('TBD');
+  });
+
   it.each<[string, string]>([
     [validRow.replace('2026-09-10T00:20:00Z', '2026-09-10T00:20:00'), 'startTime'],
     [validRow.replace(',REG,', ',INVALID,'), 'seasonType'],

@@ -5,6 +5,7 @@ import { gameStatusSchema, seasonTypeSchema } from '../sports/normalized-game.js
 const nullableTrimmed = (maximum: number) => z.string().trim().min(1).max(maximum).nullable();
 const optionalNullableUrl = z.url().max(2_048).nullable().optional();
 const kickoffSchema = z.iso.datetime({ offset: true });
+const importKickoffSchema = z.union([kickoffSchema, z.literal('TBD')]);
 
 export const adminGameIdParamsSchema = z.object({ gameId: z.uuid() }).strict();
 
@@ -88,7 +89,7 @@ export const scheduleImportRowSchema = z
     season: z.number().int().min(1920).max(2100),
     seasonType: seasonTypeSchema,
     week: z.number().int().min(1).max(22).nullable(),
-    startTime: kickoffSchema,
+    startTime: importKickoffSchema,
     awayTeam: z.string().trim().toUpperCase().min(2).max(8),
     homeTeam: z.string().trim().toUpperCase().min(2).max(8),
     status: gameStatusSchema,

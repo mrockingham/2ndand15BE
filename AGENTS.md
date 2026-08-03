@@ -98,6 +98,7 @@ Lower layers must not import higher layers. Avoid cross-module access to another
 - Seed teams idempotently using stable internal identifiers or another documented stable key. Re-running a seed must not create duplicate teams or mappings.
 - Synchronize games idempotently through provider mappings, resolve teams to internal IDs, and never delete games solely because a provider response omits them.
 - Schedule imports must be bounded, validated, dry-run capable, idempotent, and audited; source URLs are metadata and must never be fetched automatically.
+- Version-controlled factual schedule datasets must pass `schedule:review` before write approval. An officially TBD kickoff uses CSV `TBD`, nullable `Game.startTime`, and public `startTime: null`; never convert a date-only or midnight placeholder into a factual kickoff.
 - Article mutations must use optimistic concurrency, create immutable numbered revisions transactionally, and write compact audits without duplicating large bodies.
 - Review migration SQL before committing it. Never edit an already-applied migration to change production history; add a new migration.
 
@@ -127,6 +128,7 @@ Lower layers must not import higher layers. Avoid cross-module access to another
 - Every business rule needs a service-level test, including inactive or nonexistent favorite teams.
 - Every route needs representative success, validation failure, authentication failure, and relevant not-found/conflict tests.
 - Test provider normalization against fixture data without network access.
+- Test factual schedule datasets with aggregate invariants plus targeted offset, DST, alias, stable-reference, and international-game samples; do not add one test per row.
 - Test refresh rotation, revocation, expiration, and reuse behavior once authentication is implemented.
 - Tests must be deterministic: inject or control time, randomness, and IDs when relevant.
 - A bug fix should include a regression test that fails before the fix.

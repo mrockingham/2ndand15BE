@@ -23,7 +23,7 @@ export interface GameDto {
   readonly season: number;
   readonly seasonType: 'PRE' | 'REG' | 'POST';
   readonly week: number | null;
-  readonly startTime: string;
+  readonly startTime: string | null;
   readonly status:
     | 'SCHEDULED'
     | 'PREGAME'
@@ -52,7 +52,7 @@ export function toGameDto(game: GameWithTeams): GameDto {
     season: game.season,
     seasonType: game.seasonType,
     week: override?.week ?? game.week,
-    startTime: (override?.startTime ?? game.startTime).toISOString(),
+    startTime: (override?.startTime ?? game.startTime)?.toISOString() ?? null,
     status: override?.status ?? game.status,
     homeTeam: toTeamSummary(game.homeTeam),
     awayTeam: toTeamSummary(game.awayTeam),

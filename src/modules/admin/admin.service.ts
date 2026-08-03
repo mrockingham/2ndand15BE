@@ -249,7 +249,7 @@ export class AdminService implements AdministrativeScheduleService {
         continue;
       }
       const write = toResolvedImportWrite(row, homeTeamId, awayTeamId);
-      const identity = `${String(write.season)}|${write.seasonType}|${homeTeamId}|${awayTeamId}|${write.startTime.toISOString()}`;
+      const identity = `${String(write.season)}|${write.seasonType}|${String(write.week)}|${homeTeamId}|${awayTeamId}|${write.startTime?.toISOString() ?? 'TBD'}`;
       if (identities.has(identity)) {
         failures.push({
           row: rowNumber,
@@ -389,7 +389,7 @@ function toResolvedImportWrite(
 ): ImportGameWrite {
   return {
     ...row,
-    startTime: new Date(row.startTime),
+    startTime: row.startTime === 'TBD' ? null : new Date(row.startTime),
     homeTeamId,
     awayTeamId,
   };
@@ -406,7 +406,7 @@ function matchesImport(game: AdminGameRecord, input: ImportGameWrite): boolean {
     game.seasonType === input.seasonType &&
     game.homeTeamId === input.homeTeamId &&
     game.awayTeamId === input.awayTeamId &&
-    game.startTime.getTime() === input.startTime.getTime() &&
+    sameDate(game.startTime, input.startTime) &&
     game.status === input.status &&
     game.week === input.week &&
     game.venueName === input.venueName &&
@@ -417,6 +417,10 @@ function matchesImport(game: AdminGameRecord, input: ImportGameWrite): boolean {
     (game.provenance?.sourceName ?? input.sourceName) === input.sourceName &&
     (game.provenance?.sourceType ?? input.sourceType) === input.sourceType
   );
+}
+
+function sameDate(left: Date | null, right: Date | null): boolean {
+  return left === null || right === null ? left === right : left.getTime() === right.getTime();
 }
 
 function findFormulaField(row: ScheduleImportRow): string | null {

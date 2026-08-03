@@ -29,6 +29,7 @@
     "sports:evaluate:api-sports": "tsx src/commands/evaluate-api-sports.ts",
     "sports:evaluate:highlightly": "tsx src/commands/evaluate-highlightly.ts",
     "schedule:import": "tsx src/commands/schedule-import.ts",
+    "schedule:review": "tsx src/commands/schedule-review.ts",
     "admin:set-role": "tsx src/commands/admin-set-role.ts",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",

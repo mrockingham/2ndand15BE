@@ -126,6 +126,7 @@ npm run sports:sync
 npm run sports:verify:live
 npm run sports:evaluate:api-sports -- --seasons=2024,2025,2026
 npm run admin:set-role -- --email=user@example.com --role=ADMIN
+npm run schedule:review -- --file=./data/schedules/nfl-2026.csv
 npm run schedule:import -- --file=./data/import-templates/nfl-schedule.csv --dry-run
 ```
 
@@ -169,6 +170,8 @@ The same seed then synchronizes a small, explicitly fictional development schedu
 Game timestamps are stored and returned as UTC ISO 8601 values. The backend does not infer a display timezone. `GET /games` defaults to `CURRENT_NFL_SEASON` and the next 14 days, so unavailable current-season data produces an empty normalized list rather than historical fallback. `?season=2024` remains an explicit historical query. Date filters must be supplied together and may span at most 31 days. Cursor pagination is ordered by start time and internal game ID.
 
 Public game values resolve editorial overrides over normalized base values without changing the response shape. Manually maintained games remain visible alongside the configured real provider, while fictional fixture visibility remains separately controlled. See [schedule imports](docs/schedule-imports.md) and [administrative authorization](docs/administration.md).
+
+The committed `data/schedules/nfl-2026.csv` is a reviewed, provider-independent baseline from official NFL schedule pages. It contains 48 preseason and all 272 regular-season games. Twenty-four regular-season kickoffs still officially listed as TBD are stored as `null`, never as fabricated midnight timestamps; the public API returns `startTime: null` for those games. The August 2, 2026 import created 320 official rows, and an identical second write skipped all 320. See [the 2026 review report](docs/schedule-reviews/nfl-2026-review.md).
 
 The editorial CMS stores constrained Markdown and external image/source metadata without fetching it. Scheduled visibility is derived during public reads, every mutation uses optimistic concurrency and creates an immutable revision, and public list DTOs omit bodies and editorial metadata. See [the editorial CMS guide](docs/editorial-cms.md).
 

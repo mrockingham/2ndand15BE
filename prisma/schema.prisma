@@ -163,7 +163,7 @@ model Game {
   season                Int
   seasonType            SeasonType             @map("season_type")
   week                  Int?
-  startTime             DateTime               @map("start_time") @db.Timestamptz(3)
+  startTime             DateTime?              @map("start_time") @db.Timestamptz(3)
   status                GameStatus
   homeTeamId            String                 @map("home_team_id") @db.Uuid
   awayTeamId            String                 @map("away_team_id") @db.Uuid

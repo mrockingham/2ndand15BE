@@ -29,3 +29,17 @@ Each maintained game can record source type/name, optional source URL and extern
 Administrative writes create immutable-style audit events with actor snapshots, action, entity identity, sanitized before/after snapshots, and correlation ID when supplied. Passwords, tokens, cookies, authorization headers, and provider credentials are redacted. Audit events have no update/delete API, and deleting a user sets relational actor IDs to null while retaining actor snapshots.
 
 Highlightly remains evaluation-only until publication, storage, caching, transformation, and logo rights are confirmed in writing.
+
+## Official schedule baseline and corrections
+
+The reviewed 2026 CSV is an imported provider-independent baseline, not immutable truth. Twenty-four official kickoffs are still TBD and are represented by a null base kickoff/public `startTime`, not placeholder timestamps. CLI-created rows remain unverified because `schedule-import-cli` is an audit snapshot, not a human verifying actor.
+
+For a later official schedule change:
+
+1. Find the game in `/admin/games/:gameId`.
+2. Edit a manually owned base game, or create an override for a provider-backed game.
+3. Record the official source name and URL and a concise correction note.
+4. Verify the corrected game as the authenticated editor/admin.
+5. Confirm the audit history retained the prior and updated values.
+
+The intentionally fictional 2099 import and other development fixtures remain stored for isolated development/audit coverage. They are hidden from normal current-season public results by `CURRENT_NFL_SEASON` and `FIXTURE_DATA_ENABLED=false`. They were not deleted because there is no approved audited deletion workflow and ad hoc destructive SQL is prohibited.

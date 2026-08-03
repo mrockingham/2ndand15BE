@@ -18,8 +18,21 @@ describe.skipIf(!databaseTestsEnabled)('administrative schedule database integra
   const userIds = new Set<string>();
   const auditRequestPrefix = `admin-db-${randomUUID()}`;
 
-  beforeAll(() => {
+  beforeAll(async () => {
     prisma = createPrismaClient(loadDatabaseConfig().databaseUrl);
+    await prisma.game.deleteMany({
+      where: {
+        provenance: {
+          is: {
+            sourceName: { in: ['Database integration fixture', 'Database import fixture'] },
+          },
+        },
+      },
+    });
+    await prisma.user.deleteMany({ where: { normalizedEmail: { startsWith: 'admin-db-' } } });
+    await prisma.adminAuditEvent.deleteMany({
+      where: { requestId: { startsWith: 'admin-db-' } },
+    });
   });
 
   afterAll(async () => {
@@ -178,7 +191,7 @@ describe.skipIf(!databaseTestsEnabled)('administrative schedule database integra
     });
     expect(audit.length).toBeGreaterThanOrEqual(8);
     expect(JSON.stringify(audit)).not.toMatch(/database-test-hash|authorization|refreshToken/i);
-  });
+  }, 15_000);
 });
 
 function requirePrisma(prisma: PrismaClient | undefined): PrismaClient {

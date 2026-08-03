@@ -181,7 +181,7 @@ function matchesPersistedGame(game: Game, expected: ReturnType<typeof toGameWrit
     game.season === expected.season &&
     game.seasonType === expected.seasonType &&
     game.week === expected.week &&
-    game.startTime.getTime() === expected.startTime.getTime() &&
+    game.startTime?.getTime() === expected.startTime.getTime() &&
     game.status === expected.status &&
     game.homeTeamId === expected.homeTeamId &&
     game.awayTeamId === expected.awayTeamId &&

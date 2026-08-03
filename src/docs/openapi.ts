@@ -1370,9 +1370,9 @@ export const openApiDocument = {
           seasonType: { type: 'string', enum: ['PRE', 'REG', 'POST'] },
           week: { type: ['integer', 'null'], minimum: 1, maximum: 22 },
           startTime: {
-            type: 'string',
+            type: ['string', 'null'],
             format: 'date-time',
-            description: 'UTC ISO 8601 timestamp.',
+            description: 'UTC ISO 8601 timestamp, or null while the official kickoff is TBD.',
           },
           status: { $ref: '#/components/schemas/GameStatus' },
           homeTeam: { $ref: '#/components/schemas/GameTeamSummary' },
@@ -1667,7 +1667,13 @@ export const openApiDocument = {
           season: { type: 'integer', minimum: 1920, maximum: 2100 },
           seasonType: { type: 'string', enum: ['PRE', 'REG', 'POST'] },
           week: { type: ['integer', 'null'], minimum: 1, maximum: 22 },
-          startTime: { type: 'string', format: 'date-time' },
+          startTime: {
+            oneOf: [
+              { type: 'string', format: 'date-time' },
+              { type: 'string', enum: ['TBD'] },
+            ],
+            description: 'Offset/UTC timestamp, or TBD when no official kickoff is assigned.',
+          },
           awayTeam: { type: 'string', description: 'Canonical abbreviation or documented alias.' },
           homeTeam: { type: 'string', description: 'Canonical abbreviation or documented alias.' },
           status: { $ref: '#/components/schemas/GameStatus' },
