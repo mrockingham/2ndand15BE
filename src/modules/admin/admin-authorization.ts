@@ -19,7 +19,13 @@ export type AdministrativeCapability =
   | 'PUBLISH_ARTICLE'
   | 'FEATURE_ARTICLE'
   | 'ARCHIVE_ARTICLE'
-  | 'VIEW_EDITORIAL_AUDIT';
+  | 'VIEW_EDITORIAL_AUDIT'
+  | 'VIEW_NEWS_SOURCES'
+  | 'MANAGE_NEWS_SOURCES'
+  | 'RUN_NEWS_INGESTION'
+  | 'VIEW_NEWS_CANDIDATES'
+  | 'REVIEW_NEWS_CANDIDATES'
+  | 'CONVERT_NEWS_CANDIDATE';
 
 export interface AdministrativePrincipal {
   readonly userId: string;
@@ -45,6 +51,11 @@ const capabilitiesByRole: Readonly<Record<UserRole, ReadonlySet<AdministrativeCa
     'PUBLISH_ARTICLE',
     'FEATURE_ARTICLE',
     'VIEW_EDITORIAL_AUDIT',
+    'VIEW_NEWS_SOURCES',
+    'RUN_NEWS_INGESTION',
+    'VIEW_NEWS_CANDIDATES',
+    'REVIEW_NEWS_CANDIDATES',
+    'CONVERT_NEWS_CANDIDATE',
   ]),
   ADMIN: new Set([
     'VIEW_SCHEDULE',
@@ -62,6 +73,12 @@ const capabilitiesByRole: Readonly<Record<UserRole, ReadonlySet<AdministrativeCa
     'FEATURE_ARTICLE',
     'ARCHIVE_ARTICLE',
     'VIEW_EDITORIAL_AUDIT',
+    'VIEW_NEWS_SOURCES',
+    'MANAGE_NEWS_SOURCES',
+    'RUN_NEWS_INGESTION',
+    'VIEW_NEWS_CANDIDATES',
+    'REVIEW_NEWS_CANDIDATES',
+    'CONVERT_NEWS_CANDIDATE',
   ]),
 };
 

@@ -25,6 +25,7 @@ Keep the current milestone small. Do not implement future product ideas merely b
 - Audit and provenance metadata, internal editorial notes, and actor snapshots must remain private to authorized administrative routes.
 - Public article routes expose only derived-visible published/scheduled content; drafts, unpublished, archived, revisions, actor snapshots, and audit data remain private.
 - Curated articles store attribution and original summaries/commentary only. Never copy third-party article bodies or fetch source/image URLs automatically.
+- News candidates are private metadata-only records. Feed ingestion must never fetch article pages/images, auto-publish, or change a candidate's editorial state.
 - Public game queries without an explicit season must be constrained to `CURRENT_NFL_SEASON`; historical seasons require an explicit query.
 - Development fixture games must remain hidden unless `FIXTURE_DATA_ENABLED` is explicitly enabled.
 - A user may have zero or one favorite team during the MVP.
@@ -100,6 +101,7 @@ Lower layers must not import higher layers. Avoid cross-module access to another
 - Schedule imports must be bounded, validated, dry-run capable, idempotent, and audited; source URLs are metadata and must never be fetched automatically.
 - Version-controlled factual schedule datasets must pass `schedule:review` before write approval. An officially TBD kickoff uses CSV `TBD`, nullable `Game.startTime`, and public `startTime: null`; never convert a date-only or midnight placeholder into a factual kickoff.
 - Article mutations must use optimistic concurrency, create immutable numbered revisions transactionally, and write compact audits without duplicating large bodies.
+- News-source fetching must reject private/local/metadata destinations after DNS resolution and on every redirect, enforce byte/time/entry/depth limits, and retain only bounded RSS/Atom metadata.
 - Review migration SQL before committing it. Never edit an already-applied migration to change production history; add a new migration.
 
 ## Sports data providers
@@ -114,6 +116,14 @@ Lower layers must not import higher layers. Avoid cross-module access to another
 - A normalized record may carry an internal ID where the domain already has one; provider IDs must remain explicit mapping metadata and must not masquerade as internal IDs.
 - Preserve attribution and asset-source metadata required by provider terms.
 - Keep API-Sports logo storage disabled unless provider terms have been reviewed and `API_SPORTS_STORE_LOGO_URLS` is explicitly enabled.
+
+## News-source inbox
+
+- Only explicit admin-configured RSS, Atom, or manual-only sources belong in the registry; never infer team feed URLs.
+- Manual submission and candidate conversion never fetch the candidate URL.
+- Stable source IDs and canonical URL hashes drive idempotent duplicate prevention; refreshes preserve review state.
+- Team suggestions are deterministic and advisory. Only editor-confirmed internal team IDs become article tags.
+- Ingestion is manual through protected HTTP or the bounded CLI. Do not add cron, queues, workers, webhooks, headless browsers, scraping, or AI writing without a separately approved milestone.
 
 ## Errors, logging, and observability
 

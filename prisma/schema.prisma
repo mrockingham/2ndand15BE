@@ -69,6 +69,34 @@ enum ArticleStatus {
   ARCHIVED
 }
 
+enum NewsSourceKind {
+  RSS
+  ATOM
+  MANUAL_ONLY
+}
+
+enum NewsSourceStatus {
+  ACTIVE
+  PAUSED
+  DISABLED
+  ERROR
+}
+
+enum NewsCandidateStatus {
+  NEW
+  REVIEWING
+  SAVED
+  CONVERTED
+  DISMISSED
+}
+
+enum NewsIngestionRunStatus {
+  RUNNING
+  SUCCEEDED
+  PARTIAL
+  FAILED
+}
+
 model User {
   id                  String                  @id @default(uuid()) @db.Uuid
   email               String                  @db.VarChar(254)
@@ -90,6 +118,10 @@ model User {
   createdArticles     Article[]               @relation("ArticleCreator")
   updatedArticles     Article[]               @relation("ArticleUpdater")
   articleRevisions    ArticleRevision[]       @relation("ArticleRevisionEditor")
+  createdNewsSources  NewsSource[]            @relation("NewsSourceCreator")
+  updatedNewsSources  NewsSource[]            @relation("NewsSourceUpdater")
+  reviewedCandidates  NewsCandidate[]         @relation("NewsCandidateReviewer")
+  newsIngestionRuns   NewsIngestionRun[]      @relation("NewsIngestionInitiator")
 
   @@index([isActive], map: "users_active_idx")
   @@index([favoriteTeamId], map: "users_favorite_team_id_idx")
@@ -131,26 +163,28 @@ model PasswordResetToken {
 }
 
 model Team {
-  id             String                @id @default(uuid()) @db.Uuid
-  league         League
-  city           String                @db.VarChar(64)
-  name           String                @db.VarChar(64)
-  fullName       String                @map("full_name") @db.VarChar(128)
-  abbreviation   String                @db.VarChar(8)
-  conference     Conference
-  division       Division
-  primaryColor   String                @map("primary_color") @db.VarChar(7)
-  secondaryColor String                @map("secondary_color") @db.VarChar(7)
-  logoUrl        String?               @map("logo_url") @db.Text
-  logoSource     String?               @map("logo_source") @db.VarChar(128)
-  isActive       Boolean               @default(true) @map("is_active")
-  createdAt      DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt      DateTime              @updatedAt @map("updated_at") @db.Timestamptz(3)
-  providerMaps   TeamProviderMapping[]
-  homeGames      Game[]                @relation("HomeTeamGames")
-  awayGames      Game[]                @relation("AwayTeamGames")
-  favoritedBy    User[]                @relation("UserFavoriteTeam")
-  articles       ArticleTeam[]
+  id                       String                @id @default(uuid()) @db.Uuid
+  league                   League
+  city                     String                @db.VarChar(64)
+  name                     String                @db.VarChar(64)
+  fullName                 String                @map("full_name") @db.VarChar(128)
+  abbreviation             String                @db.VarChar(8)
+  conference               Conference
+  division                 Division
+  primaryColor             String                @map("primary_color") @db.VarChar(7)
+  secondaryColor           String                @map("secondary_color") @db.VarChar(7)
+  logoUrl                  String?               @map("logo_url") @db.Text
+  logoSource               String?               @map("logo_source") @db.VarChar(128)
+  isActive                 Boolean               @default(true) @map("is_active")
+  createdAt                DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt                DateTime              @updatedAt @map("updated_at") @db.Timestamptz(3)
+  providerMaps             TeamProviderMapping[]
+  homeGames                Game[]                @relation("HomeTeamGames")
+  awayGames                Game[]                @relation("AwayTeamGames")
+  favoritedBy              User[]                @relation("UserFavoriteTeam")
+  articles                 ArticleTeam[]
+  defaultNewsSources       NewsSource[]
+  newsCandidateSuggestions NewsCandidateTeam[]
 
   @@unique([league, abbreviation], map: "teams_league_abbreviation_key")
   @@index([league, isActive, conference, division, fullName], map: "teams_catalog_order_idx")
@@ -294,6 +328,7 @@ model Article {
   updatedBy               User?             @relation("ArticleUpdater", fields: [updatedById], references: [id], onDelete: SetNull)
   teams                   ArticleTeam[]
   revisions               ArticleRevision[]
+  sourceCandidate         NewsCandidate?
 
   @@unique([id, version], map: "articles_id_version_key")
   @@index([status, publishedAt, id], map: "articles_status_published_idx")
@@ -333,6 +368,124 @@ model ArticleRevision {
   @@index([articleId, createdAt, id], map: "article_revisions_article_created_idx")
   @@index([editorUserId, createdAt], map: "article_revisions_editor_created_idx")
   @@map("article_revisions")
+}
+
+model NewsSource {
+  id                      String             @id @default(uuid()) @db.Uuid
+  name                    String             @db.VarChar(160)
+  slug                    String             @unique(map: "news_sources_slug_key") @db.VarChar(96)
+  kind                    NewsSourceKind
+  status                  NewsSourceStatus   @default(PAUSED)
+  feedUrl                 String?            @map("feed_url") @db.Text
+  siteUrl                 String             @map("site_url") @db.Text
+  publisherName           String             @map("publisher_name") @db.VarChar(160)
+  defaultTeamId           String?            @map("default_team_id") @db.Uuid
+  isOfficialLeague        Boolean            @default(false) @map("is_official_league")
+  isOfficialTeam          Boolean            @default(false) @map("is_official_team")
+  allowsDescriptionUse    Boolean            @default(false) @map("allows_description_use")
+  notes                   String?            @db.VarChar(1000)
+  lastCheckedAt           DateTime?          @map("last_checked_at") @db.Timestamptz(3)
+  lastSuccessfulAt        DateTime?          @map("last_successful_at") @db.Timestamptz(3)
+  lastErrorCode           String?            @map("last_error_code") @db.VarChar(96)
+  lastErrorSummary        String?            @map("last_error_summary") @db.VarChar(500)
+  lastItemCount           Int                @default(0) @map("last_item_count")
+  consecutiveFailureCount Int                @default(0) @map("consecutive_failure_count")
+  responseEtag            String?            @map("response_etag") @db.VarChar(512)
+  responseModified        String?            @map("response_modified") @db.VarChar(256)
+  ingestionLeaseId        String?            @map("ingestion_lease_id") @db.Uuid
+  ingestionLeaseStartedAt DateTime?          @map("ingestion_lease_started_at") @db.Timestamptz(3)
+  createdById             String?            @map("created_by_id") @db.Uuid
+  updatedById             String?            @map("updated_by_id") @db.Uuid
+  createdBySnapshot       String             @map("created_by_snapshot") @db.VarChar(254)
+  updatedBySnapshot       String             @map("updated_by_snapshot") @db.VarChar(254)
+  createdAt               DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt               DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
+  defaultTeam             Team?              @relation(fields: [defaultTeamId], references: [id], onDelete: SetNull)
+  createdBy               User?              @relation("NewsSourceCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedBy               User?              @relation("NewsSourceUpdater", fields: [updatedById], references: [id], onDelete: SetNull)
+  candidates              NewsCandidate[]
+  ingestionRuns           NewsIngestionRun[]
+
+  @@index([status, name, id], map: "news_sources_status_name_idx")
+  @@index([defaultTeamId], map: "news_sources_default_team_idx")
+  @@index([createdById], map: "news_sources_created_by_idx")
+  @@index([updatedById], map: "news_sources_updated_by_idx")
+  @@map("news_sources")
+}
+
+model NewsCandidate {
+  id                 String              @id @default(uuid()) @db.Uuid
+  sourceId           String?             @map("source_id") @db.Uuid
+  sourceNameSnapshot String              @map("source_name_snapshot") @db.VarChar(160)
+  sourceExternalId   String?             @map("source_external_id") @db.VarChar(512)
+  canonicalUrl       String              @map("canonical_url") @db.Text
+  canonicalUrlHash   String              @unique(map: "news_candidates_canonical_url_hash_key") @map("canonical_url_hash") @db.Char(64)
+  headline           String              @db.VarChar(300)
+  sourceDescription  String?             @map("source_description") @db.VarChar(2000)
+  sourceAuthor       String?             @map("source_author") @db.VarChar(160)
+  sourcePublishedAt  DateTime?           @map("source_published_at") @db.Timestamptz(3)
+  discoveredAt       DateTime            @map("discovered_at") @db.Timestamptz(3)
+  status             NewsCandidateStatus @default(NEW)
+  dismissalReason    String?             @map("dismissal_reason") @db.VarChar(500)
+  convertedArticleId String?             @unique(map: "news_candidates_converted_article_id_key") @map("converted_article_id") @db.Uuid
+  reviewedById       String?             @map("reviewed_by_id") @db.Uuid
+  reviewedBySnapshot String?             @map("reviewed_by_snapshot") @db.VarChar(254)
+  reviewedAt         DateTime?           @map("reviewed_at") @db.Timestamptz(3)
+  createdAt          DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime            @updatedAt @map("updated_at") @db.Timestamptz(3)
+  source             NewsSource?         @relation(fields: [sourceId], references: [id], onDelete: SetNull)
+  suggestedTeams     NewsCandidateTeam[]
+  convertedArticle   Article?            @relation(fields: [convertedArticleId], references: [id], onDelete: Restrict)
+  reviewedBy         User?               @relation("NewsCandidateReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  @@unique([sourceId, sourceExternalId], map: "news_candidates_source_external_id_key")
+  @@index([status, discoveredAt, id], map: "news_candidates_status_discovered_idx")
+  @@index([sourceId, discoveredAt, id], map: "news_candidates_source_discovered_idx")
+  @@index([sourcePublishedAt, id], map: "news_candidates_published_idx")
+  @@index([reviewedById], map: "news_candidates_reviewer_idx")
+  @@map("news_candidates")
+}
+
+model NewsCandidateTeam {
+  candidateId String        @map("candidate_id") @db.Uuid
+  teamId      String        @map("team_id") @db.Uuid
+  rule        String        @db.VarChar(64)
+  createdAt   DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  candidate   NewsCandidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  team        Team          @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@id([candidateId, teamId])
+  @@index([teamId, candidateId], map: "news_candidate_teams_team_candidate_idx")
+  @@map("news_candidate_teams")
+}
+
+model NewsIngestionRun {
+  id                  String                 @id @default(uuid()) @db.Uuid
+  sourceId            String                 @map("source_id") @db.Uuid
+  status              NewsIngestionRunStatus @default(RUNNING)
+  startedAt           DateTime               @map("started_at") @db.Timestamptz(3)
+  completedAt         DateTime?              @map("completed_at") @db.Timestamptz(3)
+  fetchedCount        Int                    @default(0) @map("fetched_count")
+  createdCount        Int                    @default(0) @map("created_count")
+  updatedCount        Int                    @default(0) @map("updated_count")
+  skippedCount        Int                    @default(0) @map("skipped_count")
+  failedCount         Int                    @default(0) @map("failed_count")
+  responseBytes       Int?                   @map("response_bytes")
+  responseEtag        String?                @map("response_etag") @db.VarChar(512)
+  responseModified    String?                @map("response_modified") @db.VarChar(256)
+  errorCode           String?                @map("error_code") @db.VarChar(96)
+  errorSummary        String?                @map("error_summary") @db.VarChar(500)
+  initiatedById       String?                @map("initiated_by_id") @db.Uuid
+  initiatedBySnapshot String                 @map("initiated_by_snapshot") @db.VarChar(254)
+  requestId           String?                @map("request_id") @db.VarChar(128)
+  createdAt           DateTime               @default(now()) @map("created_at") @db.Timestamptz(3)
+  source              NewsSource             @relation(fields: [sourceId], references: [id], onDelete: Restrict)
+  initiatedBy         User?                  @relation("NewsIngestionInitiator", fields: [initiatedById], references: [id], onDelete: SetNull)
+
+  @@index([sourceId, startedAt, id], map: "news_ingestion_runs_source_started_idx")
+  @@index([status, startedAt, id], map: "news_ingestion_runs_status_started_idx")
+  @@index([initiatedById, startedAt], map: "news_ingestion_runs_initiator_idx")
+  @@map("news_ingestion_runs")
 }
 
 model GameProviderMapping {

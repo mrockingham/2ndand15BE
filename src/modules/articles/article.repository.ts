@@ -183,40 +183,9 @@ export class PrismaArticleRepository implements ArticleRepository {
     changeSummary: string | null,
     requestId: string | null,
   ): Promise<ArticleRecord> {
-    return this.prisma.$transaction(async (transaction) => {
-      const article = await transaction.article.create({
-        data: {
-          ...fields,
-          status: 'DRAFT',
-          createdById: principal.userId,
-          updatedById: principal.userId,
-          createdBySnapshot: principal.email,
-          updatedBySnapshot: principal.email,
-          teams: { create: teamIds.map((teamId) => ({ teamId })) },
-        },
-        include: articleInclude,
-      });
-      await transaction.articleRevision.create({
-        data: {
-          articleId: article.id,
-          revisionNumber: article.version,
-          editorUserId: principal.userId,
-          editorSnapshot: principal.email,
-          snapshot: revisionSnapshot(article),
-          changeSummary,
-        },
-      });
-      await createArticleAudit(
-        transaction,
-        principal,
-        requestId,
-        'ARTICLE_CREATED',
-        article,
-        null,
-        article,
-      );
-      return article;
-    });
+    return this.prisma.$transaction((transaction) =>
+      createArticleInTransaction(transaction, fields, teamIds, principal, changeSummary, requestId),
+    );
   }
 
   mutate(
@@ -296,6 +265,48 @@ export class PrismaArticleRepository implements ArticleRepository {
   findRevision(articleId: string, revisionId: string): Promise<ArticleRevisionRecord | null> {
     return this.prisma.articleRevision.findFirst({ where: { id: revisionId, articleId } });
   }
+}
+
+export async function createArticleInTransaction(
+  transaction: Prisma.TransactionClient,
+  fields: ArticleWriteFields,
+  teamIds: readonly string[],
+  principal: AdministrativePrincipal,
+  changeSummary: string | null,
+  requestId: string | null,
+): Promise<ArticleRecord> {
+  const article = await transaction.article.create({
+    data: {
+      ...fields,
+      status: 'DRAFT',
+      createdById: principal.userId,
+      updatedById: principal.userId,
+      createdBySnapshot: principal.email,
+      updatedBySnapshot: principal.email,
+      teams: { create: teamIds.map((teamId) => ({ teamId })) },
+    },
+    include: articleInclude,
+  });
+  await transaction.articleRevision.create({
+    data: {
+      articleId: article.id,
+      revisionNumber: article.version,
+      editorUserId: principal.userId,
+      editorSnapshot: principal.email,
+      snapshot: revisionSnapshot(article),
+      changeSummary,
+    },
+  });
+  await createArticleAudit(
+    transaction,
+    principal,
+    requestId,
+    'ARTICLE_CREATED',
+    article,
+    null,
+    article,
+  );
+  return article;
 }
 
 function publicVisibilityWhere(now: Date): Prisma.ArticleWhereInput {

@@ -288,6 +288,27 @@ Delivered while blocked:
 
 The Hall of Fame Game remains omitted with a documented warning because the product still has no separate Hall of Fame/preseason week convention. The 24 TBD rows require later editor updates and human verification after official kickoff assignment.
 
+## Milestone 13 — Controlled news-source inbox
+
+Goal: discover candidate NFL stories from explicitly approved RSS/Atom feeds or editor-supplied URLs without scraping, copying full text, or bypassing the existing CMS workflow.
+
+**Status:** Complete on August 2, 2026. The migration applied to Neon, the full hosted integration suite and local quality gates passed, the fictional end-to-end workflow cleaned up, and no live source was inserted by default.
+
+Deliverables:
+
+- Admin-managed `RSS`, `ATOM`, and `MANUAL_ONLY` source registry with private health/run history
+- Manually triggered SSRF-resistant, timeout/byte/redirect/depth/entry-bounded feed reads
+- Strict SAX parsing, plain-text descriptions, stable external-ID/canonical-URL deduplication, and conditional requests
+- Private candidate inbox with deterministic advisory team suggestions and terminal-aware review states
+- Manual metadata submission without page fetching
+- Transactional conversion to an existing `CURATED` `DRAFT`, revision 1, and compact CMS/candidate audits
+- Protected HTTP operations and a sequential five-source-bounded CLI
+
+Boundaries:
+
+- No frontend, article-page/image fetching, full-text storage, automatic publication, AI writing/tagging, social ingestion, cron, queue, worker, webhook, Redis, or production deployment changes
+- No inferred team feeds and no default active source without a documented live evaluation
+
 ## Later roadmap themes
 
 After the first slice is stable, define separate milestones for:

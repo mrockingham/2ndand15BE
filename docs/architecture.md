@@ -2,7 +2,7 @@
 
 ## Status
 
-This document defines the backend architecture through the editorial CMS milestone. The service foundation, normalized mock/API-Sports-backed team and game catalogs, authentication lifecycle, favorite-team personalization, role-protected schedule maintenance, and revisioned original/curated editorial content are implemented.
+This document defines the backend architecture through the controlled news-source inbox milestone. The service foundation, normalized mock/API-Sports-backed team and game catalogs, authentication lifecycle, favorite-team personalization, role-protected schedule maintenance, revisioned original/curated editorial content, and manual RSS/Atom candidate workflow are implemented.
 
 ## System context
 
@@ -16,11 +16,14 @@ Frontend
 Express API
    |-- Auth / Users services ------> PostgreSQL via Prisma
    |-- Teams / Games services -----> PostgreSQL via Prisma
+   |-- News inbox service ---------> approved RSS/Atom feeds (manual trigger only)
    `-- Sports provider interface -+-> Mock fixture adapter
                                   `-> API-Sports adapter (sync commands only)
 ```
 
 Raw provider records stop at the adapter boundary. The frontend sees only API DTOs derived from normalized domain data.
+
+News feeds use a separate metadata-only boundary and never become sports providers. The feed client validates public DNS destinations and redirects, the SAX parser normalizes bounded RSS/Atom fields, and the repository performs idempotent candidate writes. Public requests never trigger feed fetches.
 
 ## Technology direction
 
