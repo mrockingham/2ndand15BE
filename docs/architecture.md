@@ -76,6 +76,7 @@ src/
           nfl-teams.fixture.ts
     historical-stats/         # manifest, Parquet validation, normalization, import
     players/                  # public player/profile/stat reads
+    stats-hub/                # metric registry, ranked reads, recent summaries
   routes/                   # API router composition
   docs/                     # OpenAPI assembly/schemas if kept in source
 prisma/
@@ -219,6 +220,12 @@ allowlisted nflverse file or approved local file
 
 Historical schedules create or reuse normalized `Game` records and store nflverse game identity in `GameProviderMapping`. They do not modify the manually reviewed 2026 schedule, attach to development fixtures, infer kickoff timestamps, or create placeholders. Public requests never download source data.
 
+### Stats Hub
+
+The Stats Hub reads normalized `PlayerSeasonStat` and `PlayerGameStat` rows through a versioned, code-owned metric allowlist. Client metric IDs never become SQL identifiers. Full season leaderboards use stored summaries; a `teamId` filter deliberately aggregates only game rows recorded for that team. Competition rank is calculated with PostgreSQL window functions before opaque cursor filtering, preserving global ranks and stable tie ordering across pages.
+
+Weekly leaders retain distinct player/game/team performances. Recent performance is limited to one internal player UUID and at most 20 recorded appearances. Null values are never coerced to zero. All responses are public-cacheable historical data with dataset-level nflverse attribution and exclude provider IDs and import metadata.
+
 ## HTTP API
 
 All initial routes are under `/api/v1`.
@@ -243,6 +250,10 @@ All initial routes are under `/api/v1`.
 | GET    | `/players/:playerId`                   | None                  | Return one player by internal UUID                          |
 | GET    | `/players/:playerId/stats`             | None                  | Return bounded weekly performances                          |
 | GET    | `/players/:playerId/seasons`           | None                  | Return bounded-by-domain derived season summaries           |
+| GET    | `/stats/metadata`                      | None                  | Return Stats Hub capabilities and imported coverage         |
+| GET    | `/stats/leaders`                       | None                  | Return a deterministic player-season leaderboard            |
+| GET    | `/stats/weekly-leaders`                | None                  | Return a deterministic weekly performance leaderboard       |
+| GET    | `/stats/recent`                        | None                  | Return one player’s bounded recent performances             |
 | GET    | `/articles`                            | None                  | Return visible article summaries                            |
 | GET    | `/articles/featured`                   | None                  | Return active featured articles                             |
 | GET    | `/articles/:slug`                      | None                  | Return one visible article with Markdown                    |

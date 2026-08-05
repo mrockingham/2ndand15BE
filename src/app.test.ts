@@ -137,6 +137,18 @@ describe('application middleware', () => {
         '/games/{gameId}': {
           get: { operationId: 'getGameById' },
         },
+        '/stats/metadata': {
+          get: { operationId: 'getStatsMetadata' },
+        },
+        '/stats/leaders': {
+          get: { operationId: 'getSeasonStatLeaders' },
+        },
+        '/stats/weekly-leaders': {
+          get: { operationId: 'getWeeklyStatLeaders' },
+        },
+        '/stats/recent': {
+          get: { operationId: 'getRecentPlayerPerformance' },
+        },
         '/teams/{teamId}/games': {
           get: { operationId: 'listTeamGames' },
         },

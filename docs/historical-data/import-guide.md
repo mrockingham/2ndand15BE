@@ -49,6 +49,8 @@ The reconciliation command compares additive regular-season totals against `stat
 - `GET /api/v1/players/:playerId/stats`
 - `GET /api/v1/players/:playerId/seasons`
 
+Milestone 17 also exposes PostgreSQL-only historical leaderboards and recent performance under `/api/v1/stats`. The [Stats Hub API guide](../stats-hub/api-guide.md) defines metric, ranking, team-split, null, privacy, and caching semantics.
+
 List and weekly-stat endpoints use bounded cursor pagination. Public DTOs use internal UUIDs and page-level nflverse/CC BY 4.0 attribution. They omit provider IDs, source paths, checksums, raw rows, import actors, and conflict information.
 
 See [the field mapping](field-mapping.md), [the 2025 pilot report](nflverse-player-stats-2025-pilot.md), and [the full review report](nflverse-player-stats-2020-2025.md).

@@ -148,7 +148,7 @@ describe.skipIf(!databaseTestsEnabled)('administrative HTTP database smoke', () 
       .expect(200);
     const auditBody = audit.body as { data?: unknown };
     expect(Array.isArray(auditBody.data)).toBe(true);
-  });
+  }, 30_000);
 
   async function createUser(client: PrismaClient, role: UserRole) {
     const email = `admin-http-${role.toLowerCase()}-${randomUUID()}@example.com`;

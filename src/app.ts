@@ -24,6 +24,7 @@ import type { UserPersonalizationService } from './modules/users/user.service.js
 import { createApiRouter } from './routes/api-router.js';
 import type { NewsInboxServiceContract } from './modules/news-inbox/news.service.js';
 import type { PlayerReader } from './modules/players/player.service.js';
+import type { StatsHubReader } from './modules/stats-hub/stats.service.js';
 
 export interface CreateAppOptions {
   readonly config: AppConfig;
@@ -40,6 +41,7 @@ export interface CreateAppOptions {
   readonly editorialArticleService?: EditorialArticleService;
   readonly newsInboxService?: NewsInboxServiceContract;
   readonly playerReader?: PlayerReader;
+  readonly statsHubReader?: StatsHubReader;
 }
 
 export function createApp(options: CreateAppOptions): Express {
@@ -79,6 +81,7 @@ export function createApp(options: CreateAppOptions): Express {
         ? {}
         : { newsInboxService: options.newsInboxService }),
       ...(options.playerReader === undefined ? {} : { playerReader: options.playerReader }),
+      ...(options.statsHubReader === undefined ? {} : { statsHubReader: options.statsHubReader }),
       ...(options.health === undefined ? {} : { health: options.health }),
     }),
   );

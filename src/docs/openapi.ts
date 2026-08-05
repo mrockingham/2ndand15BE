@@ -23,6 +23,66 @@ const gameListQueryParameters = [
   { name: 'cursor', in: 'query', schema: { type: 'string', format: 'uuid' } },
 ] as const;
 
+const statsMetricIds = [
+  'passing_yards',
+  'passing_touchdowns',
+  'completions',
+  'passing_attempts',
+  'interceptions_thrown',
+  'rushing_yards',
+  'rushing_touchdowns',
+  'rushing_attempts',
+  'receiving_yards',
+  'receiving_touchdowns',
+  'receptions',
+  'targets',
+  'tackles',
+  'solo_tackles',
+  'sacks',
+  'defensive_interceptions',
+  'forced_fumbles',
+  'field_goals_made',
+  'field_goals_attempted',
+  'extra_points_made',
+] as const;
+
+const statsSharedLeaderboardParameters = [
+  {
+    name: 'season',
+    in: 'query',
+    required: true,
+    description: 'An imported season returned by /stats/metadata.',
+    schema: { type: 'integer', minimum: 1920, maximum: 2100 },
+  },
+  {
+    name: 'metric',
+    in: 'query',
+    required: true,
+    description: 'Stable allowlisted metric ID. Database field names are not accepted.',
+    schema: { type: 'string', enum: statsMetricIds },
+  },
+  { name: 'position', in: 'query', schema: { type: 'string', maxLength: 24 } },
+  { name: 'positionGroup', in: 'query', schema: { type: 'string', maxLength: 24 } },
+  {
+    name: 'teamId',
+    in: 'query',
+    description:
+      'Application-owned team UUID. Season leaders aggregate only statistics recorded for this team.',
+    schema: { type: 'string', format: 'uuid' },
+  },
+  {
+    name: 'limit',
+    in: 'query',
+    schema: { type: 'integer', minimum: 1, maximum: 100, default: 25 },
+  },
+  {
+    name: 'cursor',
+    in: 'query',
+    description: 'Opaque context-bound cursor returned by the preceding page.',
+    schema: { type: 'string', maxLength: 1024 },
+  },
+] as const;
+
 const publicArticleQueryParameters = [
   { name: 'limit', in: 'query', schema: { type: 'integer', minimum: 1, maximum: 50, default: 20 } },
   { name: 'cursor', in: 'query', schema: { type: 'string', format: 'uuid' } },
@@ -1317,6 +1377,146 @@ export const openApiDocument = {
         },
       },
     },
+    '/stats/metadata': {
+      get: {
+        operationId: 'getStatsMetadata',
+        summary: 'Get public Stats Hub capabilities and data coverage',
+        tags: ['Stats Hub'],
+        description:
+          'Returns stable metric IDs, imported seasons, exact position filters, limits, competition-ranking semantics, coverage notes, and nflverse attribution. Internal columns and import metadata remain private.',
+        responses: {
+          '200': {
+            description: 'Cacheable public Stats Hub metadata.',
+            headers: {
+              'Cache-Control': { schema: { type: 'string' } },
+            },
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/StatsMetadataResponse' },
+              },
+            },
+          },
+          '429': { $ref: '#/components/responses/RateLimitError' },
+        },
+      },
+    },
+    '/stats/leaders': {
+      get: {
+        operationId: 'getSeasonStatLeaders',
+        summary: 'Get a historical player-season leaderboard',
+        tags: ['Stats Hub'],
+        description:
+          'Returns competition ranks (1, 2, 2, 4). Equal values share rank; ties are ordered by games descending, display name ascending, then internal player UUID. Without teamId, rows use stored season summaries and identify SINGLE or MULTI team context. With teamId, values and games are aggregated only from performances recorded for that team. Nulls are excluded; recorded zeroes remain eligible.',
+        parameters: [
+          ...statsSharedLeaderboardParameters,
+          {
+            name: 'seasonType',
+            in: 'query',
+            schema: { type: 'string', enum: ['REG', 'POST', 'REG_POST'], default: 'REG' },
+          },
+        ],
+        responses: {
+          '200': {
+            description: 'A deterministic cursor-paginated season leaderboard.',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/StatsSeasonLeaderboardResponse' },
+              },
+            },
+          },
+          '400': { $ref: '#/components/responses/ValidationError' },
+          '404': { $ref: '#/components/responses/NotFoundError' },
+          '429': { $ref: '#/components/responses/RateLimitError' },
+        },
+      },
+    },
+    '/stats/weekly-leaders': {
+      get: {
+        operationId: 'getWeeklyStatLeaders',
+        summary: 'Get a historical weekly player leaderboard',
+        tags: ['Stats Hub'],
+        description:
+          'Ranks stored player/game/team performances. A player with distinct performances for two teams in one week remains two transparent rows with internal game, team, and opponent IDs. REG_POST is intentionally unsupported.',
+        parameters: [
+          ...statsSharedLeaderboardParameters,
+          {
+            name: 'week',
+            in: 'query',
+            required: true,
+            schema: { type: 'integer', minimum: 1, maximum: 22 },
+          },
+          {
+            name: 'seasonType',
+            in: 'query',
+            schema: { type: 'string', enum: ['REG', 'POST'], default: 'REG' },
+          },
+        ],
+        responses: {
+          '200': {
+            description: 'A deterministic cursor-paginated weekly leaderboard.',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/StatsWeeklyLeaderboardResponse' },
+              },
+            },
+          },
+          '400': { $ref: '#/components/responses/ValidationError' },
+          '404': { $ref: '#/components/responses/NotFoundError' },
+          '429': { $ref: '#/components/responses/RateLimitError' },
+        },
+      },
+    },
+    '/stats/recent': {
+      get: {
+        operationId: 'getRecentPlayerPerformance',
+        summary: 'Get one playerâ€™s recent recorded performances',
+        tags: ['Stats Hub'],
+        description:
+          'Returns up to the requested number of recorded appearances in chronological order. Null values remain null and are excluded from aggregate calculations; byes and non-appearances are not synthesized. This endpoint provides no prediction or trend claim.',
+        parameters: [
+          {
+            name: 'playerId',
+            in: 'query',
+            required: true,
+            schema: { type: 'string', format: 'uuid' },
+          },
+          {
+            name: 'metric',
+            in: 'query',
+            required: true,
+            schema: { type: 'string', enum: statsMetricIds },
+          },
+          {
+            name: 'season',
+            in: 'query',
+            schema: { type: 'integer', minimum: 1920, maximum: 2100 },
+          },
+          {
+            name: 'seasonType',
+            in: 'query',
+            schema: { type: 'string', enum: ['REG', 'POST'] },
+          },
+          {
+            name: 'games',
+            in: 'query',
+            schema: { type: 'integer', minimum: 1, maximum: 20, default: 5 },
+          },
+        ],
+        responses: {
+          '200': {
+            description: 'One playerâ€™s bounded recent-performance summary.',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/StatsRecentResponse' },
+              },
+            },
+          },
+          '400': { $ref: '#/components/responses/ValidationError' },
+          '404': { $ref: '#/components/responses/NotFoundError' },
+          '429': { $ref: '#/components/responses/RateLimitError' },
+        },
+      },
+    },
     '/players': {
       get: {
         operationId: 'listPlayers',
@@ -1656,6 +1856,12 @@ export const openApiDocument = {
           'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } },
         },
       },
+      NotFoundError: {
+        description: 'The requested resource was not found.',
+        content: {
+          'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } },
+        },
+      },
       RateLimitError: {
         description: 'The request rate limit was exceeded.',
         content: {
@@ -1702,6 +1908,283 @@ export const openApiDocument = {
           source: { type: 'string', const: 'nflverse' },
           license: { type: 'string', const: 'CC BY 4.0' },
           url: { type: 'string', format: 'uri' },
+        },
+      },
+      StatsMetricId: { type: 'string', enum: statsMetricIds },
+      StatsMetric: {
+        type: 'object',
+        additionalProperties: false,
+        required: [
+          'id',
+          'label',
+          'shortLabel',
+          'description',
+          'category',
+          'valueType',
+          'sortDirection',
+          'higherIsBetter',
+          'decimalPlaces',
+          'nullableBehavior',
+          'qualification',
+        ],
+        properties: {
+          id: { $ref: '#/components/schemas/StatsMetricId' },
+          label: { type: 'string' },
+          shortLabel: { type: 'string' },
+          description: { type: 'string' },
+          category: {
+            type: 'string',
+            enum: ['PASSING', 'RUSHING', 'RECEIVING', 'DEFENSE', 'KICKING'],
+          },
+          valueType: { type: 'string', enum: ['INTEGER', 'DECIMAL'] },
+          sortDirection: { type: 'string', const: 'DESC' },
+          higherIsBetter: { type: 'boolean', const: true },
+          decimalPlaces: { type: 'integer', minimum: 0 },
+          nullableBehavior: { type: 'string', const: 'EXCLUDE' },
+          qualification: {
+            type: 'null',
+            description: 'No rate metrics or minimum-volume qualifications are exposed in v1.',
+          },
+          availableForSeasonLeaders: { type: 'boolean' },
+          availableForWeekLeaders: { type: 'boolean' },
+          availableForRecentPerformance: { type: 'boolean' },
+        },
+      },
+      StatsPlayerSummary: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id', 'displayName', 'position', 'positionGroup', 'headshotUrl'],
+        properties: {
+          id: { type: 'string', format: 'uuid' },
+          displayName: { type: 'string' },
+          position: { type: ['string', 'null'] },
+          positionGroup: { type: ['string', 'null'] },
+          headshotUrl: { type: ['string', 'null'], format: 'uri' },
+        },
+      },
+      StatsTeamSummary: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id', 'abbreviation', 'fullName'],
+        properties: {
+          id: { type: 'string', format: 'uuid' },
+          abbreviation: { type: 'string' },
+          fullName: { type: 'string' },
+        },
+      },
+      StatsMetadataResponse: {
+        type: 'object',
+        required: ['data', 'meta'],
+        properties: {
+          data: {
+            type: 'object',
+            required: [
+              'apiVersion',
+              'availableSeasons',
+              'seasonTypes',
+              'categories',
+              'metrics',
+              'positions',
+              'positionGroups',
+              'limits',
+              'ranking',
+              'coverageNotes',
+            ],
+            properties: {
+              apiVersion: { type: 'string', const: '1.0' },
+              availableSeasons: {
+                type: 'array',
+                items: { type: 'integer' },
+                example: [2020, 2021, 2022, 2023, 2024, 2025],
+              },
+              seasonTypes: { type: 'object' },
+              categories: { type: 'array', items: { type: 'object' } },
+              metrics: { type: 'array', items: { $ref: '#/components/schemas/StatsMetric' } },
+              positions: { type: 'array', items: { type: 'string' } },
+              positionGroups: { type: 'array', items: { type: 'string' } },
+              limits: { type: 'object' },
+              ranking: { type: 'object' },
+              coverageNotes: { type: 'array', items: { type: 'string' } },
+            },
+          },
+          meta: {
+            type: 'object',
+            required: ['attribution'],
+            properties: { attribution: { $ref: '#/components/schemas/NflverseAttribution' } },
+          },
+        },
+      },
+      StatsSeasonLeader: {
+        type: 'object',
+        additionalProperties: false,
+        required: [
+          'rank',
+          'tied',
+          'player',
+          'metricValue',
+          'games',
+          'season',
+          'seasonType',
+          'teamContext',
+          'qualifyingContext',
+        ],
+        properties: {
+          rank: { type: 'integer', minimum: 1 },
+          tied: { type: 'boolean' },
+          player: { $ref: '#/components/schemas/StatsPlayerSummary' },
+          metricValue: { type: 'number' },
+          games: { type: 'integer', minimum: 0 },
+          season: { type: 'integer' },
+          seasonType: { type: 'string', enum: ['REG', 'POST', 'REG_POST'] },
+          teamContext: {
+            type: 'object',
+            required: ['type', 'teams'],
+            properties: {
+              type: { type: 'string', enum: ['NONE', 'SINGLE', 'MULTI'] },
+              teams: {
+                type: 'array',
+                items: { $ref: '#/components/schemas/StatsTeamSummary' },
+              },
+            },
+          },
+          qualifyingContext: { type: 'null' },
+        },
+      },
+      StatsWeeklyLeader: {
+        type: 'object',
+        additionalProperties: false,
+        required: [
+          'rank',
+          'tied',
+          'player',
+          'metricValue',
+          'games',
+          'season',
+          'seasonType',
+          'week',
+          'gameId',
+          'gameDate',
+          'team',
+          'opponent',
+          'qualifyingContext',
+        ],
+        properties: {
+          rank: { type: 'integer', minimum: 1 },
+          tied: { type: 'boolean' },
+          player: { $ref: '#/components/schemas/StatsPlayerSummary' },
+          metricValue: { type: 'number' },
+          games: { type: 'integer', const: 1 },
+          season: { type: 'integer' },
+          seasonType: { type: 'string', enum: ['REG', 'POST'] },
+          week: { type: 'integer', minimum: 1, maximum: 22 },
+          gameId: { type: 'string', format: 'uuid' },
+          gameDate: { type: ['string', 'null'], format: 'date-time' },
+          team: { $ref: '#/components/schemas/StatsTeamSummary' },
+          opponent: { $ref: '#/components/schemas/StatsTeamSummary' },
+          qualifyingContext: { type: 'null' },
+        },
+      },
+      StatsLeaderboardMeta: {
+        type: 'object',
+        required: ['nextCursor', 'metric', 'ranking', 'attribution'],
+        properties: {
+          nextCursor: { type: ['string', 'null'] },
+          metric: { $ref: '#/components/schemas/StatsMetric' },
+          ranking: { type: 'object' },
+          attribution: { $ref: '#/components/schemas/NflverseAttribution' },
+        },
+      },
+      StatsSeasonLeaderboardResponse: {
+        type: 'object',
+        required: ['data', 'meta'],
+        properties: {
+          data: {
+            type: 'array',
+            items: { $ref: '#/components/schemas/StatsSeasonLeader' },
+          },
+          meta: { $ref: '#/components/schemas/StatsLeaderboardMeta' },
+        },
+      },
+      StatsWeeklyLeaderboardResponse: {
+        type: 'object',
+        required: ['data', 'meta'],
+        properties: {
+          data: {
+            type: 'array',
+            items: { $ref: '#/components/schemas/StatsWeeklyLeader' },
+          },
+          meta: { $ref: '#/components/schemas/StatsLeaderboardMeta' },
+        },
+      },
+      StatsRecentPerformance: {
+        type: 'object',
+        additionalProperties: false,
+        required: [
+          'gameId',
+          'season',
+          'seasonType',
+          'week',
+          'gameDate',
+          'team',
+          'opponent',
+          'value',
+        ],
+        properties: {
+          gameId: { type: 'string', format: 'uuid' },
+          season: { type: 'integer' },
+          seasonType: { type: 'string', enum: ['REG', 'POST'] },
+          week: { type: 'integer', minimum: 1, maximum: 22 },
+          gameDate: { type: ['string', 'null'], format: 'date-time' },
+          team: { $ref: '#/components/schemas/StatsTeamSummary' },
+          opponent: { $ref: '#/components/schemas/StatsTeamSummary' },
+          value: { type: ['number', 'null'] },
+        },
+      },
+      StatsRecentResponse: {
+        type: 'object',
+        required: ['data', 'meta'],
+        properties: {
+          data: {
+            type: 'object',
+            required: ['player', 'performances', 'summary'],
+            properties: {
+              player: { $ref: '#/components/schemas/StatsPlayerSummary' },
+              performances: {
+                type: 'array',
+                maxItems: 20,
+                items: { $ref: '#/components/schemas/StatsRecentPerformance' },
+              },
+              summary: {
+                type: 'object',
+                required: [
+                  'gamesRepresented',
+                  'valuesRepresented',
+                  'missingDataCount',
+                  'average',
+                  'total',
+                  'minimum',
+                  'maximum',
+                ],
+                properties: {
+                  gamesRepresented: { type: 'integer', minimum: 0 },
+                  valuesRepresented: { type: 'integer', minimum: 0 },
+                  missingDataCount: { type: 'integer', minimum: 0 },
+                  average: { type: ['number', 'null'] },
+                  total: { type: ['number', 'null'] },
+                  minimum: { type: ['number', 'null'] },
+                  maximum: { type: ['number', 'null'] },
+                },
+              },
+            },
+          },
+          meta: {
+            type: 'object',
+            required: ['metric', 'attribution'],
+            properties: {
+              metric: { $ref: '#/components/schemas/StatsMetric' },
+              attribution: { $ref: '#/components/schemas/NflverseAttribution' },
+            },
+          },
         },
       },
       Player: {

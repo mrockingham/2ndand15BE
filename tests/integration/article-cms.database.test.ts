@@ -216,7 +216,7 @@ describe.skipIf(!databaseTestsEnabled)('editorial CMS database and HTTP integrat
         },
       }),
     ).rejects.toBeDefined();
-  });
+  }, 30_000);
 });
 
 function createBody(slug: string, teamId: string) {

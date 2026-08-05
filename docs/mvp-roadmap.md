@@ -332,6 +332,27 @@ Boundaries:
 - Public HTTP requests query PostgreSQL only and never download nflverse files
 - Names never establish player identity; name-only and non-player aggregate rows remain excluded with warnings
 
+## Milestone 17 — Stats Hub, leaderboards, and recent performance
+
+Goal: expose trustworthy public historical player rankings and recent recorded performances from the normalized 2020-2025 PostgreSQL dataset.
+
+**Status:** Implemented and verified on August 5, 2026. The conservative 20-metric registry, metadata, season/team-split leaderboards, weekly leaders, and one-player recent summaries passed unit and hosted Neon pilot checks. Representative database plans stayed below the 250 ms review target without a new index.
+
+Deliverables:
+
+- Versioned metric allowlist with five stable categories and no client-selected SQL fields
+- Dynamic imported-season/position metadata and source attribution
+- Competition-ranked season leaderboards with stable opaque cursor continuation
+- Player/team season aggregation that handles traded players honestly
+- Distinct weekly game/team performance rows with opponent and internal game context
+- Bounded one-player recent values and null-aware descriptive aggregates
+- Public historical cache headers, OpenAPI, metric/API guides, and Neon plan review
+
+Boundaries:
+
+- No live 2026 stats, rate/fantasy metrics, predictions, recommendations, AI, play-by-play, frontend work, new provider, Redis, queue, cron, worker, or production deployment change
+- Public requests remain PostgreSQL-only and expose no provider IDs or import metadata
+
 ## Later roadmap themes
 
 After the first slice is stable, define separate milestones for:
