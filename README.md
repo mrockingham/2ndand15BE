@@ -2,7 +2,7 @@
 
 Backend REST API for the 2nd and 15 consumer NFL platform.
 
-The implemented backend includes the TypeScript/Express foundation, normalized NFL team and game catalogs, a fixture-backed mock provider, an explicit API-Sports synchronization adapter, email/password authentication, rotating database-backed refresh sessions, password reset, favorite-team personalization, role-protected schedule administration, an internal revisioned editorial CMS, and a controlled RSS/Atom/manual news-candidate inbox.
+The implemented backend includes the TypeScript/Express foundation, normalized NFL team and game catalogs, a fixture-backed mock provider, an explicit API-Sports synchronization adapter, email/password authentication, rotating database-backed refresh sessions, password reset, favorite-team personalization, role-protected schedule administration, an internal revisioned editorial CMS, a controlled RSS/Atom/manual news-candidate inbox, and a local PostgreSQL-backed 2020-2025 nflverse player/statistics foundation.
 
 ## Requirements
 
@@ -65,6 +65,10 @@ The API defaults to `http://localhost:3000`. The PostgreSQL credentials in `.env
 - `GET /api/v1/games` — bounded, filterable normalized NFL game catalog
 - `GET /api/v1/games/:gameId` — one game by internal UUID
 - `GET /api/v1/teams/:teamId/games` — games involving one active team
+- `GET /api/v1/players` — bounded player search/filter page using internal UUIDs
+- `GET /api/v1/players/:playerId` — one normalized player profile
+- `GET /api/v1/players/:playerId/stats` — bounded weekly performance history
+- `GET /api/v1/players/:playerId/seasons` — deterministic season summaries
 - `GET /api/v1/articles` — bounded public article summaries
 - `GET /api/v1/articles/featured` — active featured placement in deterministic order
 - `GET /api/v1/articles/:slug` — one publicly visible article with Markdown content
@@ -113,6 +117,14 @@ npm.cmd test -- tests/integration
 Remove-Item Env:RUN_DATABASE_TESTS
 ```
 
+After the checksummed historical manifest has been imported, its read-only hosted verification is separately opt-in:
+
+```powershell
+$env:RUN_HISTORICAL_DATABASE_TESTS = 'true'
+npm.cmd test -- tests/integration/historical-player.database.test.ts
+Remove-Item Env:RUN_HISTORICAL_DATABASE_TESTS
+```
+
 ## Database commands
 
 ```sh
@@ -131,6 +143,10 @@ npm run admin:set-role -- --email=user@example.com --role=ADMIN
 npm run schedule:review -- --file=./data/schedules/nfl-2026.csv
 npm run schedule:import -- --file=./data/import-templates/nfl-schedule.csv --dry-run
 npm run news:ingest -- --source=approved-source-slug --actor=editor@example.com
+npm run historical:download -- --dataset=weekly-rosters --seasons=2020-2025
+npm run historical:review -- --manifest=./data/nflverse/manifests/nflverse-2020-2025.json
+npm run historical:import -- --manifest=./data/nflverse/manifests/nflverse-2020-2025.json --season=2020 --write
+npm run historical:reconcile -- --seasons=2020-2025
 ```
 
 Use `prisma:migrate` only when authoring a new migration in development. Use `prisma:deploy` to apply committed migrations, including against a hosted development database.
@@ -179,6 +195,8 @@ The committed `data/schedules/nfl-2026.csv` is a reviewed, provider-independent 
 The editorial CMS stores constrained Markdown and external image/source metadata without fetching it. Scheduled visibility is derived during public reads, every mutation uses optimistic concurrency and creates an immutable revision, and public list DTOs omit bodies and editorial metadata. See [the editorial CMS guide](docs/editorial-cms.md).
 
 The source inbox fetches only explicitly approved RSS/Atom URLs when an editor/admin triggers a test or ingestion. It stores bounded metadata, never fetches linked article pages or images, never auto-publishes, and requires editor-written original content for conversion into a `CURATED` draft. There is no cron, queue, worker, webhook, scraper, or AI authoring. See [the news-source ingestion guide](docs/news-source-ingestion.md).
+
+Historical player data is downloaded to ignored local files, checksum/schema reviewed, and imported only through an explicit bounded CLI. Public player routes read PostgreSQL and never call nflverse or GitHub. External player/game IDs stay private in mapping tables, missing values remain distinct from zero, and season totals are deterministically rebuilt from weekly rows. See [the historical import guide](docs/historical-data/import-guide.md) and [the 2020-2025 review](docs/historical-data/nflverse-player-stats-2020-2025.md).
 
 API-Sports is available only through explicit synchronization commands; public routes never call it. In API-Sports mode, real teams are matched to the existing 32-team catalog and game reads exclude fictional mock records through private provider mappings. One team sync uses one provider call, one game sync uses one, and a combined sync normally uses two before bounded retries. Commands support `-- --dry-run`. See [the API-Sports integration guide](docs/api-sports.md) for configuration, status mapping, rate-limit behavior, fixture separation, failure recovery, and safe live verification.
 

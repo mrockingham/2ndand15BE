@@ -20,6 +20,9 @@ Keep the current milestone small. Do not implement future product ideas merely b
 - Internal `Team.id` values are the stable keys used by users and other product data.
 - Provider identifiers belong in `TeamProviderMapping` and must not become foreign keys in product-facing models.
 - Internal `Game.id` values are public game keys; provider game IDs belong only in `GameProviderMapping`.
+- Internal `Player.id` values are public player keys; provider/site player IDs belong only in `PlayerExternalIdentifier` and names must never be used as identity.
+- Public player/stat requests query PostgreSQL only. They must never download nflverse files or expose external IDs, raw rows, checksums, paths, actors, or conflict metadata.
+- Historical missing statistics remain null and distinct from factual zero values.
 - Public game fields resolve editorial overrides before normalized base values; provider synchronization must never delete or overwrite override rows.
 - Public registration always creates role `USER`; administrative capabilities come from the current persisted role, never request input or stale token claims.
 - Audit and provenance metadata, internal editorial notes, and actor snapshots must remain private to authorized administrative routes.
@@ -99,6 +102,8 @@ Lower layers must not import higher layers. Avoid cross-module access to another
 - Seed teams idempotently using stable internal identifiers or another documented stable key. Re-running a seed must not create duplicate teams or mappings.
 - Synchronize games idempotently through provider mappings, resolve teams to internal IDs, and never delete games solely because a provider response omits them.
 - Schedule imports must be bounded, validated, dry-run capable, idempotent, and audited; source URLs are metadata and must never be fetched automatically.
+- Historical imports must validate committed manifests, checksums, schema drift, identities, teams, and games before writes; require explicit `--write`; use bounded transactions; retain source row hashes; and never modify the reviewed 2026 schedule.
+- Raw historical files stay outside PostgreSQL and Git. Only small manifests, schemas, mappings, and review reports are version controlled.
 - Version-controlled factual schedule datasets must pass `schedule:review` before write approval. An officially TBD kickoff uses CSV `TBD`, nullable `Game.startTime`, and public `startTime: null`; never convert a date-only or midnight placeholder into a factual kickoff.
 - Article mutations must use optimistic concurrency, create immutable numbered revisions transactionally, and write compact audits without duplicating large bodies.
 - News-source fetching must reject private/local/metadata destinations after DNS resolution and on every redirect, enforce byte/time/entry/depth limits, and retain only bounded RSS/Atom metadata.
@@ -139,6 +144,7 @@ Lower layers must not import higher layers. Avoid cross-module access to another
 - Every route needs representative success, validation failure, authentication failure, and relevant not-found/conflict tests.
 - Test provider normalization against fixture data without network access.
 - Test factual schedule datasets with aggregate invariants plus targeted offset, DST, alias, stable-reference, and international-game samples; do not add one test per row.
+- Test historical data with synthetic Parquet fixtures, missing-versus-zero rules, identity conflicts, team/game mapping, summary aggregation, dry-run no-write behavior, idempotency, schema drift, and public DTO privacy; standard tests must not require live nflverse downloads.
 - Test refresh rotation, revocation, expiration, and reuse behavior once authentication is implemented.
 - Tests must be deterministic: inject or control time, randomness, and IDs when relevant.
 - A bug fix should include a regression test that fails before the fix.

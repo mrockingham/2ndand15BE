@@ -2,7 +2,7 @@
 
 ## Status
 
-This document defines the backend architecture through the controlled news-source inbox milestone. The service foundation, normalized mock/API-Sports-backed team and game catalogs, authentication lifecycle, favorite-team personalization, role-protected schedule maintenance, revisioned original/curated editorial content, and manual RSS/Atom candidate workflow are implemented.
+This document defines the backend architecture through the historical player/statistics foundation milestone. The service foundation, normalized mock/API-Sports-backed team and game catalogs, authentication lifecycle, favorite-team personalization, role-protected schedule maintenance, revisioned original/curated editorial content, manual RSS/Atom candidate workflow, and local 2020-2025 nflverse player data are implemented.
 
 ## System context
 
@@ -16,6 +16,9 @@ Frontend
 Express API
    |-- Auth / Users services ------> PostgreSQL via Prisma
    |-- Teams / Games services -----> PostgreSQL via Prisma
+   |-- Players / Stats services ---> PostgreSQL via Prisma
+   |                                  ^
+   |                                  `-- reviewed nflverse import CLI
    |-- News inbox service ---------> approved RSS/Atom feeds (manual trigger only)
    `-- Sports provider interface -+-> Mock fixture adapter
                                   `-> API-Sports adapter (sync commands only)
@@ -71,6 +74,8 @@ src/
         mock/
           mock-sports-data-provider.ts
           nfl-teams.fixture.ts
+    historical-stats/         # manifest, Parquet validation, normalization, import
+    players/                  # public player/profile/stat reads
   routes/                   # API router composition
   docs/                     # OpenAPI assembly/schemas if kept in source
 prisma/
@@ -193,6 +198,27 @@ The pair `(provider, providerTeamId)` must be unique. A team should have at most
 
 Provider status adapters map into `SCHEDULED`, `PREGAME`, `IN_PROGRESS`, `HALFTIME`, `FINAL`, `POSTPONED`, `CANCELED`, or `SUSPENDED`. Unknown source statuses must be handled explicitly by the adapter and cannot leak into persistence or public DTOs.
 
+### Historical players and statistics
+
+`Player.id` is the stable public UUID. `PlayerExternalIdentifier` owns GSIS and other provider/site identifiers; names are never unique keys and the identifier map is private. `PlayerWeekRoster` preserves player/team membership by season, week, season type, and source team, including midseason team changes and deliberate nullable team membership for non-team codes.
+
+`PlayerGameStat` is a controlled wide table keyed by internal player, internal game, and internal team. It stores selected passing, rushing, receiving, defense, kicking, return, and explicitly named nflverse fantasy fields. Nullable source values stay null. Row hashes allow corrected files to update changed rows while unchanged rows are skipped.
+
+`PlayerSeasonStat` contains deterministic player-wide `REG`, `POST`, and `REG_POST` summaries derived from weekly rows. `teamCount` preserves traded-player context without double counting. The aggregation version is stored and unchanged summaries retain their IDs during rebuilds.
+
+`HistoricalDataset`, `HistoricalImportRun`, and `HistoricalImportFile` record source/release/schema/mapping metadata, checksums, row outcomes, warnings/failures, duration boundaries, and database sizes. A database-enforced dataset/season lease prevents concurrent releases from importing into the same logical slice. Raw files are never stored in PostgreSQL. The import pipeline is:
+
+```text
+allowlisted nflverse file or approved local file
+  -> checksum and schema-drift review
+  -> Zod normalization and mapping reconciliation
+  -> bounded transactional upsert
+  -> deterministic season-summary rebuild
+  -> compact import and storage report
+```
+
+Historical schedules create or reuse normalized `Game` records and store nflverse game identity in `GameProviderMapping`. They do not modify the manually reviewed 2026 schedule, attach to development fixtures, infer kickoff timestamps, or create placeholders. Public requests never download source data.
+
 ## HTTP API
 
 All initial routes are under `/api/v1`.
@@ -213,6 +239,10 @@ All initial routes are under `/api/v1`.
 | GET    | `/games`                               | None                  | Return a bounded, filterable page of normalized games       |
 | GET    | `/games/:gameId`                       | None                  | Return one normalized game                                  |
 | GET    | `/teams/:teamId/games`                 | None                  | Return games involving one active team                      |
+| GET    | `/players`                             | None                  | Return a bounded normalized player page                     |
+| GET    | `/players/:playerId`                   | None                  | Return one player by internal UUID                          |
+| GET    | `/players/:playerId/stats`             | None                  | Return bounded weekly performances                          |
+| GET    | `/players/:playerId/seasons`           | None                  | Return bounded-by-domain derived season summaries           |
 | GET    | `/articles`                            | None                  | Return visible article summaries                            |
 | GET    | `/articles/featured`                   | None                  | Return active featured articles                             |
 | GET    | `/articles/:slug`                      | None                  | Return one visible article with Markdown                    |
@@ -268,6 +298,7 @@ Errors use:
 
 - User DTOs expose `id`, `email`, `displayName`, active status, normalized favorite-team data or null, and timestamps, never normalized email, password hashes, reset tokens, or session fields.
 - Team DTOs use internal `id` and the normalized Team attributes. Provider mappings are not included in ordinary public responses.
+- Player DTOs use internal UUIDs and page-level nflverse attribution. External identifiers, raw rows, source paths, checksums, import actors, and conflict metadata are never public.
 - Game DTOs use internal IDs, embedded safe team summaries, UTC timestamps, and explicit nullable fields. Provider mappings and synchronization metadata are never public.
 - Public article list DTOs omit bodies; detail DTOs may return constrained Markdown but never lifecycle internals, scheduling metadata, versions, revisions, actor identities, or audit events.
 - Authentication DTOs must make access-token expiry unambiguous.

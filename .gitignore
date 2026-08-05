@@ -84,6 +84,14 @@ dist
 .output
 src/generated/
 
+# Large nflverse source files are downloaded locally and never committed.
+data/nflverse/players/
+data/nflverse/weekly-rosters/
+data/nflverse/player-stats/
+data/nflverse/season-summaries/
+data/nflverse/schedules/
+data/nflverse/reports/generated/
+
 # Gatsby files
 .cache/
 # Comment in the public line in if your project uses Gatsby and not Next.js

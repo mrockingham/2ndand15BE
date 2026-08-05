@@ -1317,6 +1317,135 @@ export const openApiDocument = {
         },
       },
     },
+    '/players': {
+      get: {
+        operationId: 'listPlayers',
+        summary: 'List historical NFL players',
+        tags: ['Players'],
+        description:
+          'Reads normalized player identity data from PostgreSQL. Provider identifiers and import metadata are private.',
+        parameters: [
+          { name: 'search', in: 'query', schema: { type: 'string', minLength: 2, maxLength: 100 } },
+          { name: 'teamId', in: 'query', schema: { type: 'string', format: 'uuid' } },
+          { name: 'position', in: 'query', schema: { type: 'string', maxLength: 16 } },
+          {
+            name: 'season',
+            in: 'query',
+            schema: { type: 'integer', minimum: 2020, maximum: 2025 },
+          },
+          {
+            name: 'limit',
+            in: 'query',
+            schema: { type: 'integer', minimum: 1, maximum: 100, default: 20 },
+          },
+          { name: 'cursor', in: 'query', schema: { type: 'string', format: 'uuid' } },
+        ],
+        responses: {
+          '200': {
+            description: 'Bounded player page with dataset-level attribution.',
+            content: {
+              'application/json': { schema: { $ref: '#/components/schemas/PlayerListResponse' } },
+            },
+          },
+          '400': { $ref: '#/components/responses/ValidationError' },
+          '429': { $ref: '#/components/responses/RateLimitError' },
+        },
+      },
+    },
+    '/players/{playerId}': {
+      get: {
+        operationId: 'getPlayer',
+        summary: 'Get a historical NFL player',
+        tags: ['Players'],
+        parameters: [
+          {
+            name: 'playerId',
+            in: 'path',
+            required: true,
+            schema: { type: 'string', format: 'uuid' },
+          },
+        ],
+        responses: {
+          '200': {
+            description: 'Normalized player profile.',
+            content: {
+              'application/json': { schema: { $ref: '#/components/schemas/PlayerResponse' } },
+            },
+          },
+          '400': { $ref: '#/components/responses/ValidationError' },
+          '404': { $ref: '#/components/responses/NotFoundError' },
+        },
+      },
+    },
+    '/players/{playerId}/stats': {
+      get: {
+        operationId: 'getPlayerStats',
+        summary: 'List a player’s weekly game statistics',
+        tags: ['Players'],
+        parameters: [
+          {
+            name: 'playerId',
+            in: 'path',
+            required: true,
+            schema: { type: 'string', format: 'uuid' },
+          },
+          {
+            name: 'season',
+            in: 'query',
+            schema: { type: 'integer', minimum: 2020, maximum: 2025 },
+          },
+          { name: 'week', in: 'query', schema: { type: 'integer', minimum: 1, maximum: 22 } },
+          {
+            name: 'seasonType',
+            in: 'query',
+            schema: { type: 'string', enum: ['PRE', 'REG', 'POST'] },
+          },
+          {
+            name: 'limit',
+            in: 'query',
+            schema: { type: 'integer', minimum: 1, maximum: 100, default: 20 },
+          },
+          { name: 'cursor', in: 'query', schema: { type: 'string', format: 'uuid' } },
+        ],
+        responses: {
+          '200': {
+            description: 'Selected normalized weekly statistics. Null means missing, not zero.',
+            content: {
+              'application/json': { schema: { $ref: '#/components/schemas/PlayerStatsResponse' } },
+            },
+          },
+          '400': { $ref: '#/components/responses/ValidationError' },
+          '404': { $ref: '#/components/responses/NotFoundError' },
+        },
+      },
+    },
+    '/players/{playerId}/seasons': {
+      get: {
+        operationId: 'getPlayerSeasons',
+        summary: 'List deterministically derived player season summaries',
+        tags: ['Players'],
+        parameters: [
+          {
+            name: 'playerId',
+            in: 'path',
+            required: true,
+            schema: { type: 'string', format: 'uuid' },
+          },
+        ],
+        responses: {
+          '200': {
+            description: 'Derived REG, POST, and REG_POST summaries.',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/PlayerSeasonsResponse' },
+              },
+            },
+          },
+          '400': { $ref: '#/components/responses/ValidationError' },
+          '404': { $ref: '#/components/responses/NotFoundError' },
+        },
+      },
+    },
     '/teams': {
       get: {
         operationId: 'listTeams',
@@ -1563,6 +1692,174 @@ export const openApiDocument = {
               details: {},
               requestId: { type: 'string' },
             },
+          },
+        },
+      },
+      NflverseAttribution: {
+        type: 'object',
+        required: ['source', 'license', 'url'],
+        properties: {
+          source: { type: 'string', const: 'nflverse' },
+          license: { type: 'string', const: 'CC BY 4.0' },
+          url: { type: 'string', format: 'uri' },
+        },
+      },
+      Player: {
+        type: 'object',
+        required: [
+          'id',
+          'displayName',
+          'position',
+          'positionGroup',
+          'birthDate',
+          'heightInches',
+          'weightPounds',
+          'college',
+          'draft',
+          'latestTeam',
+          'jerseyNumber',
+          'status',
+          'headshotUrl',
+        ],
+        properties: {
+          id: { type: 'string', format: 'uuid' },
+          displayName: { type: 'string' },
+          firstName: { type: ['string', 'null'] },
+          lastName: { type: ['string', 'null'] },
+          shortName: { type: ['string', 'null'] },
+          position: { type: ['string', 'null'] },
+          positionGroup: { type: ['string', 'null'] },
+          birthDate: { type: ['string', 'null'], format: 'date' },
+          heightInches: { type: ['integer', 'null'] },
+          weightPounds: { type: ['integer', 'null'] },
+          college: { type: ['string', 'null'] },
+          rookieSeason: { type: ['integer', 'null'] },
+          lastSeason: { type: ['integer', 'null'] },
+          draft: { type: ['object', 'null'] },
+          latestTeam: { type: ['object', 'null'] },
+          jerseyNumber: { type: ['integer', 'null'] },
+          status: { type: ['string', 'null'] },
+          headshotUrl: { type: ['string', 'null'], format: 'uri' },
+        },
+      },
+      PlayerListResponse: {
+        type: 'object',
+        required: ['data', 'meta'],
+        properties: {
+          data: { type: 'array', items: { $ref: '#/components/schemas/Player' } },
+          meta: {
+            type: 'object',
+            required: ['nextCursor', 'attribution'],
+            properties: {
+              nextCursor: { type: ['string', 'null'], format: 'uuid' },
+              attribution: { $ref: '#/components/schemas/NflverseAttribution' },
+            },
+          },
+        },
+      },
+      PlayerResponse: {
+        type: 'object',
+        required: ['data', 'meta'],
+        properties: {
+          data: { $ref: '#/components/schemas/Player' },
+          meta: {
+            type: 'object',
+            required: ['attribution'],
+            properties: { attribution: { $ref: '#/components/schemas/NflverseAttribution' } },
+          },
+        },
+      },
+      PlayerGameStat: {
+        type: 'object',
+        required: [
+          'id',
+          'gameId',
+          'season',
+          'week',
+          'seasonType',
+          'team',
+          'opponent',
+          'passing',
+          'rushing',
+          'receiving',
+          'defense',
+          'kicking',
+          'returns',
+          'fantasy',
+        ],
+        properties: {
+          id: { type: 'string', format: 'uuid' },
+          gameId: { type: 'string', format: 'uuid' },
+          season: { type: 'integer' },
+          week: { type: 'integer' },
+          seasonType: { type: 'string', enum: ['PRE', 'REG', 'POST'] },
+          startTime: { type: ['string', 'null'], format: 'date-time' },
+          team: { type: 'object' },
+          opponent: { type: 'object' },
+          position: { type: ['string', 'null'] },
+          positionGroup: { type: ['string', 'null'] },
+          passing: { type: 'object' },
+          rushing: { type: 'object' },
+          receiving: { type: 'object' },
+          defense: { type: 'object' },
+          kicking: { type: 'object' },
+          returns: { type: 'object' },
+          fantasy: { type: 'object' },
+        },
+      },
+      PlayerStatsResponse: {
+        type: 'object',
+        required: ['data', 'meta'],
+        properties: {
+          data: { type: 'array', items: { $ref: '#/components/schemas/PlayerGameStat' } },
+          meta: {
+            type: 'object',
+            required: ['nextCursor', 'attribution'],
+            properties: {
+              nextCursor: { type: ['string', 'null'], format: 'uuid' },
+              attribution: { $ref: '#/components/schemas/NflverseAttribution' },
+            },
+          },
+        },
+      },
+      PlayerSeasonStat: {
+        type: 'object',
+        required: [
+          'id',
+          'season',
+          'summaryType',
+          'games',
+          'teamCount',
+          'passing',
+          'rushing',
+          'receiving',
+          'defense',
+          'kicking',
+          'fantasy',
+        ],
+        properties: {
+          id: { type: 'string', format: 'uuid' },
+          season: { type: 'integer' },
+          summaryType: { type: 'string', enum: ['REG', 'POST', 'REG_POST'] },
+          games: { type: 'integer' },
+          teamCount: { type: 'integer' },
+          passing: { type: 'object' },
+          rushing: { type: 'object' },
+          receiving: { type: 'object' },
+          defense: { type: 'object' },
+          kicking: { type: 'object' },
+          fantasy: { type: 'object' },
+        },
+      },
+      PlayerSeasonsResponse: {
+        type: 'object',
+        required: ['data', 'meta'],
+        properties: {
+          data: { type: 'array', items: { $ref: '#/components/schemas/PlayerSeasonStat' } },
+          meta: {
+            type: 'object',
+            required: ['attribution'],
+            properties: { attribution: { $ref: '#/components/schemas/NflverseAttribution' } },
           },
         },
       },
