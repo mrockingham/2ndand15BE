@@ -309,11 +309,34 @@ Boundaries:
 - No frontend, article-page/image fetching, full-text storage, automatic publication, AI writing/tagging, social ingestion, cron, queue, worker, webhook, Redis, or production deployment changes
 - No inferred team feeds and no default active source without a documented live evaluation
 
+## Milestone 15 — Historical player identity and statistics foundation
+
+Goal: establish local player profiles, weekly rosters, weekly performances, and deterministic season totals for 2020-2025 using reviewed nflverse core releases.
+
+**Status:** Complete on August 3, 2026. The additive migration and all six seasons are applied to Neon. The full review accepted 415,111 of 415,251 source rows with 726 documented warnings and zero failures; every identifiable player, game, team, and opponent mapped. Regular-season reconciliation found zero mismatches across 12,027 player summaries and 27 fields.
+
+Deliverables:
+
+- Stable internal player UUIDs with private, conflict-checked external identifier mappings
+- Week-level roster/team history and controlled wide player-game statistics
+- Factual 2020-2025 game identities isolated through nflverse provider mappings
+- Deterministic `REG`, `POST`, and `REG_POST` season summaries
+- Checksummed manifests, Parquet schema-drift detection, validation/reconciliation reports, and database-size measurements
+- HTTPS/host/redirect/time/byte-bounded downloader and dry-run-default, explicit-write, season-selectable importer
+- Minimal public player list/detail/weekly/season API with bounded pagination and private DTO boundaries
+- CC BY 4.0 attribution, field-selection guide, pilot report, and complete import guide
+
+Boundaries:
+
+- No play-by-play, participation, snaps, injuries, depth charts, contracts, betting, predictions, AI, vectors, frontend work, live polling, cron, queues, Redis, or production deployment changes
+- Public HTTP requests query PostgreSQL only and never download nflverse files
+- Names never establish player identity; name-only and non-player aggregate rows remain excluded with warnings
+
 ## Later roadmap themes
 
 After the first slice is stable, define separate milestones for:
 
-- Standings and player/team statistics normalization
+- Standings and additional team-statistics normalization
 - Additional sports-provider adapters, distributed caching, quotas, and failover
 - News ingestion, attribution, deduplication, and AI summaries
 - Predictions, model/version provenance, calibration, and historical accuracy

@@ -26,6 +26,8 @@ import { UserService } from './modules/users/user.service.js';
 import { SafeFeedClient } from './modules/news-inbox/feed-client.js';
 import { PrismaNewsInboxRepository } from './modules/news-inbox/news.repository.js';
 import { NewsInboxService } from './modules/news-inbox/news.service.js';
+import { PrismaPlayerRepository } from './modules/players/player.repository.js';
+import { PlayerService } from './modules/players/player.service.js';
 
 const config = loadConfig();
 const logger = createLogger(config);
@@ -38,6 +40,7 @@ const newsInboxService = new NewsInboxService(
   new SafeFeedClient(),
 );
 const teamReader = new TeamService(new PrismaTeamRepository(prisma));
+const playerReader = new PlayerService(new PrismaPlayerRepository(prisma));
 const publicGameSource = resolvePublicGameDataSource(config.sports);
 const gameReader = new GameService(
   new PrismaGameRepository(prisma, publicGameSource),
@@ -79,6 +82,7 @@ const app = createApp({
   articleReader: articleService,
   editorialArticleService: articleService,
   newsInboxService,
+  playerReader,
 });
 
 const server = app.listen(config.port, config.host, (error?: Error) => {

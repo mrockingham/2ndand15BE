@@ -29,6 +29,8 @@ import { createUserRouter } from '../modules/users/user.routes.js';
 import type { UserPersonalizationService } from '../modules/users/user.service.js';
 import { createNewsInboxRouters } from '../modules/news-inbox/news.routes.js';
 import type { NewsInboxServiceContract } from '../modules/news-inbox/news.service.js';
+import { createPlayerRouter } from '../modules/players/player.routes.js';
+import type { PlayerReader } from '../modules/players/player.service.js';
 
 export interface ApiRouterOptions {
   readonly rateLimit: AppConfig['rateLimit'];
@@ -45,6 +47,7 @@ export interface ApiRouterOptions {
   readonly articleReader?: PublicArticleReader;
   readonly editorialArticleService?: EditorialArticleService;
   readonly newsInboxService?: NewsInboxServiceContract;
+  readonly playerReader?: PlayerReader;
 }
 
 export function createApiRouter(options: ApiRouterOptions): Router {
@@ -108,6 +111,8 @@ export function createApiRouter(options: ApiRouterOptions): Router {
     router.use('/articles', createPublicArticleRouter(options.articleReader));
     router.use('/teams/:teamId/articles', createTeamArticleRouter(options.articleReader));
   }
+  if (options.playerReader !== undefined)
+    router.use('/players', createPlayerRouter(options.playerReader));
   router.use('/games', createGameRouter(options.gameReader));
   router.use('/teams/:teamId/games', createTeamGameRouter(options.gameReader));
   router.use('/teams', createTeamRouter(options.teamReader));

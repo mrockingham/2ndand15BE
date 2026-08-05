@@ -1,0 +1,59 @@
+{
+  "manifestVersion": 1,
+  "attribution": "nflverse data contributors; used under CC BY 4.0. 2nd & 15 is not the original collector.",
+  "license": "CC BY 4.0",
+  "files": [
+    {
+      "dataset": "SCHEDULES",
+      "season": 2025,
+      "sourceUrl": "https://github.com/nflverse/nflverse-data/releases/download/schedules/games.csv",
+      "releaseId": "schedules",
+      "expectedFilename": "schedules/games.csv",
+      "sha256": "4720b962a8bbc0c435620bc2c9c70474530296d80a3811c4d698fa68521f39e5",
+      "fileSizeBytes": 2172881,
+      "downloadedAt": "2026-08-03T22:47:03.968Z",
+      "schemaVersion": "nflverse-2026-08-03",
+      "mappingVersion": "historical-games-v1",
+      "importStatus": "IMPORTED"
+    },
+    {
+      "dataset": "PLAYERS",
+      "season": null,
+      "sourceUrl": "https://github.com/nflverse/nflverse-data/releases/download/players/players.parquet",
+      "releaseId": "players",
+      "expectedFilename": "players/players.parquet",
+      "sha256": "b2a467baa47b25b7e0af22b88a54c9c50fec7f6c072ab88c543740cb66f58a13",
+      "fileSizeBytes": 3405836,
+      "downloadedAt": "2026-08-03T22:47:01.490Z",
+      "schemaVersion": "nflverse-players-v2-2026-08-03",
+      "mappingVersion": "player-identity-v1",
+      "importStatus": "IMPORTED"
+    },
+    {
+      "dataset": "WEEKLY_ROSTERS",
+      "season": 2025,
+      "sourceUrl": "https://github.com/nflverse/nflverse-data/releases/download/weekly_rosters/roster_weekly_2025.parquet",
+      "releaseId": "weekly_rosters",
+      "expectedFilename": "weekly-rosters/roster_weekly_2025.parquet",
+      "sha256": "a8764c947bfe6a9d8f122a194e3f026973c8efcc8a3456c67cbfac4371c20342",
+      "fileSizeBytes": 850871,
+      "downloadedAt": "2026-08-03T22:47:02.057Z",
+      "schemaVersion": "nflverse-2026-08-03",
+      "mappingVersion": "weekly-rosters-v1",
+      "importStatus": "IMPORTED"
+    },
+    {
+      "dataset": "PLAYER_STATS",
+      "season": 2025,
+      "sourceUrl": "https://github.com/nflverse/nflverse-data/releases/download/stats_player/stats_player_week_2025.parquet",
+      "releaseId": "stats_player",
+      "expectedFilename": "player-stats/stats_player_week_2025.parquet",
+      "sha256": "afc45559f6385a3f253887f37efcb1124006db799c91a58d8c7151429136f0cc",
+      "fileSizeBytes": 852704,
+      "downloadedAt": "2026-08-03T22:47:02.627Z",
+      "schemaVersion": "nflverse-2026-08-03",
+      "mappingVersion": "player-stats-v1",
+      "importStatus": "IMPORTED"
+    }
+  ]
+}
