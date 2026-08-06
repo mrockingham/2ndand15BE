@@ -353,6 +353,26 @@ Boundaries:
 - No live 2026 stats, rate/fantasy metrics, predictions, recommendations, AI, play-by-play, frontend work, new provider, Redis, queue, cron, worker, or production deployment change
 - Public requests remain PostgreSQL-only and expose no provider IDs or import metadata
 
+## Milestone 19 — Public Team Hub APIs
+
+Goal: give the frontend a stable, efficient team-page backend by composing existing public team, schedule, editorial, roster, and Stats Hub behavior.
+
+**Status:** Implemented and verified on August 5, 2026. Team Hub route/database checks passed for AFC and NFC samples, all non-live hosted regression suites passed, representative plans met their review targets without a new index, and preservation counts remained unchanged. Details are in `docs/team-hub/performance-review.md`.
+
+Deliverables:
+
+- Compact active-team overview with up to three stored 2026 upcoming games, three final games, and three derived-visible article cards
+- Separate factual roster/stat season coverage, historical default season, positions/groups, limitations, and nflverse attribution
+- Required-season historical roster with one internal player per team-season, optional position/group/search filters, bounded opaque cursor pagination, and explicit weekly-membership semantics
+- Team-scoped season leaderboard route that reuses the exact Stats Hub metric, aggregation, ranking, null/zero, tie, cursor, and error contract
+- Public cache policies, OpenAPI, Team Hub guides, hosted query-plan review, and preservation checks
+
+Boundaries:
+
+- No inferred or provider-fetched 2026 roster/stat data, injuries, depth charts, transactions, standings, new provider calls, scraping, background jobs, Redis, frontend work, or production deployment changes
+- No external player/provider IDs, raw rows, source paths, checksums, import actors, editorial internals, or invented kickoff times
+- Existing independently paginated team games and team articles remain available and unchanged
+
 ## Later roadmap themes
 
 After the first slice is stable, define separate milestones for:

@@ -30,6 +30,8 @@ import { PrismaPlayerRepository } from './modules/players/player.repository.js';
 import { PlayerService } from './modules/players/player.service.js';
 import { PrismaStatsHubRepository } from './modules/stats-hub/stats.repository.js';
 import { StatsHubService } from './modules/stats-hub/stats.service.js';
+import { PrismaTeamHubRepository } from './modules/team-hub/team-hub.repository.js';
+import { TeamHubService } from './modules/team-hub/team-hub.service.js';
 
 const config = loadConfig();
 const logger = createLogger(config);
@@ -53,6 +55,14 @@ const gameReader = new GameService(
     allowHistoricalDefaultGameResults: config.sports.allowHistoricalDefaultGameResults,
   },
 );
+const teamHubReader = new TeamHubService({
+  repository: new PrismaTeamHubRepository(prisma),
+  teams: teamReader,
+  games: gameReader,
+  articles: articleService,
+  stats: statsHubReader,
+  currentNflSeason: config.sports.currentNflSeason,
+});
 const accessTokens = new JwtAccessTokenService({
   secret: config.auth.accessTokenSecret,
   expiresInSeconds: config.auth.accessTokenTtlSeconds,
@@ -87,6 +97,7 @@ const app = createApp({
   newsInboxService,
   playerReader,
   statsHubReader,
+  teamHubReader,
 });
 
 const server = app.listen(config.port, config.host, (error?: Error) => {

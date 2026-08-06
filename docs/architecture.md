@@ -2,7 +2,7 @@
 
 ## Status
 
-This document defines the backend architecture through the historical player/statistics foundation milestone. The service foundation, normalized mock/API-Sports-backed team and game catalogs, authentication lifecycle, favorite-team personalization, role-protected schedule maintenance, revisioned original/curated editorial content, manual RSS/Atom candidate workflow, and local 2020-2025 nflverse player data are implemented.
+This document defines the backend architecture through the public Team Hub milestone. The service foundation, normalized mock/API-Sports-backed team and game catalogs, authentication lifecycle, favorite-team personalization, role-protected schedule maintenance, revisioned original/curated editorial content, manual RSS/Atom candidate workflow, local 2020-2025 nflverse player data, Stats Hub, and composed Team Hub reads are implemented.
 
 ## System context
 
@@ -77,6 +77,7 @@ src/
     historical-stats/         # manifest, Parquet validation, normalization, import
     players/                  # public player/profile/stat reads
     stats-hub/                # metric registry, ranked reads, recent summaries
+    team-hub/                 # team composition and historical roster reads
   routes/                   # API router composition
   docs/                     # OpenAPI assembly/schemas if kept in source
 prisma/
@@ -226,6 +227,14 @@ The Stats Hub reads normalized `PlayerSeasonStat` and `PlayerGameStat` rows thro
 
 Weekly leaders retain distinct player/game/team performances. Recent performance is limited to one internal player UUID and at most 20 recorded appearances. Null values are never coerced to zero. All responses are public-cacheable historical data with dataset-level nflverse attribution and exclude provider IDs and import metadata.
 
+### Team Hub
+
+The Team Hub is a read-only composition module. Its overview calls the existing `TeamReader`, source-isolated `GameReader`, and derived-visible `PublicArticleReader`, then adds team-scoped historical coverage from PostgreSQL. It does not reproduce team, game, article, or Stats Hub business rules and makes no provider or feed request.
+
+Historical roster pages group `PlayerWeekRoster` by internal player, team, and selected season. Membership means at least one stored weekly roster row, not full-season/final/current membership or stat participation. Historical team, historical position/jersey/status, and the separately labeled latest-known profile team remain distinct. The query groups to one player row, caps a team-season at 500 candidates, then applies deterministic position-group/position/name/UUID ordering and a context-bound opaque cursor.
+
+The team stat-leader path injects its internal path `teamId` into the existing Stats Hub season-leader service. Metric allowlisting, team-only aggregation, competition ranks, null/zero semantics, tie ordering, errors, cursor behavior, DTO privacy, and nflverse attribution are therefore shared rather than reimplemented. See `docs/team-hub/` for the API contract, semantics, and query-plan review.
+
 ## HTTP API
 
 All initial routes are under `/api/v1`.
@@ -243,6 +252,9 @@ All initial routes are under `/api/v1`.
 | PATCH  | `/users/me/favorite-team`              | Access token          | Set, replace, or optionally clear the favorite team         |
 | GET    | `/teams`                               | None                  | Return active normalized teams                              |
 | GET    | `/teams/:teamId`                       | None                  | Return one normalized team                                  |
+| GET    | `/teams/:teamId/hub`                   | None                  | Return compact schedule/news/historical Team Hub data       |
+| GET    | `/teams/:teamId/roster`                | None                  | Return a historical weekly-roster-derived player page       |
+| GET    | `/teams/:teamId/stat-leaders`          | None                  | Return the exact Stats Hub team-split leaderboard           |
 | GET    | `/games`                               | None                  | Return a bounded, filterable page of normalized games       |
 | GET    | `/games/:gameId`                       | None                  | Return one normalized game                                  |
 | GET    | `/teams/:teamId/games`                 | None                  | Return games involving one active team                      |
@@ -310,6 +322,7 @@ Errors use:
 - User DTOs expose `id`, `email`, `displayName`, active status, normalized favorite-team data or null, and timestamps, never normalized email, password hashes, reset tokens, or session fields.
 - Team DTOs use internal `id` and the normalized Team attributes. Provider mappings are not included in ordinary public responses.
 - Player DTOs use internal UUIDs and page-level nflverse attribution. External identifiers, raw rows, source paths, checksums, import actors, and conflict metadata are never public.
+- Team Hub roster DTOs use one internal player per selected historical team-season, label `historicalTeam` and `latestKnownTeam` separately, and expose no current-roster inference or source identity.
 - Game DTOs use internal IDs, embedded safe team summaries, UTC timestamps, and explicit nullable fields. Provider mappings and synchronization metadata are never public.
 - Public article list DTOs omit bodies; detail DTOs may return constrained Markdown but never lifecycle internals, scheduling metadata, versions, revisions, actor identities, or audit events.
 - Authentication DTOs must make access-token expiry unambiguous.

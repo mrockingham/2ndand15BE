@@ -2,7 +2,7 @@
 
 Backend REST API for the 2nd and 15 consumer NFL platform.
 
-The implemented backend includes the TypeScript/Express foundation, normalized NFL team and game catalogs, a fixture-backed mock provider, an explicit API-Sports synchronization adapter, email/password authentication, rotating database-backed refresh sessions, password reset, favorite-team personalization, role-protected schedule administration, an internal revisioned editorial CMS, a controlled RSS/Atom/manual news-candidate inbox, a local PostgreSQL-backed 2020-2025 nflverse player/statistics foundation, and the public Stats Hub leaderboard/recent-performance API.
+The implemented backend includes the TypeScript/Express foundation, normalized NFL team and game catalogs, a fixture-backed mock provider, an explicit API-Sports synchronization adapter, email/password authentication, rotating database-backed refresh sessions, password reset, favorite-team personalization, role-protected schedule administration, an internal revisioned editorial CMS, a controlled RSS/Atom/manual news-candidate inbox, a local PostgreSQL-backed 2020-2025 nflverse player/statistics foundation, the public Stats Hub, and composed public Team Hub APIs.
 
 ## Requirements
 
@@ -58,6 +58,10 @@ Docker is optional. The supplied Compose file remains available if a local Postg
 The API defaults to `http://localhost:3000`. The PostgreSQL credentials in `.env.example` are local-development placeholders; replace them when using a hosted database.
 
 ## Available endpoints
+
+- `GET /api/v1/teams/:teamId/hub` — compact team, 2026 schedule, news, and historical coverage overview
+- `GET /api/v1/teams/:teamId/roster` — cursor-paginated historical weekly-roster membership
+- `GET /api/v1/teams/:teamId/stat-leaders` — exact Stats Hub team-split leaderboards
 
 - `GET /api/v1/health` — process liveness
 - `GET /api/v1/teams` — all active NFL teams in stable catalog order
@@ -137,6 +141,14 @@ npm.cmd test -- tests/integration/stats-hub.database.test.ts
 Remove-Item Env:RUN_STATS_HUB_DATABASE_TESTS
 ```
 
+Team Hub composition, roster, and team-leader reads have a separate read-only hosted verification:
+
+```powershell
+$env:RUN_TEAM_HUB_DATABASE_TESTS = 'true'
+npm.cmd test -- tests/integration/team-hub.database.test.ts
+Remove-Item Env:RUN_TEAM_HUB_DATABASE_TESTS
+```
+
 ## Database commands
 
 ```sh
@@ -209,6 +221,8 @@ The editorial CMS stores constrained Markdown and external image/source metadata
 The source inbox fetches only explicitly approved RSS/Atom URLs when an editor/admin triggers a test or ingestion. It stores bounded metadata, never fetches linked article pages or images, never auto-publishes, and requires editor-written original content for conversion into a `CURATED` draft. There is no cron, queue, worker, webhook, scraper, or AI authoring. See [the news-source ingestion guide](docs/news-source-ingestion.md).
 
 Historical player data is downloaded to ignored local files, checksum/schema reviewed, and imported only through an explicit bounded CLI. Public player and Stats Hub routes read PostgreSQL and never call nflverse or GitHub. External player/game IDs stay private in mapping tables, missing values remain distinct from zero, and season totals are deterministically rebuilt from weekly rows. See [the historical import guide](docs/historical-data/import-guide.md), [the 2020-2025 review](docs/historical-data/nflverse-player-stats-2020-2025.md), and [the Stats Hub API guide](docs/stats-hub/api-guide.md).
+
+The public Team Hub composes existing team, schedule, article, historical roster, and Stats Hub behavior without provider calls or fabricated 2026 player data. Historical/latest-known teams remain separately labeled and roster membership requires a stored weekly roster row. See [the Team Hub API guide](docs/team-hub/api-guide.md), [semantics](docs/team-hub/semantics.md), and [performance review](docs/team-hub/performance-review.md).
 
 API-Sports is available only through explicit synchronization commands; public routes never call it. In API-Sports mode, real teams are matched to the existing 32-team catalog and game reads exclude fictional mock records through private provider mappings. One team sync uses one provider call, one game sync uses one, and a combined sync normally uses two before bounded retries. Commands support `-- --dry-run`. See [the API-Sports integration guide](docs/api-sports.md) for configuration, status mapping, rate-limit behavior, fixture separation, failure recovery, and safe live verification.
 

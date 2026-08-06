@@ -51,6 +51,8 @@ The reconciliation command compares additive regular-season totals against `stat
 
 Milestone 17 also exposes PostgreSQL-only historical leaderboards and recent performance under `/api/v1/stats`. The [Stats Hub API guide](../stats-hub/api-guide.md) defines metric, ranking, team-split, null, privacy, and caching semantics.
 
+Milestone 19 composes the same imported records into historical team rosters and exact Stats Hub team splits under `/api/v1/teams/:teamId`. Roster membership means at least one stored weekly roster row for the selected team/season and never implies current 2026 membership. See the [Team Hub API guide](../team-hub/api-guide.md) and [Team Hub semantics](../team-hub/semantics.md).
+
 List and weekly-stat endpoints use bounded cursor pagination. Public DTOs use internal UUIDs and page-level nflverse/CC BY 4.0 attribution. They omit provider IDs, source paths, checksums, raw rows, import actors, and conflict information.
 
 See [the field mapping](field-mapping.md), [the 2025 pilot report](nflverse-player-stats-2025-pilot.md), and [the full review report](nflverse-player-stats-2020-2025.md).

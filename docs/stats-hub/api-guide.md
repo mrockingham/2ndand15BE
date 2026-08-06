@@ -11,6 +11,8 @@ Milestone 17 exposes four unauthenticated, PostgreSQL-only endpoints under `/api
 
 Leaderboard limits default to 25 and are capped at 100. Historical responses use public cache headers: metadata has a one-day freshness lifetime and other Stats Hub reads have a six-hour freshness lifetime, each with a longer stale-while-revalidate window.
 
+The Team Hub convenience path `GET /api/v1/teams/:teamId/stat-leaders` injects the internal path team into this same season-leader service and otherwise preserves the `/stats/leaders` response, ranking, cursor, metric, season-type, null, zero, and error semantics.
+
 ## Ranking and pagination
 
 Leaderboards use PostgreSQL competition ranking: equal metric values receive equal ranks, producing sequences such as `1, 2, 2, 4`. Equal values are ordered deterministically by games descending, player display name ascending, internal player UUID ascending, then an internal row UUID when a weekly player has more than one performance. The opaque cursor carries every ordering component and its metric/context; a cursor from another endpoint or metric is rejected with `STATS_INVALID_CURSOR`. Global ranks are calculated before cursor filtering, so ranks remain meaningful across pages.

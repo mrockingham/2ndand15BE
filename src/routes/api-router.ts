@@ -33,6 +33,8 @@ import { createPlayerRouter } from '../modules/players/player.routes.js';
 import type { PlayerReader } from '../modules/players/player.service.js';
 import { createStatsHubRouter } from '../modules/stats-hub/stats.routes.js';
 import type { StatsHubReader } from '../modules/stats-hub/stats.service.js';
+import { createTeamHubRouter } from '../modules/team-hub/team-hub.routes.js';
+import type { TeamHubReader } from '../modules/team-hub/team-hub.service.js';
 
 export interface ApiRouterOptions {
   readonly rateLimit: AppConfig['rateLimit'];
@@ -51,6 +53,7 @@ export interface ApiRouterOptions {
   readonly newsInboxService?: NewsInboxServiceContract;
   readonly playerReader?: PlayerReader;
   readonly statsHubReader?: StatsHubReader;
+  readonly teamHubReader?: TeamHubReader;
 }
 
 export function createApiRouter(options: ApiRouterOptions): Router {
@@ -120,6 +123,8 @@ export function createApiRouter(options: ApiRouterOptions): Router {
     router.use('/stats', createStatsHubRouter(options.statsHubReader));
   router.use('/games', createGameRouter(options.gameReader));
   router.use('/teams/:teamId/games', createTeamGameRouter(options.gameReader));
+  if (options.teamHubReader !== undefined)
+    router.use('/teams/:teamId', createTeamHubRouter(options.teamHubReader));
   router.use('/teams', createTeamRouter(options.teamReader));
   router.use(
     '/auth',

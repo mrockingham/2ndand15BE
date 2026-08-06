@@ -131,6 +131,15 @@ describe('application middleware', () => {
         '/teams/{teamId}': {
           get: { operationId: 'getTeamById' },
         },
+        '/teams/{teamId}/hub': {
+          get: { operationId: 'getTeamHubOverview' },
+        },
+        '/teams/{teamId}/roster': {
+          get: { operationId: 'getHistoricalTeamRoster' },
+        },
+        '/teams/{teamId}/stat-leaders': {
+          get: { operationId: 'getTeamStatLeaders' },
+        },
         '/games': {
           get: { operationId: 'listGames' },
         },

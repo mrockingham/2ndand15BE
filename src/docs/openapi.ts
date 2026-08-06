@@ -1673,6 +1673,136 @@ export const openApiDocument = {
         },
       },
     },
+    '/teams/{teamId}/hub': {
+      get: {
+        operationId: 'getTeamHubOverview',
+        summary: 'Get a compact public Team Hub overview',
+        tags: ['Team Hub', 'Teams'],
+        description:
+          'Composes the existing public team, game, and article contracts with factual 2020-2025 historical coverage. Upcoming games are SCHEDULED or PREGAME 2026 records ordered by kickoff with official TBD times last; recent games are FINAL records ordered newest first. No current roster or player-stat data is inferred.',
+        parameters: [
+          {
+            name: 'teamId',
+            in: 'path',
+            required: true,
+            description: 'Application-owned active NFL team UUID.',
+            schema: { type: 'string', format: 'uuid' },
+          },
+        ],
+        responses: {
+          '200': {
+            description: 'A cacheable Team Hub overview.',
+            headers: { 'Cache-Control': { schema: { type: 'string' } } },
+            content: {
+              'application/json': { schema: { $ref: '#/components/schemas/TeamHubResponse' } },
+            },
+          },
+          '400': { $ref: '#/components/responses/ValidationError' },
+          '404': { $ref: '#/components/responses/NotFoundError' },
+          '429': { $ref: '#/components/responses/RateLimitError' },
+        },
+      },
+    },
+    '/teams/{teamId}/roster': {
+      get: {
+        operationId: 'getHistoricalTeamRoster',
+        summary: 'Get a historical weekly-roster-derived team roster',
+        tags: ['Team Hub', 'Teams'],
+        description:
+          'Returns one row per internal player who has at least one stored weekly roster record for the selected team and season. This does not assert full-season, final, or current roster membership. latestKnownTeam is separately labeled and is not current-season proof.',
+        parameters: [
+          {
+            name: 'teamId',
+            in: 'path',
+            required: true,
+            schema: { type: 'string', format: 'uuid' },
+          },
+          {
+            name: 'season',
+            in: 'query',
+            required: true,
+            schema: { type: 'integer', minimum: 1920, maximum: 2100 },
+          },
+          {
+            name: 'position',
+            in: 'query',
+            schema: {
+              type: 'string',
+              enum: ['DB', 'DL', 'K', 'LB', 'LS', 'OL', 'P', 'QB', 'RB', 'TE', 'WR'],
+            },
+          },
+          {
+            name: 'positionGroup',
+            in: 'query',
+            schema: {
+              type: 'string',
+              enum: ['DB', 'DL', 'LB', 'OL', 'QB', 'RB', 'SPEC', 'TE', 'WR'],
+            },
+          },
+          { name: 'search', in: 'query', schema: { type: 'string', minLength: 2, maxLength: 100 } },
+          {
+            name: 'limit',
+            in: 'query',
+            schema: { type: 'integer', minimum: 1, maximum: 100, default: 25 },
+          },
+          {
+            name: 'cursor',
+            in: 'query',
+            description: 'Opaque cursor bound to the team, season, and roster filters.',
+            schema: { type: 'string', maxLength: 1024 },
+          },
+        ],
+        responses: {
+          '200': {
+            description: 'A deterministic cursor-paginated historical roster.',
+            headers: { 'Cache-Control': { schema: { type: 'string' } } },
+            content: {
+              'application/json': { schema: { $ref: '#/components/schemas/TeamRosterResponse' } },
+            },
+          },
+          '400': { $ref: '#/components/responses/ValidationError' },
+          '404': { $ref: '#/components/responses/NotFoundError' },
+          '429': { $ref: '#/components/responses/RateLimitError' },
+        },
+      },
+    },
+    '/teams/{teamId}/stat-leaders': {
+      get: {
+        operationId: 'getTeamStatLeaders',
+        summary: 'Get a historical team-scoped player leaderboard',
+        tags: ['Team Hub', 'Stats Hub', 'Teams'],
+        description:
+          'Uses the exact Stats Hub season-leader metric registry, team-only aggregation, competition ranking, null-versus-zero behavior, tie ordering, and opaque cursor contract. The path team UUID cannot be overridden by query input.',
+        parameters: [
+          {
+            name: 'teamId',
+            in: 'path',
+            required: true,
+            schema: { type: 'string', format: 'uuid' },
+          },
+          ...statsSharedLeaderboardParameters.filter(({ name }) => name !== 'teamId'),
+          {
+            name: 'seasonType',
+            in: 'query',
+            schema: { type: 'string', enum: ['REG', 'POST', 'REG_POST'], default: 'REG' },
+          },
+        ],
+        responses: {
+          '200': {
+            description: 'The existing Stats Hub season leaderboard contract, scoped to this team.',
+            headers: { 'Cache-Control': { schema: { type: 'string' } } },
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/StatsSeasonLeaderboardResponse' },
+              },
+            },
+          },
+          '400': { $ref: '#/components/responses/ValidationError' },
+          '404': { $ref: '#/components/responses/NotFoundError' },
+          '429': { $ref: '#/components/responses/RateLimitError' },
+        },
+      },
+    },
     '/teams/{teamId}': {
       get: {
         operationId: 'getTeamById',
@@ -2680,7 +2810,6 @@ export const openApiDocument = {
           'logoUrl',
           'logoSource',
           'isActive',
-          'role',
           'createdAt',
           'updatedAt',
         ],
@@ -2698,7 +2827,6 @@ export const openApiDocument = {
           logoUrl: { type: ['string', 'null'], format: 'uri' },
           logoSource: { type: ['string', 'null'] },
           isActive: { type: 'boolean' },
-          role: { type: 'string', enum: ['USER', 'EDITOR', 'ADMIN'] },
           createdAt: { type: 'string', format: 'date-time' },
           updatedAt: { type: 'string', format: 'date-time' },
         },
@@ -2717,6 +2845,158 @@ export const openApiDocument = {
           data: {
             type: 'array',
             items: { $ref: '#/components/schemas/Team' },
+          },
+        },
+      },
+      TeamHubSummary: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id', 'abbreviation', 'fullName'],
+        properties: {
+          id: { type: 'string', format: 'uuid' },
+          abbreviation: { type: 'string' },
+          fullName: { type: 'string' },
+        },
+      },
+      TeamHubResponse: {
+        type: 'object',
+        required: ['data', 'meta'],
+        properties: {
+          data: {
+            type: 'object',
+            required: ['team', 'schedule', 'news', 'historicalData'],
+            properties: {
+              team: { $ref: '#/components/schemas/Team' },
+              schedule: {
+                type: 'object',
+                required: ['season', 'upcoming', 'recent'],
+                properties: {
+                  season: {
+                    type: 'integer',
+                    example: 2026,
+                    description: 'The configured current NFL season used by public game reads.',
+                  },
+                  upcoming: {
+                    type: 'array',
+                    maxItems: 3,
+                    items: { $ref: '#/components/schemas/Game' },
+                  },
+                  recent: {
+                    type: 'array',
+                    maxItems: 3,
+                    items: { $ref: '#/components/schemas/Game' },
+                  },
+                },
+              },
+              news: {
+                type: 'object',
+                required: ['articles'],
+                properties: {
+                  articles: {
+                    type: 'array',
+                    maxItems: 3,
+                    items: { $ref: '#/components/schemas/PublicArticleListItem' },
+                  },
+                },
+              },
+              historicalData: {
+                type: 'object',
+                required: [
+                  'defaultSeason',
+                  'rosterSeasons',
+                  'statSeasons',
+                  'positions',
+                  'positionGroups',
+                  'coverageNotes',
+                ],
+                properties: {
+                  defaultSeason: { type: ['integer', 'null'] },
+                  rosterSeasons: { type: 'array', items: { type: 'integer' } },
+                  statSeasons: { type: 'array', items: { type: 'integer' } },
+                  positions: { type: 'array', items: { type: 'string' } },
+                  positionGroups: { type: 'array', items: { type: 'string' } },
+                  coverageNotes: { type: 'array', items: { type: 'string' } },
+                },
+              },
+            },
+          },
+          meta: {
+            type: 'object',
+            required: ['attribution'],
+            properties: { attribution: { $ref: '#/components/schemas/NflverseAttribution' } },
+          },
+        },
+      },
+      TeamRosterRow: {
+        type: 'object',
+        additionalProperties: false,
+        required: [
+          'player',
+          'season',
+          'historicalTeam',
+          'latestKnownTeam',
+          'position',
+          'positionGroup',
+          'jerseyNumber',
+          'status',
+          'firstWeek',
+          'lastWeek',
+          'rosterWeekCount',
+        ],
+        properties: {
+          player: {
+            type: 'object',
+            required: ['id', 'displayName', 'headshotUrl'],
+            properties: {
+              id: { type: 'string', format: 'uuid' },
+              displayName: { type: 'string' },
+              headshotUrl: { type: ['string', 'null'], format: 'uri' },
+            },
+          },
+          season: { type: 'integer' },
+          historicalTeam: { $ref: '#/components/schemas/TeamHubSummary' },
+          latestKnownTeam: {
+            oneOf: [{ $ref: '#/components/schemas/TeamHubSummary' }, { type: 'null' }],
+          },
+          position: { type: ['string', 'null'] },
+          positionGroup: { type: ['string', 'null'] },
+          jerseyNumber: { type: ['integer', 'null'] },
+          status: { type: ['string', 'null'] },
+          firstWeek: { type: 'integer', minimum: 1 },
+          lastWeek: { type: 'integer', minimum: 1 },
+          rosterWeekCount: { type: 'integer', minimum: 1 },
+        },
+      },
+      TeamRosterResponse: {
+        type: 'object',
+        required: ['data', 'meta'],
+        properties: {
+          data: {
+            type: 'object',
+            required: ['team', 'season', 'roster'],
+            properties: {
+              team: { $ref: '#/components/schemas/Team' },
+              season: { type: 'integer' },
+              roster: { type: 'array', items: { $ref: '#/components/schemas/TeamRosterRow' } },
+            },
+          },
+          meta: {
+            type: 'object',
+            required: ['nextCursor', 'semantics', 'attribution'],
+            properties: {
+              nextCursor: { type: ['string', 'null'], maxLength: 1024 },
+              semantics: {
+                type: 'object',
+                required: ['membership', 'firstWeek', 'lastWeek', 'latestKnownTeam'],
+                properties: {
+                  membership: { type: 'string' },
+                  firstWeek: { type: 'string' },
+                  lastWeek: { type: 'string' },
+                  latestKnownTeam: { type: 'string' },
+                },
+              },
+              attribution: { $ref: '#/components/schemas/NflverseAttribution' },
+            },
           },
         },
       },

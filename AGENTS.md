@@ -22,6 +22,7 @@ Keep the current milestone small. Do not implement future product ideas merely b
 - Internal `Game.id` values are public game keys; provider game IDs belong only in `GameProviderMapping`.
 - Internal `Player.id` values are public player keys; provider/site player IDs belong only in `PlayerExternalIdentifier` and names must never be used as identity.
 - Public player/stat requests query PostgreSQL only. They must never download nflverse files or expose external IDs, raw rows, checksums, paths, actors, or conflict metadata.
+- Public Team Hub roster membership means at least one stored weekly roster row for the selected internal team and historical season. It must never be presented as full-season, final, or current 2026 membership; historical and latest-known teams remain separately labeled.
 - Public Stats Hub metric IDs must resolve through the versioned registry; never accept a client-supplied database column or SQL identifier.
 - A team-filtered season leaderboard aggregates only statistics recorded for that team and must never label a traded player’s full-season total as one team’s production.
 - Historical missing statistics remain null and distinct from factual zero values.
