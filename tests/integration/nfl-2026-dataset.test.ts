@@ -12,8 +12,8 @@ describe('the reviewed NFL 2026 schedule dataset', () => {
     const rows = await readScheduleImportFile(datasetPath);
     const review = reviewSchedule(rows);
 
-    expect(rows).toHaveLength(320);
-    expect(review.countsBySeasonType).toEqual({ PRE: 48, REG: 272 });
+    expect(rows).toHaveLength(321);
+    expect(review.countsBySeasonType).toEqual({ PRE: 49, REG: 272 });
     expect(review.teamsRepresented).toHaveLength(32);
     expect(review.duplicateIdentities).toEqual([]);
     expect(review.duplicateExternalReferences).toEqual([]);
@@ -25,8 +25,34 @@ describe('the reviewed NFL 2026 schedule dataset', () => {
     expect(review.invalidOffsets).toEqual([]);
     expect(Object.values(review.byeWeekPerTeam).every((week) => week !== null)).toBe(true);
     expect(review.tbdKickoffs).toHaveLength(24);
+    expect(review.neutralSiteGames).toHaveLength(10);
+    expect(review.internationalGames).toHaveLength(9);
     expect(review.blockers).toEqual([]);
     expect(review.readyForImport).toBe(true);
+  });
+
+  it('contains exactly one reviewed Hall of Fame Game with the null-week convention', async () => {
+    const rows = await readScheduleImportFile(datasetPath);
+    const games = rows.filter(
+      (row) =>
+        row.season === 2026 &&
+        row.seasonType === 'PRE' &&
+        row.week === null &&
+        row.awayTeam === 'CAR' &&
+        row.homeTeam === 'ARI',
+    );
+
+    expect(games).toEqual([
+      expect.objectContaining({
+        startTime: '2026-08-07T00:00:00Z',
+        status: 'SCHEDULED',
+        venueName: 'Tom Benson Hall of Fame Stadium',
+        venueCity: 'Canton, Ohio',
+        broadcastNetwork: 'NBC',
+        isNeutralSite: true,
+        externalReference: 'nfl-2026-pre-wnone-car-ari',
+      }),
+    ]);
   });
 
   it('preserves reviewed DST and international kickoff samples', async () => {

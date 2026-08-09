@@ -19,6 +19,7 @@ import type {
 } from './modules/articles/article.service.js';
 import type { HealthControllerOptions } from './modules/health/health.controller.js';
 import type { GameReader } from './modules/games/game.service.js';
+import type { GameStatsReader } from './modules/game-stats/game-stats.service.js';
 import type { TeamReader } from './modules/teams/team.service.js';
 import type { UserPersonalizationService } from './modules/users/user.service.js';
 import { createApiRouter } from './routes/api-router.js';
@@ -26,6 +27,7 @@ import type { NewsInboxServiceContract } from './modules/news-inbox/news.service
 import type { PlayerReader } from './modules/players/player.service.js';
 import type { StatsHubReader } from './modules/stats-hub/stats.service.js';
 import type { TeamHubReader } from './modules/team-hub/team-hub.service.js';
+import type { EditorialAiServiceContract } from './modules/editorial-ai/editorial-ai.service.js';
 
 export interface CreateAppOptions {
   readonly config: AppConfig;
@@ -33,6 +35,7 @@ export interface CreateAppOptions {
   readonly health?: HealthControllerOptions;
   readonly teamReader: TeamReader;
   readonly gameReader: GameReader;
+  readonly gameStatsReader?: GameStatsReader;
   readonly authService: AuthenticationService;
   readonly userService: UserPersonalizationService;
   readonly accessTokens: AccessTokenService;
@@ -44,6 +47,7 @@ export interface CreateAppOptions {
   readonly playerReader?: PlayerReader;
   readonly statsHubReader?: StatsHubReader;
   readonly teamHubReader?: TeamHubReader;
+  readonly editorialAiService?: EditorialAiServiceContract;
 }
 
 export function createApp(options: CreateAppOptions): Express {
@@ -66,6 +70,9 @@ export function createApp(options: CreateAppOptions): Express {
       rateLimit: options.config.rateLimit,
       teamReader: options.teamReader,
       gameReader: options.gameReader,
+      ...(options.gameStatsReader === undefined
+        ? {}
+        : { gameStatsReader: options.gameStatsReader }),
       authService: options.authService,
       userService: options.userService,
       authenticate: createAuthenticationMiddleware(options.accessTokens),
@@ -85,6 +92,9 @@ export function createApp(options: CreateAppOptions): Express {
       ...(options.playerReader === undefined ? {} : { playerReader: options.playerReader }),
       ...(options.statsHubReader === undefined ? {} : { statsHubReader: options.statsHubReader }),
       ...(options.teamHubReader === undefined ? {} : { teamHubReader: options.teamHubReader }),
+      ...(options.editorialAiService === undefined
+        ? {}
+        : { editorialAiService: options.editorialAiService }),
       ...(options.health === undefined ? {} : { health: options.health }),
     }),
   );

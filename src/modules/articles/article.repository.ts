@@ -318,7 +318,7 @@ function publicVisibilityWhere(now: Date): Prisma.ArticleWhereInput {
   };
 }
 
-function revisionSnapshot(article: ArticleRecord): Prisma.InputJsonObject {
+export function revisionSnapshot(article: ArticleRecord): Prisma.InputJsonObject {
   return sanitizeAuditSnapshot({
     type: article.type,
     status: article.status,
@@ -346,7 +346,7 @@ function revisionSnapshot(article: ArticleRecord): Prisma.InputJsonObject {
   });
 }
 
-async function createArticleAudit(
+export async function createArticleAudit(
   transaction: Prisma.TransactionClient,
   principal: AdministrativePrincipal,
   requestId: string | null,

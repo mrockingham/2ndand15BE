@@ -108,6 +108,29 @@ const databaseEnvironmentSchema = z.object({
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
 });
 
+const currentGameEnvironmentSchema = databaseEnvironmentSchema
+  .extend({
+    CURRENT_GAME_PROVIDER: z.enum(['highlightly']),
+    HIGHLIGHTLY_EVALUATION_MODE: booleanSchema(false),
+    HIGHLIGHTLY_PUBLICATION_APPROVED: booleanSchema(false),
+    HIGHLIGHTLY_API_KEY: z.string().min(1).max(1024),
+    HIGHLIGHTLY_BASE_URL: z
+      .url()
+      .refine((value) => new URL(value).protocol === 'https:', 'Must use HTTPS')
+      .default('https://american-football.highlightly.net'),
+    HIGHLIGHTLY_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(100).max(60_000).default(10_000),
+    HIGHLIGHTLY_MAX_RETRIES: z.coerce.number().int().min(0).max(3).default(1),
+  })
+  .superRefine((value, context) => {
+    if (!value.HIGHLIGHTLY_EVALUATION_MODE && !value.HIGHLIGHTLY_PUBLICATION_APPROVED) {
+      context.addIssue({
+        code: 'custom',
+        path: ['HIGHLIGHTLY_EVALUATION_MODE'],
+        message: 'Must be true unless Highlightly publication is explicitly approved',
+      });
+    }
+  });
+
 const baseEnvironmentSchema = databaseEnvironmentSchema.extend({
   HOST: z.string().min(1).default('0.0.0.0'),
   PORT: z.coerce.number().int().min(1).max(65_535).default(3000),
@@ -151,9 +174,29 @@ const environmentSchema = baseEnvironmentSchema
     PASSWORD_RESET_FRONTEND_URL: z.url().default('http://localhost:5173/reset-password'),
     EMAIL_PROVIDER: z.enum(['development']).default('development'),
     EMAIL_DEV_LOG_RESET_URL: booleanSchema(false),
+    EDITORIAL_AI_PROVIDER: z.enum(['none', 'openai']).default('none'),
+    OPENAI_API_KEY: optionalSecretSchema,
+    OPENAI_EDITORIAL_MODEL: z.preprocess(
+      (value) => (value === '' ? undefined : value),
+      z.string().min(1).max(128).optional(),
+    ),
+    OPENAI_BASE_URL: z.url().default('https://api.openai.com/v1'),
+    EDITORIAL_AI_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(120_000).default(30_000),
   })
   .superRefine((value, context) => {
     validateSportsConfiguration(value, context);
+
+    if (
+      value.EDITORIAL_AI_PROVIDER === 'openai' &&
+      (value.OPENAI_API_KEY === undefined || value.OPENAI_EDITORIAL_MODEL === undefined)
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['OPENAI_API_KEY'],
+        message:
+          'OPENAI_API_KEY and OPENAI_EDITORIAL_MODEL are required when EDITORIAL_AI_PROVIDER is openai',
+      });
+    }
 
     if (value.REFRESH_COOKIE_SAME_SITE === 'none' && !value.REFRESH_COOKIE_SECURE) {
       context.addIssue({
@@ -228,6 +271,13 @@ export interface AppConfig extends DatabaseConfig {
     readonly logResetUrl: boolean;
   };
   readonly sports: SportsConfig;
+  readonly editorialAi: {
+    readonly provider: 'none' | 'openai';
+    readonly apiKey: string | null;
+    readonly model: string | null;
+    readonly baseUrl: string;
+    readonly timeoutMs: number;
+  };
 }
 
 export interface SportsConfig {
@@ -257,6 +307,20 @@ export interface HighlightlyEvaluationConfig {
   readonly requestTimeoutMs: number;
   readonly maxRetries: number;
   readonly evaluationSeason: number;
+}
+
+export interface CurrentGameSyncConfig extends DatabaseConfig {
+  readonly currentGame: {
+    readonly provider: 'highlightly';
+    readonly evaluationMode: boolean;
+    readonly publicationApproved: boolean;
+    readonly highlightly: {
+      readonly apiKey: string;
+      readonly baseUrl: string;
+      readonly requestTimeoutMs: number;
+      readonly maxRetries: number;
+    };
+  };
 }
 
 export interface RateLimitConfig {
@@ -316,6 +380,28 @@ export function loadHighlightlyEvaluationConfig(
   };
 }
 
+export function loadCurrentGameSyncConfig(
+  environment: Record<string, string | undefined> = process.env,
+): CurrentGameSyncConfig {
+  const data = parseEnvironment(currentGameEnvironmentSchema, environment);
+  return {
+    nodeEnv: data.NODE_ENV,
+    databaseUrl: data.DATABASE_URL,
+    logLevel: data.LOG_LEVEL,
+    currentGame: {
+      provider: data.CURRENT_GAME_PROVIDER,
+      evaluationMode: data.HIGHLIGHTLY_EVALUATION_MODE,
+      publicationApproved: data.HIGHLIGHTLY_PUBLICATION_APPROVED,
+      highlightly: {
+        apiKey: data.HIGHLIGHTLY_API_KEY,
+        baseUrl: data.HIGHLIGHTLY_BASE_URL,
+        requestTimeoutMs: data.HIGHLIGHTLY_REQUEST_TIMEOUT_MS,
+        maxRetries: data.HIGHLIGHTLY_MAX_RETRIES,
+      },
+    },
+  };
+}
+
 export function loadConfig(
   environment: Record<string, string | undefined> = process.env,
 ): AppConfig {
@@ -359,6 +445,13 @@ export function loadConfig(
       logResetUrl: data.EMAIL_DEV_LOG_RESET_URL,
     },
     sports: toSportsConfig(data),
+    editorialAi: {
+      provider: data.EDITORIAL_AI_PROVIDER,
+      apiKey: data.OPENAI_API_KEY ?? null,
+      model: data.OPENAI_EDITORIAL_MODEL ?? null,
+      baseUrl: data.OPENAI_BASE_URL,
+      timeoutMs: data.EDITORIAL_AI_TIMEOUT_MS,
+    },
   };
 }
 

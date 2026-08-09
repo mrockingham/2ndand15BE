@@ -273,20 +273,101 @@ Exit criteria:
 
 Goal: prepare, review, and import a provider-independent 2026 preseason and regular-season schedule from official factual sources.
 
-**Status:** Complete on August 2, 2026. The committed baseline validates 48 preseason and all 272 regular-season rows. NFL.com omits concrete kickoff times for four Week 16 games, four Week 17 games, and all 16 Week 18 games; ESPN independently labels the same 24 kickoffs TBD. The approved explicit-TBD policy stores no invented time: CSV `TBD` becomes nullable `Game.startTime` and public `startTime: null`.
+**Status:** Complete on August 2, 2026, with the Hall of Fame schedule-stewardship addendum completed on August 8, 2026. The committed baseline validates 49 preseason games (including the Hall of Fame Game as `PRE` with a null week) and all 272 regular-season rows. NFL.com omits concrete kickoff times for four Week 16 games, four Week 17 games, and all 16 Week 18 games; ESPN independently labels the same 24 kickoffs TBD. The approved explicit-TBD policy stores no invented time: CSV `TBD` becomes nullable `Game.startTime` and public `startTime: null`.
 
 Delivered while blocked:
 
-- Exact-contract `data/schedules/nfl-2026.csv` with all 320 represented official rows
+- Exact-contract `data/schedules/nfl-2026.csv` with all 321 represented official rows
 - Read-only `schedule:review` aggregate validation and targeted dataset tests
 - Canonical team abbreviations, stable human-reviewable references, official provenance, and normalized network labels
-- Explicit review of all nine international/neutral-site games and DST/UTC samples
+- Explicit review of all nine international games, the domestic neutral-site Hall of Fame Game, and DST/UTC samples
 - Human-readable source, count, missing-field, warning, import, API, and preservation report
 - Nullable-kickoff migration and public/OpenAPI semantics for honest TBD representation
 - Clean 320-row dry run; first write created 320 and identical second write skipped 320
 - Hosted counts, provenance, audits, provider mappings, overrides, CMS/auth/session preservation, public API privacy, pagination, and fixture isolation checks
 
-The Hall of Fame Game remains omitted with a documented warning because the product still has no separate Hall of Fame/preseason week convention. The 24 TBD rows require later editor updates and human verification after official kickoff assignment.
+The Hall of Fame Game uses the null-week convention: Carolina at Arizona, `PRE`, neutral site in Canton, and initially `SCHEDULED` with null scores. NFL.com's source identity is `PRE 0`, but the established database constraint accepts only weeks 1-22 or null, so null avoids both a schema migration and folding the game into Preseason Week 1. The 24 TBD rows require later editor updates and human verification after official kickoff assignment. Current status and score synchronization remains Milestone 22 work.
+
+Milestone 22A imported the Hall of Fame row once and skipped it on the identical second import. Hosted counts moved from 2,023 to 2,024 total games and from 329 to 330 games in 2026, while provider mappings and unrelated product data were preserved. Existing game, team-game, and Team Hub reads returned the new internal game exactly once. Milestone 22 may resume at bounded provider verification/dry-run against that stable internal identity.
+
+## Milestone 22 — Current-season game update pipeline
+
+Goal: safely update mutable current-game state on one existing reviewed internal game through a provider-neutral, manual, dry-run-first pipeline.
+
+**Status:** Implemented and hosted proof-of-concept verified on August 8, 2026. API-Sports returned no target record. Highlightly returned the exact Hall of Fame Game with Arizona home, Carolina away, a 30-33 score, and Finished state. Dry-run planned the exact update, first apply updated one existing game and added one mapping, and repeat apply was unchanged. Public reads and both Team Hubs reflected the final without exposing provider metadata; game counts remained 2,024 total and 330 for 2026. Highlightly remains approved only for development/staging evaluation; production mutation requires separate publication approval.
+
+Deliverables:
+
+- Explicit current-game provider and Highlightly evaluation/publication configuration guards
+- Bounded Highlightly adapter into the normalized game contract
+- Exact-ID, update-only service with mapping-first and reviewed-schedule fallback matching
+- Dry-run reports, atomic state/mapping/private-audit writes, and idempotent repeat apply
+- Unit coverage for normalization, scores, statuses, identity/orientation, ambiguity, collision, rollback, and rights enforcement
+- Hosted game/list/Team Hub verification, preservation counts, timing report, and full regression gates
+
+Boundaries:
+
+- No game creation, baseline schedule changes, public provider calls, automatic failover, logo storage, cron, queue, worker, webhook, or production deployment
+- No provider identifiers, payloads, credentials, audit data, or evaluation metadata in public DTOs
+- No production Highlightly publication without a separate written rights decision
+
+## Milestone 22.5 — Current game box score and team statistics
+
+Goal: discover Highlightly game-detail capability and persist only safely normalized, provider-neutral, game-specific statistics.
+
+**Status:** Complete on August 8, 2026. Hosted verification, dry-run, one atomic apply, idempotent replay, public API verification, preservation checks, and performance measurement passed. Discovery found strong team totals and quarter scoring plus 82 player rows. Player publication remains deferred because no stable Highlightly player mappings exist and the provider supplied no positions.
+
+Deliverables:
+
+- Sanitized capability matrix for team/player stats, period scoring, scoring events, and play records
+- Separate typed `CurrentGameTeamStat` storage with private source provenance and no nflverse contamination
+- Two-request manual detail synchronization with batch player identity checks and existing M22 production guard
+- Dry-run-first, atomic, idempotent team-row upserts and private audit
+- Provider-private `GET /api/v1/games/:gameId/stats` for team totals and period scoring
+
+Boundaries:
+
+- No name-based player identity, unresolved-player persistence, scoring-description parsing, public play-by-play, season aggregation, scheduling, polling, animation, or provider promotion
+
+## Milestone 22.6 — Current player identity and game player box scores
+
+Goal: reconcile current provider player identities deterministically and expose only safely resolved, game-specific player box scores.
+
+**Status:** Local implementation complete; hosted reconciliation is safely blocked on August 9, 2026 by the Highlightly account request quota. Sixty-three of 82 profiles returned with strong identity fields, while 19 remained unavailable. No hosted migration, player, mapping, player-stat, coverage, or audit mutation was applied.
+
+Deliverables:
+
+- Existing-mapping-first reconciliation with exact DOB/position matching, controlled missing-DOB fallback, collision rejection, and no name-only or fuzzy binding
+- Safe transactionally created current players only when no internal candidate exists and the provider profile has game-team, position, DOB, and jersey/draft evidence
+- Separate typed `CurrentGamePlayerStat` and neutral coverage storage with no historical nflverse or Stats Hub contamination
+- Existing detail CLI extended for dry-run/apply, private review output, quota-paced profile calls, and zero-profile-call mapped repeats
+- Provider-private public home/away category arrays using internal player UUIDs only
+
+Boundaries:
+
+- No hosted apply until all 82 profiles are available and the complete dry-run passes the ambiguity gate
+- No fuzzy automatic match, mass catalog/roster import, historical aggregation, 2026 Stats Hub, provider promotion, polling, scheduling, or frontend work
+
+## Milestone 23 — AI editorial assistant and media candidates
+
+Goal: reduce launch editorial preparation through original, attributed, human-reviewed drafts without scraping or automatic publication.
+
+**Status:** Hosted verification completed through the required three-candidate sample on August 9, 2026. Both additive migrations are deployed, M22.6 reconciliation data remains untouched, the OpenAI configuration is explicit, and conservative source rights are seeded. Three private drafts were generated; two required safe thin-source remediation and the third exposed an NCAA-only editorial-relevance gap. The additional batch was correctly skipped because the individual-sample acceptance gate was not met.
+
+Deliverables:
+
+- Provider-neutral editorial AI boundary with optional OpenAI structured-output adapter and graceful unconfigured behavior
+- One-candidate generation, ten-candidate bounded batch generation, and versioned unpublished-draft regeneration
+- Existing `Article`/revision/candidate/audit reuse with private confidence, risk, prompt, token, timing, and review metadata
+- Exact internal team resolution, conservative context-aware player suggestions, deterministic duplicate classification, and source phrase-overlap safeguards
+- Reviewed source-rights profiles, external-reference-only media candidates, and fail-closed media attachment
+- All-team launch coverage with duplicate/rejection-aware draft counts and separate candidate availability
+- OpenAPI, environment validation, focused tests, and `docs/editorial-ai/`
+
+Boundaries:
+
+- No auto-publishing, arbitrary page fetching, autonomous ingestion, automatic YouTube search, media downloading/rehosting, scheduled generation, cron, worker, queue, social/newsletter/push delivery, frontend work, or game/player-provider changes
+- Public article DTOs remain unchanged and exclude all AI, duplicate, rights, unresolved-entity, usage, timing, and audit metadata
 
 ## Milestone 13 — Controlled news-source inbox
 

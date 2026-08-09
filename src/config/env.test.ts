@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { EnvironmentValidationError, loadConfig, loadHighlightlyEvaluationConfig } from './env.js';
+import {
+  EnvironmentValidationError,
+  loadConfig,
+  loadCurrentGameSyncConfig,
+  loadHighlightlyEvaluationConfig,
+} from './env.js';
 
 const requiredEnvironment = {
   DATABASE_URL: 'postgresql://test:test@localhost:5432/test?schema=public',
@@ -49,6 +54,13 @@ describe('loadConfig', () => {
       email: {
         provider: 'development',
         logResetUrl: false,
+      },
+      editorialAi: {
+        provider: 'none',
+        apiKey: null,
+        model: null,
+        baseUrl: 'https://api.openai.com/v1',
+        timeoutMs: 30_000,
       },
       sports: {
         provider: 'mock',
@@ -193,6 +205,25 @@ describe('loadConfig', () => {
       }),
     ).toThrow(EnvironmentValidationError);
   });
+
+  it('keeps editorial AI optional and requires both key and explicit model when enabled', () => {
+    expect(() => loadConfig({ ...requiredEnvironment, EDITORIAL_AI_PROVIDER: 'openai' })).toThrow(
+      EnvironmentValidationError,
+    );
+    const config = loadConfig({
+      ...requiredEnvironment,
+      EDITORIAL_AI_PROVIDER: 'openai',
+      OPENAI_API_KEY: 'private-editorial-key',
+      OPENAI_EDITORIAL_MODEL: 'configured-model',
+    });
+    expect(config.editorialAi).toEqual({
+      provider: 'openai',
+      apiKey: 'private-editorial-key',
+      model: 'configured-model',
+      baseUrl: 'https://api.openai.com/v1',
+      timeoutMs: 30_000,
+    });
+  });
 });
 
 describe('loadHighlightlyEvaluationConfig', () => {
@@ -230,5 +261,38 @@ describe('loadHighlightlyEvaluationConfig', () => {
         CURRENT_NFL_SEASON: '2026',
       }).evaluationSeason,
     ).toBe(2026);
+  });
+});
+
+describe('loadCurrentGameSyncConfig', () => {
+  it('loads explicit Highlightly evaluation-mode synchronization settings', () => {
+    expect(
+      loadCurrentGameSyncConfig({
+        DATABASE_URL: requiredEnvironment.DATABASE_URL,
+        CURRENT_GAME_PROVIDER: 'highlightly',
+        HIGHLIGHTLY_EVALUATION_MODE: 'true',
+        HIGHLIGHTLY_PUBLICATION_APPROVED: 'false',
+        HIGHLIGHTLY_API_KEY: 'private-test-key',
+      }),
+    ).toMatchObject({
+      nodeEnv: 'development',
+      currentGame: {
+        provider: 'highlightly',
+        evaluationMode: true,
+        publicationApproved: false,
+      },
+    });
+  });
+
+  it('rejects configuration without an explicit permitted usage mode', () => {
+    expect(() =>
+      loadCurrentGameSyncConfig({
+        DATABASE_URL: requiredEnvironment.DATABASE_URL,
+        CURRENT_GAME_PROVIDER: 'highlightly',
+        HIGHLIGHTLY_EVALUATION_MODE: 'false',
+        HIGHLIGHTLY_PUBLICATION_APPROVED: 'false',
+        HIGHLIGHTLY_API_KEY: 'private-test-key',
+      }),
+    ).toThrow(EnvironmentValidationError);
   });
 });

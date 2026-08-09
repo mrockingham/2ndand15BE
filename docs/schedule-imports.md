@@ -13,6 +13,7 @@ season,seasonType,week,startTime,awayTeam,homeTeam,status,venueName,venueCity,br
 - Teams use canonical abbreviations. `WSH` maps to internal `WAS`, and `JAC` maps to `JAX`.
 - `startTime` is ISO 8601 with `Z`/an explicit offset, or the literal `TBD`. Timestamps are stored in UTC; `TBD` stores a null kickoff and is returned publicly as `startTime: null`.
 - `seasonType` is `PRE`, `REG`, or `POST`; status uses the normalized game-status enum.
+- `week` is `1` through `22`, or null when a source has no representable week under the established database constraint. The 2026 Hall of Fame Game uses null: NFL.com's source identifies it as `PRE 0`, but `games_week_check` permits only `1` through `22` or null. Provenance retains that source identity, and the game remains distinct from Preseason Week 1 without adding a season type or migration.
 - Empty optional cells become `null`. URLs are validated but never fetched.
 - `sourceType` is `MANUAL_IMPORT`, `OFFICIAL_WEB`, or `DEVELOPMENT_FIXTURE`; fixture imports remain hidden unless fixture data is enabled.
 - The parser rejects unknown or duplicate teams, equal home/away teams, duplicate rows, malformed quotes, spreadsheet formula prefixes in text fields, files over 1 MiB, rows over 16,384 characters, and imports over 500 games.

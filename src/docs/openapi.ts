@@ -1035,6 +1035,241 @@ export const openApiDocument = {
       '#/components/schemas/NewsCandidateConvertRequest',
       true,
     ),
+    '/admin/news-candidates/{candidateId}/generate-draft': {
+      post: {
+        operationId: 'generateEditorialAiDraft',
+        summary: 'Generate an original attributed draft for human review',
+        tags: ['Editorial AI'],
+        security: [{ bearerAuth: [] }],
+        parameters: [newsCandidateIdParameter],
+        requestBody: {
+          content: {
+            'application/json': {
+              schema: { $ref: '#/components/schemas/EditorialAiGenerateRequest' },
+            },
+          },
+        },
+        responses: {
+          '201': {
+            description: 'DRAFT created in NEEDS_REVIEW.',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/EditorialAiDraftResponse' },
+              },
+            },
+          },
+          '400': { $ref: '#/components/responses/ValidationError' },
+          '401': { $ref: '#/components/responses/UnauthorizedError' },
+          '403': { $ref: '#/components/responses/ForbiddenError' },
+          '404': { $ref: '#/components/responses/NotFoundError' },
+          '409': { $ref: '#/components/responses/ConflictError' },
+          '503': { description: 'Editorial AI is unavailable or unconfigured.' },
+        },
+      },
+    },
+    '/admin/news-candidates/generate-drafts': {
+      post: {
+        operationId: 'generateEditorialAiDraftBatch',
+        summary: 'Generate a bounded batch of independent review drafts',
+        tags: ['Editorial AI'],
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: { $ref: '#/components/schemas/EditorialAiBatchRequest' },
+            },
+          },
+        },
+        responses: {
+          '200': {
+            description: 'Per-candidate bounded batch result.',
+            content: { 'application/json': { schema: { type: 'object' } } },
+          },
+          '400': { $ref: '#/components/responses/ValidationError' },
+          '401': { $ref: '#/components/responses/UnauthorizedError' },
+          '403': { $ref: '#/components/responses/ForbiddenError' },
+        },
+      },
+    },
+    '/admin/editorial/coverage': {
+      get: {
+        operationId: 'getEditorialLaunchCoverage',
+        summary: 'Report launch coverage for all active NFL teams',
+        tags: ['Editorial AI'],
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: 'target',
+            in: 'query',
+            schema: { type: 'integer', minimum: 1, maximum: 20, default: 7 },
+          },
+        ],
+        responses: {
+          '200': {
+            description: 'Per-team published, draft, candidate, recent, video, and target counts.',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/EditorialCoverageResponse' },
+              },
+            },
+          },
+          '401': { $ref: '#/components/responses/UnauthorizedError' },
+          '403': { $ref: '#/components/responses/ForbiddenError' },
+        },
+      },
+    },
+    '/admin/articles/{articleId}/editorial-review': {
+      post: {
+        operationId: 'reviewEditorialAiDraft',
+        summary: 'Approve or reject an AI draft without publishing it',
+        tags: ['Editorial AI'],
+        security: [{ bearerAuth: [] }],
+        parameters: [articleIdParameter],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                additionalProperties: false,
+                required: ['status'],
+                properties: { status: { type: 'string', enum: ['APPROVED', 'REJECTED'] } },
+              },
+            },
+          },
+        },
+        responses: {
+          '200': { description: 'Private review state updated.' },
+          '401': { $ref: '#/components/responses/UnauthorizedError' },
+          '403': { $ref: '#/components/responses/ForbiddenError' },
+          '409': { $ref: '#/components/responses/ConflictError' },
+        },
+      },
+    },
+    '/admin/articles/{articleId}/regenerate': {
+      post: {
+        operationId: 'regenerateEditorialAiDraft',
+        summary: 'Regenerate the current unpublished AI draft',
+        tags: ['Editorial AI'],
+        security: [{ bearerAuth: [] }],
+        parameters: [articleIdParameter],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                additionalProperties: false,
+                required: ['expectedVersion'],
+                properties: {
+                  expectedVersion: { type: 'integer', minimum: 1 },
+                  instruction: { type: 'string', minLength: 1, maxLength: 500 },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          '200': {
+            description: 'Draft regenerated, revisioned, audited, and returned to NEEDS_REVIEW.',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/EditorialAiDraftResponse' },
+              },
+            },
+          },
+          '400': { $ref: '#/components/responses/ValidationError' },
+          '401': { $ref: '#/components/responses/UnauthorizedError' },
+          '403': { $ref: '#/components/responses/ForbiddenError' },
+          '404': { $ref: '#/components/responses/NotFoundError' },
+          '409': { $ref: '#/components/responses/ConflictError' },
+        },
+      },
+    },
+    '/admin/articles/{articleId}/media-candidates': {
+      post: {
+        operationId: 'createArticleMediaCandidate',
+        summary: 'Store an external media suggestion without downloading it',
+        tags: ['Editorial AI'],
+        security: [{ bearerAuth: [] }],
+        parameters: [articleIdParameter],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: { $ref: '#/components/schemas/ArticleMediaCandidateRequest' },
+            },
+          },
+        },
+        responses: {
+          '201': { description: 'Media suggestion stored.' },
+          '400': { $ref: '#/components/responses/ValidationError' },
+          '401': { $ref: '#/components/responses/UnauthorizedError' },
+          '403': { $ref: '#/components/responses/ForbiddenError' },
+          '404': { $ref: '#/components/responses/NotFoundError' },
+        },
+      },
+    },
+    '/admin/articles/{articleId}/media/{mediaCandidateId}/attach': {
+      post: {
+        operationId: 'attachArticleMediaCandidate',
+        summary: 'Attach rights-compatible embeddable media',
+        tags: ['Editorial AI'],
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          articleIdParameter,
+          {
+            name: 'mediaCandidateId',
+            in: 'path',
+            required: true,
+            schema: { type: 'string', format: 'uuid' },
+          },
+        ],
+        responses: {
+          '200': { description: 'Media attached as the primary media.' },
+          '401': { $ref: '#/components/responses/UnauthorizedError' },
+          '403': { $ref: '#/components/responses/ForbiddenError' },
+          '409': { $ref: '#/components/responses/ConflictError' },
+        },
+      },
+    },
+    '/admin/news-sources/{sourceId}/rights': {
+      get: {
+        operationId: 'getSourceRightsProfile',
+        summary: 'Read conservative source-rights metadata',
+        tags: ['Editorial AI'],
+        security: [{ bearerAuth: [] }],
+        parameters: [newsSourceIdParameter],
+        responses: {
+          '200': { description: 'Configured profile or conservative UNKNOWN defaults.' },
+          '401': { $ref: '#/components/responses/UnauthorizedError' },
+          '403': { $ref: '#/components/responses/ForbiddenError' },
+        },
+      },
+      put: {
+        operationId: 'updateSourceRightsProfile',
+        summary: 'Review source text, image, video, and quotation rights (admin only)',
+        tags: ['Editorial AI'],
+        security: [{ bearerAuth: [] }],
+        parameters: [newsSourceIdParameter],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: { $ref: '#/components/schemas/SourceRightsProfileRequest' },
+            },
+          },
+        },
+        responses: {
+          '200': { description: 'Rights profile reviewed and audited.' },
+          '400': { $ref: '#/components/responses/ValidationError' },
+          '401': { $ref: '#/components/responses/UnauthorizedError' },
+          '403': { $ref: '#/components/responses/ForbiddenError' },
+          '404': { $ref: '#/components/responses/NotFoundError' },
+        },
+      },
+    },
     '/admin/games': {
       get: {
         operationId: 'listAdminGames',
@@ -1919,6 +2154,42 @@ export const openApiDocument = {
         },
       },
     },
+    '/games/{gameId}/stats': {
+      get: {
+        operationId: 'getCurrentGameStats',
+        summary: 'Get one current-game team and player box score',
+        tags: ['Games'],
+        description:
+          'Returns provider-neutral, game-only team totals, scoring by period, safely reconciled player categories, and neutral coverage from PostgreSQL. Unresolved player rows are omitted. Provider identifiers, reconciliation evidence, and source metadata are private.',
+        parameters: [
+          {
+            name: 'gameId',
+            in: 'path',
+            required: true,
+            description: 'Application-owned game UUID.',
+            schema: { type: 'string', format: 'uuid' },
+          },
+        ],
+        responses: {
+          '200': {
+            description: 'The current-game team and safely resolved player box score.',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/CurrentGameStatsResponse' },
+              },
+            },
+          },
+          '400': { $ref: '#/components/responses/ValidationError' },
+          '404': {
+            description: 'The game or its current-game statistics were not found.',
+            content: {
+              'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } },
+            },
+          },
+          '429': { $ref: '#/components/responses/RateLimitError' },
+        },
+      },
+    },
     '/teams/{teamId}/games': {
       get: {
         operationId: 'listTeamGames',
@@ -2794,6 +3065,136 @@ export const openApiDocument = {
           },
         },
       },
+      EditorialAiGenerateRequest: {
+        type: 'object',
+        additionalProperties: false,
+        properties: { instruction: { type: 'string', minLength: 1, maxLength: 500 } },
+      },
+      EditorialAiBatchRequest: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['candidateIds'],
+        properties: {
+          candidateIds: {
+            type: 'array',
+            minItems: 1,
+            maxItems: 10,
+            uniqueItems: true,
+            items: { type: 'string', format: 'uuid' },
+          },
+        },
+      },
+      EditorialAiDraftResponse: {
+        type: 'object',
+        required: ['data'],
+        properties: {
+          data: {
+            type: 'object',
+            required: [
+              'article',
+              'reviewStatus',
+              'candidateId',
+              'confidence',
+              'riskFlags',
+              'overlap',
+              'mediaSearchTerms',
+              'ai',
+              'performance',
+            ],
+            properties: {
+              article: {
+                type: 'object',
+                description: 'Always a private DRAFT; generation never publishes.',
+              },
+              reviewStatus: { type: 'string', enum: ['NEEDS_REVIEW'] },
+              candidateId: { type: 'string', format: 'uuid' },
+              primaryTeamId: { type: ['string', 'null'], format: 'uuid' },
+              additionalTeamIds: { type: 'array', items: { type: 'string', format: 'uuid' } },
+              playerIds: { type: 'array', items: { type: 'string', format: 'uuid' } },
+              unresolvedPlayers: { type: 'array', items: { type: 'object' } },
+              category: { type: 'string' },
+              topicTags: { type: 'array', items: { type: 'string' } },
+              confidence: { type: 'string', enum: ['HIGH', 'MEDIUM', 'LOW'] },
+              riskFlags: { type: 'array', items: { type: 'string' } },
+              overlap: { type: 'object' },
+              sourceOverlapScore: { type: 'number', minimum: 0, maximum: 1 },
+              mediaSearchTerms: { type: 'array', items: { type: 'string' } },
+              attribution: { type: 'string' },
+              ai: { type: 'object', description: 'Private provider/model/version/usage metadata.' },
+              performance: { type: 'object' },
+            },
+          },
+        },
+      },
+      EditorialCoverageResponse: {
+        type: 'object',
+        required: ['data'],
+        properties: {
+          data: {
+            type: 'object',
+            required: ['targetCount', 'teams', 'totals', 'durationMs'],
+            properties: {
+              targetCount: { type: 'integer' },
+              teams: { type: 'array', minItems: 32, maxItems: 32, items: { type: 'object' } },
+              totals: { type: 'object' },
+              durationMs: { type: 'integer' },
+            },
+          },
+        },
+      },
+      SourceRightsProfileRequest: {
+        type: 'object',
+        additionalProperties: false,
+        required: [
+          'textUsage',
+          'imageUsage',
+          'videoUsage',
+          'quotationPolicy',
+          'reviewRequired',
+          'notes',
+        ],
+        properties: {
+          textUsage: { type: 'string', enum: ['SUMMARY_ALLOWED', 'LINK_ONLY', 'UNKNOWN'] },
+          imageUsage: { type: 'string', enum: ['OWNED', 'EMBED_ALLOWED', 'LINK_ONLY', 'UNKNOWN'] },
+          videoUsage: { type: 'string', enum: ['OWNED', 'EMBED_ALLOWED', 'LINK_ONLY', 'UNKNOWN'] },
+          quotationPolicy: { type: 'string', enum: ['SHORT_QUOTES_ONLY', 'UNKNOWN'] },
+          reviewRequired: { type: 'boolean' },
+          notes: { type: ['string', 'null'], maxLength: 1000 },
+        },
+      },
+      ArticleMediaCandidateRequest: {
+        type: 'object',
+        additionalProperties: false,
+        required: [
+          'type',
+          'platform',
+          'externalId',
+          'url',
+          'title',
+          'publisher',
+          'thumbnailUrl',
+          'publishedAt',
+          'embedAllowed',
+          'rightsStatus',
+          'relevanceScore',
+        ],
+        properties: {
+          type: { type: 'string', enum: ['YOUTUBE', 'VIDEO_EMBED', 'IMAGE', 'EXTERNAL_LINK'] },
+          platform: { type: 'string', maxLength: 64 },
+          externalId: { type: ['string', 'null'], maxLength: 256 },
+          url: { type: 'string', format: 'uri' },
+          title: { type: 'string', maxLength: 300 },
+          publisher: { type: ['string', 'null'], maxLength: 160 },
+          thumbnailUrl: { type: ['string', 'null'], format: 'uri' },
+          publishedAt: { type: ['string', 'null'], format: 'date-time' },
+          embedAllowed: { type: 'boolean' },
+          rightsStatus: {
+            type: 'string',
+            enum: ['OWNED', 'EMBED_ALLOWED', 'LINK_ONLY', 'UNKNOWN'],
+          },
+          relevanceScore: { type: 'number', minimum: 0, maximum: 1 },
+        },
+      },
       Team: {
         type: 'object',
         required: [
@@ -3078,6 +3479,301 @@ export const openApiDocument = {
         type: 'object',
         required: ['data'],
         properties: { data: { $ref: '#/components/schemas/Game' } },
+      },
+      CurrentGameScoringByPeriod: {
+        type: 'object',
+        required: ['q1', 'q2', 'q3', 'q4', 'ot1', 'ot2'],
+        properties: {
+          q1: { type: ['integer', 'null'], minimum: 0 },
+          q2: { type: ['integer', 'null'], minimum: 0 },
+          q3: { type: ['integer', 'null'], minimum: 0 },
+          q4: { type: ['integer', 'null'], minimum: 0 },
+          ot1: { type: ['integer', 'null'], minimum: 0 },
+          ot2: { type: ['integer', 'null'], minimum: 0 },
+        },
+      },
+      CurrentGameTeamStats: {
+        type: 'object',
+        required: [
+          'teamId',
+          'firstDowns',
+          'firstDownsPassing',
+          'firstDownsRushing',
+          'firstDownsPenalty',
+          'totalPlays',
+          'totalYards',
+          'passingCompletions',
+          'passingAttempts',
+          'passingYards',
+          'passingInterceptions',
+          'rushingAttempts',
+          'rushingYards',
+          'turnovers',
+          'fumblesLost',
+          'sacks',
+          'sackYardsLost',
+          'thirdDownConversions',
+          'thirdDownAttempts',
+          'fourthDownConversions',
+          'fourthDownAttempts',
+          'penalties',
+          'penaltyYards',
+          'possessionSeconds',
+          'redZoneConversions',
+          'redZoneAttempts',
+          'totalDrives',
+          'scoringByPeriod',
+        ],
+        properties: {
+          teamId: { type: 'string', format: 'uuid' },
+          firstDowns: { type: ['integer', 'null'], minimum: 0 },
+          firstDownsPassing: { type: ['integer', 'null'], minimum: 0 },
+          firstDownsRushing: { type: ['integer', 'null'], minimum: 0 },
+          firstDownsPenalty: { type: ['integer', 'null'], minimum: 0 },
+          totalPlays: { type: ['integer', 'null'], minimum: 0 },
+          totalYards: { type: ['integer', 'null'], minimum: 0 },
+          passingCompletions: { type: ['integer', 'null'], minimum: 0 },
+          passingAttempts: { type: ['integer', 'null'], minimum: 0 },
+          passingYards: { type: ['integer', 'null'], minimum: 0 },
+          passingInterceptions: { type: ['integer', 'null'], minimum: 0 },
+          rushingAttempts: { type: ['integer', 'null'], minimum: 0 },
+          rushingYards: { type: ['integer', 'null'], minimum: 0 },
+          turnovers: { type: ['integer', 'null'], minimum: 0 },
+          fumblesLost: { type: ['integer', 'null'], minimum: 0 },
+          sacks: { type: ['integer', 'null'], minimum: 0 },
+          sackYardsLost: { type: ['integer', 'null'], minimum: 0 },
+          thirdDownConversions: { type: ['integer', 'null'], minimum: 0 },
+          thirdDownAttempts: { type: ['integer', 'null'], minimum: 0 },
+          fourthDownConversions: { type: ['integer', 'null'], minimum: 0 },
+          fourthDownAttempts: { type: ['integer', 'null'], minimum: 0 },
+          penalties: { type: ['integer', 'null'], minimum: 0 },
+          penaltyYards: { type: ['integer', 'null'], minimum: 0 },
+          possessionSeconds: { type: ['integer', 'null'], minimum: 0 },
+          redZoneConversions: { type: ['integer', 'null'], minimum: 0 },
+          redZoneAttempts: { type: ['integer', 'null'], minimum: 0 },
+          totalDrives: { type: ['integer', 'null'], minimum: 0 },
+          scoringByPeriod: { $ref: '#/components/schemas/CurrentGameScoringByPeriod' },
+        },
+      },
+      CurrentGamePlayerIdentity: {
+        type: 'object',
+        required: ['id', 'displayName', 'position', 'positionGroup', 'headshotUrl'],
+        properties: {
+          id: { type: 'string', format: 'uuid' },
+          displayName: { type: 'string' },
+          position: { type: ['string', 'null'] },
+          positionGroup: { type: ['string', 'null'] },
+          headshotUrl: { type: ['string', 'null'], format: 'uri' },
+        },
+      },
+      CurrentGamePlayerStatsByCategory: {
+        type: 'object',
+        required: ['passing', 'rushing', 'receiving', 'defense', 'kicking', 'punting', 'returns'],
+        properties: {
+          passing: {
+            type: 'array',
+            items: {
+              type: 'object',
+              required: [
+                'player',
+                'completions',
+                'attempts',
+                'yards',
+                'touchdowns',
+                'interceptions',
+                'sacksSuffered',
+                'sackYardsLost',
+              ],
+              properties: {
+                player: { $ref: '#/components/schemas/CurrentGamePlayerIdentity' },
+                completions: { type: ['integer', 'null'] },
+                attempts: { type: ['integer', 'null'] },
+                yards: { type: ['integer', 'null'] },
+                touchdowns: { type: ['integer', 'null'] },
+                interceptions: { type: ['integer', 'null'] },
+                sacksSuffered: { type: ['integer', 'null'] },
+                sackYardsLost: { type: ['integer', 'null'] },
+              },
+            },
+          },
+          rushing: {
+            type: 'array',
+            items: {
+              type: 'object',
+              required: ['player', 'attempts', 'yards', 'touchdowns', 'longest'],
+              properties: {
+                player: { $ref: '#/components/schemas/CurrentGamePlayerIdentity' },
+                attempts: { type: ['integer', 'null'] },
+                yards: { type: ['integer', 'null'] },
+                touchdowns: { type: ['integer', 'null'] },
+                longest: { type: ['integer', 'null'] },
+              },
+            },
+          },
+          receiving: {
+            type: 'array',
+            items: {
+              type: 'object',
+              required: ['player', 'targets', 'receptions', 'yards', 'touchdowns', 'longest'],
+              properties: {
+                player: { $ref: '#/components/schemas/CurrentGamePlayerIdentity' },
+                targets: { type: ['integer', 'null'] },
+                receptions: { type: ['integer', 'null'] },
+                yards: { type: ['integer', 'null'] },
+                touchdowns: { type: ['integer', 'null'] },
+                longest: { type: ['integer', 'null'] },
+              },
+            },
+          },
+          defense: {
+            type: 'array',
+            items: {
+              type: 'object',
+              required: [
+                'player',
+                'tacklesTotal',
+                'tacklesSolo',
+                'sacks',
+                'tacklesForLoss',
+                'passesDefended',
+                'fumbles',
+                'fumbleRecoveries',
+                'touchdowns',
+              ],
+              properties: {
+                player: { $ref: '#/components/schemas/CurrentGamePlayerIdentity' },
+                tacklesTotal: { type: ['integer', 'null'] },
+                tacklesSolo: { type: ['integer', 'null'] },
+                sacks: { type: ['number', 'null'] },
+                tacklesForLoss: { type: ['integer', 'null'] },
+                passesDefended: { type: ['integer', 'null'] },
+                fumbles: { type: ['integer', 'null'] },
+                fumbleRecoveries: { type: ['integer', 'null'] },
+                touchdowns: { type: ['integer', 'null'] },
+              },
+            },
+          },
+          kicking: {
+            type: 'array',
+            items: {
+              type: 'object',
+              required: [
+                'player',
+                'fieldGoalsMade',
+                'fieldGoalsAttempted',
+                'longestFieldGoal',
+                'extraPointsMade',
+                'extraPointsAttempted',
+              ],
+              properties: {
+                player: { $ref: '#/components/schemas/CurrentGamePlayerIdentity' },
+                fieldGoalsMade: { type: ['integer', 'null'] },
+                fieldGoalsAttempted: { type: ['integer', 'null'] },
+                longestFieldGoal: { type: ['integer', 'null'] },
+                extraPointsMade: { type: ['integer', 'null'] },
+                extraPointsAttempted: { type: ['integer', 'null'] },
+              },
+            },
+          },
+          punting: {
+            type: 'array',
+            items: {
+              type: 'object',
+              required: [
+                'player',
+                'punts',
+                'yards',
+                'average',
+                'inside20',
+                'touchbacks',
+                'longest',
+              ],
+              properties: {
+                player: { $ref: '#/components/schemas/CurrentGamePlayerIdentity' },
+                punts: { type: ['integer', 'null'] },
+                yards: { type: ['integer', 'null'] },
+                average: { type: ['number', 'null'] },
+                inside20: { type: ['integer', 'null'] },
+                touchbacks: { type: ['integer', 'null'] },
+                longest: { type: ['integer', 'null'] },
+              },
+            },
+          },
+          returns: {
+            type: 'array',
+            items: {
+              type: 'object',
+              required: [
+                'player',
+                'kickReturns',
+                'kickReturnYards',
+                'kickReturnTouchdowns',
+                'longestKickReturn',
+                'puntReturns',
+                'puntReturnYards',
+                'puntReturnTouchdowns',
+                'longestPuntReturn',
+              ],
+              properties: {
+                player: { $ref: '#/components/schemas/CurrentGamePlayerIdentity' },
+                kickReturns: { type: ['integer', 'null'] },
+                kickReturnYards: { type: ['integer', 'null'] },
+                kickReturnTouchdowns: { type: ['integer', 'null'] },
+                longestKickReturn: { type: ['integer', 'null'] },
+                puntReturns: { type: ['integer', 'null'] },
+                puntReturnYards: { type: ['integer', 'null'] },
+                puntReturnTouchdowns: { type: ['integer', 'null'] },
+                longestPuntReturn: { type: ['integer', 'null'] },
+              },
+            },
+          },
+        },
+      },
+      CurrentGameStatsResponse: {
+        type: 'object',
+        required: ['data', 'meta'],
+        properties: {
+          data: {
+            type: 'object',
+            required: ['gameId', 'teamStats', 'playerStats'],
+            properties: {
+              gameId: { type: 'string', format: 'uuid' },
+              teamStats: {
+                type: 'object',
+                required: ['home', 'away'],
+                properties: {
+                  home: { $ref: '#/components/schemas/CurrentGameTeamStats' },
+                  away: { $ref: '#/components/schemas/CurrentGameTeamStats' },
+                },
+              },
+              playerStats: {
+                type: 'object',
+                required: ['home', 'away'],
+                properties: {
+                  home: { $ref: '#/components/schemas/CurrentGamePlayerStatsByCategory' },
+                  away: { $ref: '#/components/schemas/CurrentGamePlayerStatsByCategory' },
+                },
+              },
+            },
+          },
+          meta: {
+            type: 'object',
+            required: ['playerStatsAvailable', 'playerStatsCoverage', 'limitations'],
+            properties: {
+              playerStatsAvailable: { type: 'boolean' },
+              playerStatsCoverage: {
+                type: ['object', 'null'],
+                required: ['providerRows', 'resolvedRows', 'unresolvedRows'],
+                properties: {
+                  providerRows: { type: 'integer', minimum: 0 },
+                  resolvedRows: { type: 'integer', minimum: 0 },
+                  unresolvedRows: { type: 'integer', minimum: 0 },
+                },
+              },
+              limitations: { type: 'array', items: { type: 'string' } },
+            },
+          },
+        },
       },
       GameListResponse: {
         type: 'object',

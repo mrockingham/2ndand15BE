@@ -2,7 +2,7 @@
 
 Backend REST API for the 2nd and 15 consumer NFL platform.
 
-The implemented backend includes the TypeScript/Express foundation, normalized NFL team and game catalogs, a fixture-backed mock provider, an explicit API-Sports synchronization adapter, email/password authentication, rotating database-backed refresh sessions, password reset, favorite-team personalization, role-protected schedule administration, an internal revisioned editorial CMS, a controlled RSS/Atom/manual news-candidate inbox, a local PostgreSQL-backed 2020-2025 nflverse player/statistics foundation, the public Stats Hub, and composed public Team Hub APIs.
+The implemented backend includes the TypeScript/Express foundation, normalized NFL team and game catalogs, a fixture-backed mock provider, an explicit API-Sports synchronization adapter, email/password authentication, rotating database-backed refresh sessions, password reset, favorite-team personalization, role-protected schedule administration, an internal revisioned editorial CMS, a controlled RSS/Atom/manual news-candidate inbox, a provider-neutral human-reviewed editorial AI draft pipeline, a local PostgreSQL-backed 2020-2025 nflverse player/statistics foundation, the public Stats Hub, and composed public Team Hub APIs.
 
 ## Requirements
 
@@ -194,6 +194,7 @@ Configuration is validated at startup. See `.env.example` for the complete set.
 - `AUTH_RATE_LIMIT_*` configures credential and refresh endpoints; `PASSWORD_RESET_RATE_LIMIT_MAX` applies a stricter reset limit.
 - `PASSWORD_RESET_FRONTEND_URL` is the frontend route to which the opaque reset token is appended as a query parameter.
 - `EMAIL_PROVIDER=development` captures messages in memory. `EMAIL_DEV_LOG_RESET_URL=true` explicitly prints development reset URLs and is rejected in production. A production email vendor is not implemented.
+- `EDITORIAL_AI_PROVIDER=none` keeps AI optional. To enable the isolated OpenAI adapter, set it to `openai` and provide private `OPENAI_API_KEY` plus an explicit `OPENAI_EDITORIAL_MODEL`; public requests never invoke AI.
 - `SPORTS_PROVIDER=mock` is the safe default. Set it to `api-sports` only for real synchronization and source-isolated game reads.
 - `CURRENT_NFL_SEASON` is required. Any game list query without an explicit `season` is constrained to this value.
 - `ALLOW_HISTORICAL_DEFAULT_GAME_RESULTS=false` is the safe default and is mandatory in production. Historical data remains available through an explicit `?season=<year>` query.
@@ -218,6 +219,8 @@ The committed `data/schedules/nfl-2026.csv` is a reviewed, provider-independent 
 
 The editorial CMS stores constrained Markdown and external image/source metadata without fetching it. Scheduled visibility is derived during public reads, every mutation uses optimistic concurrency and creates an immutable revision, and public list DTOs omit bodies and editorial metadata. See [the editorial CMS guide](docs/editorial-cms.md).
 
+The editorial AI assistant turns bounded candidate metadata into original attributed `DRAFT` records in private `NEEDS_REVIEW` state. It never scrapes, downloads media, or publishes. See [the editorial AI guide](docs/editorial-ai/README.md).
+
 The source inbox fetches only explicitly approved RSS/Atom URLs when an editor/admin triggers a test or ingestion. It stores bounded metadata, never fetches linked article pages or images, never auto-publishes, and requires editor-written original content for conversion into a `CURATED` draft. There is no cron, queue, worker, webhook, scraper, or AI authoring. See [the news-source ingestion guide](docs/news-source-ingestion.md).
 
 Historical player data is downloaded to ignored local files, checksum/schema reviewed, and imported only through an explicit bounded CLI. Public player and Stats Hub routes read PostgreSQL and never call nflverse or GitHub. External player/game IDs stay private in mapping tables, missing values remain distinct from zero, and season totals are deterministically rebuilt from weekly rows. See [the historical import guide](docs/historical-data/import-guide.md), [the 2020-2025 review](docs/historical-data/nflverse-player-stats-2020-2025.md), and [the Stats Hub API guide](docs/stats-hub/api-guide.md).
@@ -229,6 +232,10 @@ API-Sports is available only through explicit synchronization commands; public r
 Provider evaluations are read-only and never access Prisma. `sports:evaluate:api-sports` evaluates selected seasons and writes a sanitized report to `docs/provider-evaluations/api-sports-latest.md`. The reusable evaluation contract distinguishes verified, unavailable, and untested capabilities and records pass, warning, and failure findings. The approved baseline report is [API-Sports evaluation — August 1, 2026](docs/provider-evaluations/api-sports-2026-08-01.md).
 
 `npm run sports:evaluate:highlightly` performs a bounded, read-only Highlightly NFL evaluation. It stops after team and 2026 schedule discovery when current-season records are absent and otherwise uses no more than eight HTTP requests. It does not import Prisma, synchronize records, create mappings, or change the active provider. See [the Highlightly evaluation guide](docs/highlightly-evaluation.md).
+
+Manual current-game updates use a separate update-only boundary and require an existing internal game UUID. `games:current:verify` and `games:current:sync -- --gameId=<uuid> --dry-run` do not write; `games:current:sync -- --gameId=<uuid> --apply` is permitted only by the explicit evaluation/publication configuration guards. See [the current-season game guide](docs/current-season-games/README.md).
+
+Current-game team and safely reconciled player box scores use the same guarded manual workflow through `games:current:details:verify` and `games:current:details:sync`. Public clients read stored team totals, period scoring, player categories, and neutral identity coverage at `GET /api/v1/games/:gameId/stats`; unresolved provider players are never published. The initial player reconciliation remains blocked until the provider quota permits all 82 profiles to be evaluated. See [the game-stat sync guide](docs/current-season-games/game-stats-sync.md) and [player identity guide](docs/current-season-games/player-identity-reconciliation.md).
 
 ## Frontend authentication contract
 

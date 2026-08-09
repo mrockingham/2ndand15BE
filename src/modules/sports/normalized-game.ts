@@ -26,6 +26,8 @@ export const normalizedGameSchema = z
     status: gameStatusSchema,
     homeProviderTeamId: z.string().min(1).max(128),
     awayProviderTeamId: z.string().min(1).max(128),
+    homeAbbreviation: z.string().trim().toUpperCase().min(2).max(16).optional(),
+    awayAbbreviation: z.string().trim().toUpperCase().min(2).max(16).optional(),
     homeScore: z.number().int().min(0).nullable(),
     awayScore: z.number().int().min(0).nullable(),
     quarter: z.number().int().min(1).max(10).nullable(),

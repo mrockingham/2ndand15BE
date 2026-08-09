@@ -20,6 +20,8 @@ import { openApiDocument } from '../docs/openapi.js';
 import type { HealthControllerOptions } from '../modules/health/health.controller.js';
 import { createGameRouter, createTeamGameRouter } from '../modules/games/game.routes.js';
 import type { GameReader } from '../modules/games/game.service.js';
+import { createGameStatsRouter } from '../modules/game-stats/game-stats.routes.js';
+import type { GameStatsReader } from '../modules/game-stats/game-stats.service.js';
 import { createHealthRouter } from '../modules/health/health.routes.js';
 import { createAuthRouter } from '../modules/auth/auth.routes.js';
 import type { AuthenticationService } from '../modules/auth/auth.service.js';
@@ -35,12 +37,15 @@ import { createStatsHubRouter } from '../modules/stats-hub/stats.routes.js';
 import type { StatsHubReader } from '../modules/stats-hub/stats.service.js';
 import { createTeamHubRouter } from '../modules/team-hub/team-hub.routes.js';
 import type { TeamHubReader } from '../modules/team-hub/team-hub.service.js';
+import { createEditorialAiRouters } from '../modules/editorial-ai/editorial-ai.routes.js';
+import type { EditorialAiServiceContract } from '../modules/editorial-ai/editorial-ai.service.js';
 
 export interface ApiRouterOptions {
   readonly rateLimit: AppConfig['rateLimit'];
   readonly health?: HealthControllerOptions;
   readonly teamReader: TeamReader;
   readonly gameReader: GameReader;
+  readonly gameStatsReader?: GameStatsReader;
   readonly authService: AuthenticationService;
   readonly userService: UserPersonalizationService;
   readonly authenticate: RequestHandler;
@@ -54,6 +59,7 @@ export interface ApiRouterOptions {
   readonly playerReader?: PlayerReader;
   readonly statsHubReader?: StatsHubReader;
   readonly teamHubReader?: TeamHubReader;
+  readonly editorialAiService?: EditorialAiServiceContract;
 }
 
 export function createApiRouter(options: ApiRouterOptions): Router {
@@ -82,6 +88,17 @@ export function createApiRouter(options: ApiRouterOptions): Router {
     swaggerUi.setup(openApiDocument),
   );
   router.use('/health', createHealthRouter(options.health));
+  if (options.editorialAiService !== undefined && options.adminIdentities !== undefined) {
+    const editorialAi = createEditorialAiRouters({
+      authenticate: options.authenticate,
+      identities: options.adminIdentities,
+      service: options.editorialAiService,
+    });
+    router.use('/admin/news-candidates', editorialAi.candidates);
+    router.use('/admin/articles', editorialAi.articles);
+    router.use('/admin/editorial', editorialAi.editorial);
+    router.use('/admin/news-sources', editorialAi.sources);
+  }
   if (options.newsInboxService !== undefined && options.adminIdentities !== undefined) {
     const news = createNewsInboxRouters({
       authenticate: options.authenticate,
@@ -121,6 +138,8 @@ export function createApiRouter(options: ApiRouterOptions): Router {
     router.use('/players', createPlayerRouter(options.playerReader));
   if (options.statsHubReader !== undefined)
     router.use('/stats', createStatsHubRouter(options.statsHubReader));
+  if (options.gameStatsReader !== undefined)
+    router.use('/games', createGameStatsRouter(options.gameStatsReader));
   router.use('/games', createGameRouter(options.gameReader));
   router.use('/teams/:teamId/games', createTeamGameRouter(options.gameReader));
   if (options.teamHubReader !== undefined)

@@ -102,6 +102,44 @@ const highlightlyPlayerSchema = z.object({
   positionAbbreviation: nullableString,
 });
 
+const highlightlyPlayerProfilePositionSchema = z.object({
+  main: nullableString,
+  abbreviation: nullableString,
+});
+
+const highlightlyPlayerProfileDraftSchema = z.object({
+  year: z.number().int().min(1900).max(2100).nullable().optional(),
+  round: z.number().int().nonnegative().nullable().optional(),
+  pick: z.number().int().nonnegative().nullable().optional(),
+});
+
+const highlightlyPlayerProfileSchema = z.object({
+  fullName: z.string().min(1).max(256),
+  birthDate: nullableString,
+  birthPlace: nullableString,
+  height: nullableString,
+  weight: nullableString,
+  jersey: z
+    .union([z.number().int(), z.string().max(16)])
+    .nullable()
+    .optional(),
+  isActive: z.boolean().nullable().optional(),
+  position: highlightlyPlayerProfilePositionSchema.nullable().optional(),
+  draft: highlightlyPlayerProfileDraftSchema.nullable().optional(),
+  team: highlightlyTeamSchema.nullable().optional(),
+});
+
+export const highlightlyPlayerProfileResponseSchema = z
+  .array(
+    z.object({
+      id: providerIdSchema,
+      fullName: z.string().min(1).max(256),
+      logo: z.url().nullable().optional(),
+      profile: highlightlyPlayerProfileSchema,
+    }),
+  )
+  .min(1);
+
 const highlightlyInjurySchema = z.object({
   team: highlightlyTeamSchema,
   data: z.array(
@@ -204,6 +242,17 @@ const highlightlyBoxScoreTeamSchema = z.object({
   boxScores: z.array(highlightlyBoxScorePlayerSchema).optional(),
 });
 
+export const highlightlyBoxScoreResponseSchema = z.array(
+  z.object({
+    team: z.object({
+      id: providerIdSchema,
+      name: z.string().min(1).max(256),
+      logo: z.url().nullable().optional(),
+      boxScores: z.array(highlightlyBoxScorePlayerSchema),
+    }),
+  }),
+);
+
 export const highlightlyDetailedMatchSchema = highlightlyMatchSchema.extend({
   venue: highlightlyVenueSchema.nullable().optional(),
   neutralSite: z.boolean().nullable().optional(),
@@ -254,7 +303,11 @@ export const highlightlyRawStandingListResponseSchema = z.object({
 export type HighlightlyTeam = z.infer<typeof highlightlyTeamSchema>;
 export type HighlightlyMatch = z.infer<typeof highlightlyMatchSchema>;
 export type HighlightlyDetailedMatch = z.infer<typeof highlightlyDetailedMatchSchema>;
+export type HighlightlyBoxScoreResponse = z.infer<typeof highlightlyBoxScoreResponseSchema>;
 export type HighlightlyEvent = z.infer<typeof highlightlyEventSchema>;
 export type HighlightlyStructuredPlay = z.infer<typeof highlightlyStructuredPlaySchema>;
 export type HighlightlyMatchListResponse = z.infer<typeof highlightlyMatchListResponseSchema>;
 export type HighlightlyStandingResponse = z.infer<typeof highlightlyStandingResponseSchema>;
+export type HighlightlyPlayerProfileResponse = z.infer<
+  typeof highlightlyPlayerProfileResponseSchema
+>;

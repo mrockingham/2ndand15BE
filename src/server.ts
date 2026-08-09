@@ -19,6 +19,8 @@ import {
   resolvePublicGameDataSource,
 } from './modules/games/game.repository.js';
 import { GameService } from './modules/games/game.service.js';
+import { PrismaGameStatsRepository } from './modules/game-stats/game-stats.repository.js';
+import { GameStatsService } from './modules/game-stats/game-stats.service.js';
 import { PrismaTeamRepository } from './modules/teams/team.repository.js';
 import { TeamService } from './modules/teams/team.service.js';
 import { PrismaUserRepository } from './modules/users/user.repository.js';
@@ -32,6 +34,12 @@ import { PrismaStatsHubRepository } from './modules/stats-hub/stats.repository.j
 import { StatsHubService } from './modules/stats-hub/stats.service.js';
 import { PrismaTeamHubRepository } from './modules/team-hub/team-hub.repository.js';
 import { TeamHubService } from './modules/team-hub/team-hub.service.js';
+import { PrismaEditorialAiRepository } from './modules/editorial-ai/editorial-ai.repository.js';
+import { EditorialAiService } from './modules/editorial-ai/editorial-ai.service.js';
+import {
+  OpenAiEditorialAiProvider,
+  UnconfiguredEditorialAiProvider,
+} from './modules/editorial-ai/editorial-ai.provider.js';
 
 const config = loadConfig();
 const logger = createLogger(config);
@@ -42,6 +50,21 @@ const articleService = new ArticleService(new PrismaArticleRepository(prisma));
 const newsInboxService = new NewsInboxService(
   new PrismaNewsInboxRepository(prisma),
   new SafeFeedClient(),
+);
+const editorialAiProvider =
+  config.editorialAi.provider === 'openai' &&
+  config.editorialAi.apiKey !== null &&
+  config.editorialAi.model !== null
+    ? new OpenAiEditorialAiProvider({
+        apiKey: config.editorialAi.apiKey,
+        model: config.editorialAi.model,
+        baseUrl: config.editorialAi.baseUrl,
+        timeoutMs: config.editorialAi.timeoutMs,
+      })
+    : new UnconfiguredEditorialAiProvider();
+const editorialAiService = new EditorialAiService(
+  new PrismaEditorialAiRepository(prisma),
+  editorialAiProvider,
 );
 const teamReader = new TeamService(new PrismaTeamRepository(prisma));
 const playerReader = new PlayerService(new PrismaPlayerRepository(prisma));
@@ -55,6 +78,7 @@ const gameReader = new GameService(
     allowHistoricalDefaultGameResults: config.sports.allowHistoricalDefaultGameResults,
   },
 );
+const gameStatsReader = new GameStatsService(new PrismaGameStatsRepository(prisma), gameReader);
 const teamHubReader = new TeamHubService({
   repository: new PrismaTeamHubRepository(prisma),
   teams: teamReader,
@@ -87,6 +111,7 @@ const app = createApp({
   logger,
   teamReader,
   gameReader,
+  gameStatsReader,
   authService,
   userService,
   accessTokens,
@@ -95,6 +120,7 @@ const app = createApp({
   articleReader: articleService,
   editorialArticleService: articleService,
   newsInboxService,
+  editorialAiService,
   playerReader,
   statsHubReader,
   teamHubReader,
