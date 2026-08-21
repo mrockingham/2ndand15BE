@@ -84,6 +84,7 @@ export interface NewsInboxServiceContract {
     id: string,
     actor: AdministrativePrincipal,
     requestId: string | null,
+    maximumWrites?: number,
   ): Promise<IngestionResultDto>;
   listCandidates(query: NewsCandidateListQuery): Promise<NewsCandidatePageDto>;
   getCandidate(id: string): Promise<ReturnType<typeof toNewsCandidateDetailDto>>;
@@ -224,8 +225,9 @@ export class NewsInboxService implements NewsInboxServiceContract {
     id: string,
     actor: AdministrativePrincipal,
     requestId: string | null,
+    maximumWrites = MAXIMUM_WRITES_PER_RUN,
   ): Promise<IngestionResultDto> {
-    return this.runSource(id, actor, requestId, false);
+    return this.runSource(id, actor, requestId, false, maximumWrites);
   }
 
   async listCandidates(query: NewsCandidateListQuery): Promise<NewsCandidatePageDto> {
@@ -352,6 +354,7 @@ export class NewsInboxService implements NewsInboxServiceContract {
     actor: AdministrativePrincipal,
     requestId: string | null,
     testedOnly: boolean,
+    maximumWrites = MAXIMUM_WRITES_PER_RUN,
   ): Promise<IngestionResultDto> {
     const source = await this.requireSource(id);
     if (source.kind === 'MANUAL_ONLY' || source.feedUrl === null) {
@@ -421,7 +424,10 @@ export class NewsInboxService implements NewsInboxServiceContract {
       let firstFailure: { code: string; summary: string } | null = null;
       if (!testedOnly) {
         const teams = await this.repository.listSuggestionTeams();
-        for (const entry of parsed.entries.slice(0, MAXIMUM_WRITES_PER_RUN)) {
+        for (const entry of parsed.entries.slice(
+          0,
+          Math.max(0, Math.min(MAXIMUM_WRITES_PER_RUN, maximumWrites)),
+        )) {
           try {
             const result = await this.repository.upsertFeedCandidate(
               source,

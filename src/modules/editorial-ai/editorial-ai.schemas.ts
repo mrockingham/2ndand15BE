@@ -19,8 +19,33 @@ export const regenerateDraftSchema = z
 export const generateBatchSchema = z
   .object({ candidateIds: z.array(z.uuid()).min(1).max(10) })
   .strict();
+export const evaluateBatchSchema = z
+  .object({ candidateIds: z.array(z.uuid()).min(1).max(50) })
+  .strict();
+export const qualityOverrideSchema = z
+  .object({
+    relevance: z.enum(['NFL', 'NOT_NFL', 'UNCERTAIN']),
+    sufficiency: z.enum([
+      'FULL_DRAFT_ELIGIBLE',
+      'SHORT_BRIEF_ELIGIBLE',
+      'LINK_ONLY',
+      'INSUFFICIENT',
+      'MANUAL_REVIEW',
+    ]),
+    allowDuplicate: z.boolean().default(false),
+    reason: z.string().trim().min(1).max(500),
+  })
+  .strict();
 export const coverageQuerySchema = z
   .object({ target: z.coerce.number().int().min(1).max(20).default(7) })
+  .strict();
+export const launchDiscoverySchema = z
+  .object({
+    targetPerTeam: z.number().int().min(1).max(20).default(10),
+    freshnessDays: z.number().int().min(1).max(30).default(14),
+    maxNewCandidates: z.number().int().min(1).max(320).default(320),
+    pilot: z.boolean().default(false),
+  })
   .strict();
 export const editorialReviewSchema = z
   .object({ status: z.enum(['APPROVED', 'REJECTED']) })

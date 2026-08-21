@@ -3,6 +3,17 @@ import { createHash } from 'node:crypto';
 import { AppError } from '../../common/errors/app-error.js';
 import type { EditorialAiReviewStatus } from '../../generated/prisma/client.js';
 import type { AdministrativePrincipal } from '../admin/admin-authorization.js';
+import type {
+  CandidateQualityBatchResult,
+  CandidateQualityGate,
+  CandidateQualityResult,
+  QualityOverrideInput,
+} from './candidate-quality.service.js';
+import type {
+  LaunchDiscoveryInput,
+  LaunchDiscoveryResult,
+  LaunchDiscoveryService,
+} from './launch-discovery.service.js';
 import { articleCreateSchema } from '../articles/article.schemas.js';
 import { normalizeSlug, prepareArticleCreate } from '../articles/article.service.js';
 import type {
@@ -91,6 +102,31 @@ export interface EditorialAiServiceContract {
     instruction?: string,
   ): Promise<GenerateDraftResult>;
   coverage(target: number): Promise<CoverageResult>;
+  evaluateCandidate(
+    candidateId: string,
+    actor: AdministrativePrincipal,
+    requestId: string | null,
+  ): Promise<CandidateQualityResult>;
+  evaluateCandidates(
+    candidateIds: readonly string[],
+    actor: AdministrativePrincipal,
+    requestId: string | null,
+  ): Promise<CandidateQualityBatchResult>;
+  evaluateAllCandidates(
+    actor: AdministrativePrincipal,
+    requestId: string | null,
+  ): Promise<CandidateQualityBatchResult>;
+  overrideCandidateQuality(
+    candidateId: string,
+    input: QualityOverrideInput,
+    actor: AdministrativePrincipal,
+    requestId: string | null,
+  ): Promise<CandidateQualityResult>;
+  discoverLaunchCandidates(
+    input: LaunchDiscoveryInput,
+    actor: AdministrativePrincipal,
+    requestId: string | null,
+  ): Promise<LaunchDiscoveryResult>;
   setReviewStatus(
     articleId: string,
     status: EditorialAiReviewStatus,
@@ -165,6 +201,8 @@ export class EditorialAiService implements EditorialAiServiceContract {
     private readonly repository: EditorialAiRepository,
     private readonly provider: EditorialAiProvider,
     private readonly now: () => Date = () => new Date(),
+    private readonly qualityGate: CandidateQualityGate | null = null,
+    private readonly launchDiscovery: LaunchDiscoveryService | null = null,
   ) {}
 
   async generateDraft(
@@ -175,9 +213,13 @@ export class EditorialAiService implements EditorialAiServiceContract {
   ): Promise<GenerateDraftResult> {
     const totalStarted = performance.now();
     const preparationStarted = performance.now();
+    const contentMode =
+      this.qualityGate === null
+        ? 'FULL_DRAFT'
+        : await this.qualityGate.requireGenerationEligibility(candidateId, actor, requestId);
     const candidate = await this.requireAvailableCandidate(candidateId);
     const rights = sourceRights(candidate);
-    const source = toSourceMaterial(candidate, rights);
+    const source = toSourceMaterial(candidate, rights, contentMode);
     const sourcePreparationMs = elapsed(preparationStarted);
 
     const [ai, teams, duplicateCandidates, duplicateArticles] = await Promise.all([
@@ -407,7 +449,7 @@ export class EditorialAiService implements EditorialAiServiceContract {
     const candidate = existing.candidate;
     const preparationStarted = performance.now();
     const rights = sourceRights(candidate);
-    const source = toSourceMaterial(candidate, rights);
+    const source = toSourceMaterial(candidate, rights, 'FULL_DRAFT');
     const sourcePreparationMs = elapsed(preparationStarted);
     const [ai, teams, duplicateCandidates, duplicateArticles] = await Promise.all([
       this.provider.generateDraft(source, instruction),
@@ -556,7 +598,16 @@ export class EditorialAiService implements EditorialAiServiceContract {
     ]);
     const teams = rows.map((row) => ({
       ...row,
-      remainingToTarget: Math.max(0, target - row.publishedCount - row.draftCount),
+      eligibleOpportunityCount:
+        row.publishedCount + row.draftCount + row.eligibleCandidateCount + row.linkOnlyCount,
+      remainingToTarget: Math.max(
+        0,
+        target -
+          row.publishedCount -
+          row.draftCount -
+          row.eligibleCandidateCount -
+          row.linkOnlyCount,
+      ),
     }));
     return {
       targetCount: target,
@@ -570,6 +621,61 @@ export class EditorialAiService implements EditorialAiServiceContract {
       },
       durationMs: elapsed(started),
     };
+  }
+
+  evaluateCandidate(
+    candidateId: string,
+    actor: AdministrativePrincipal,
+    requestId: string | null,
+  ): Promise<CandidateQualityResult> {
+    return this.requireQualityGate().evaluateCandidate(candidateId, actor, requestId);
+  }
+
+  evaluateCandidates(
+    candidateIds: readonly string[],
+    actor: AdministrativePrincipal,
+    requestId: string | null,
+  ): Promise<CandidateQualityBatchResult> {
+    return this.requireQualityGate().evaluateBatch(candidateIds, actor, requestId);
+  }
+
+  evaluateAllCandidates(
+    actor: AdministrativePrincipal,
+    requestId: string | null,
+  ): Promise<CandidateQualityBatchResult> {
+    return this.requireQualityGate().evaluateAll(actor, requestId);
+  }
+
+  overrideCandidateQuality(
+    candidateId: string,
+    input: QualityOverrideInput,
+    actor: AdministrativePrincipal,
+    requestId: string | null,
+  ): Promise<CandidateQualityResult> {
+    return this.requireQualityGate().overrideCandidate(candidateId, input, actor, requestId);
+  }
+
+  discoverLaunchCandidates(
+    input: LaunchDiscoveryInput,
+    actor: AdministrativePrincipal,
+    requestId: string | null,
+  ): Promise<LaunchDiscoveryResult> {
+    if (this.launchDiscovery !== null)
+      return this.launchDiscovery.discover(input, actor, requestId);
+    throw new AppError({
+      code: 'LAUNCH_DISCOVERY_NOT_CONFIGURED',
+      message: 'Launch candidate discovery is not configured.',
+      statusCode: 503,
+    });
+  }
+
+  private requireQualityGate(): CandidateQualityGate {
+    if (this.qualityGate !== null) return this.qualityGate;
+    throw new AppError({
+      code: 'CANDIDATE_QUALITY_NOT_CONFIGURED',
+      message: 'Candidate quality evaluation is not configured.',
+      statusCode: 503,
+    });
   }
 
   async setReviewStatus(
@@ -743,6 +849,7 @@ function sourceRights(candidate: EditorialCandidate) {
 function toSourceMaterial(
   candidate: EditorialCandidate,
   rights: ReturnType<typeof sourceRights>,
+  contentMode: 'FULL_DRAFT' | 'SHORT_BRIEF',
 ): EditorialSourceMaterial {
   const mayUseDescription =
     rights.textUsage === 'SUMMARY_ALLOWED' && candidate.source?.allowsDescriptionUse === true;
@@ -756,6 +863,7 @@ function toSourceMaterial(
     publishedAt: candidate.sourcePublishedAt?.toISOString() ?? null,
     suggestedTeams: candidate.suggestedTeams.map(({ team }) => team.abbreviation),
     rights: { textUsage: rights.textUsage, quotationPolicy: rights.quotationPolicy },
+    contentMode,
   };
 }
 

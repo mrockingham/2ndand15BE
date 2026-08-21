@@ -42,6 +42,7 @@ export class HighlightlyCurrentGameProvider implements CurrentGameProvider {
       throw new Error('Highlightly current-game response exceeded the bounded one-page limit.');
     }
 
+    const normalizationStarted = performance.now();
     const records: NormalizedGame[] = [];
     const failures: ProviderRecordFailure[] = [];
     for (const candidate of payload.data) {
@@ -70,6 +71,7 @@ export class HighlightlyCurrentGameProvider implements CurrentGameProvider {
       failures,
       requestsUsed: this.client.getRequestCount(),
       responseDurationMs: Math.round(performance.now() - startedAt),
+      normalizationDurationMs: Math.round(performance.now() - normalizationStarted),
     };
   }
 }
@@ -80,9 +82,10 @@ export function normalizeHighlightlyCurrentGame(match: HighlightlyMatch): Normal
   const seasonType = mapHighlightlySeasonType(match.round);
   if (status === null || seasonType === null) return null;
 
-  const score = parseHighlightlyScore(match.state.score?.current ?? null);
+  let score = parseHighlightlyScore(match.state.score?.current ?? null);
   if (status === 'SCHEDULED' || status === 'PREGAME') {
-    if (score !== null) return null;
+    if (score?.home === 0 && score.away === 0) score = null;
+    else if (score !== null) return null;
   } else if (status === 'FINAL' && score === null) return null;
 
   return normalizedGameSchema.parse({
@@ -102,7 +105,9 @@ export function normalizeHighlightlyCurrentGame(match: HighlightlyMatch): Normal
     awayScore: score?.away ?? null,
     quarter: parseQuarter(match.state.period),
     clock:
-      match.state.clock === undefined || match.state.clock === null
+      match.state.clock === undefined ||
+      match.state.clock === null ||
+      ((status === 'SCHEDULED' || status === 'PREGAME') && Number(match.state.clock) === 0)
         ? null
         : String(match.state.clock).slice(0, 16),
     venueName: null,

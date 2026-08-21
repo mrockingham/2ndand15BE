@@ -8,11 +8,14 @@ import {
   candidateParamsSchema,
   coverageQuerySchema,
   editorialReviewSchema,
+  evaluateBatchSchema,
   generateBatchSchema,
   generateDraftSchema,
+  launchDiscoverySchema,
   sourceParamsSchema,
   sourceRightsSchema,
   mediaCandidateSchema,
+  qualityOverrideSchema,
   regenerateDraftSchema,
 } from './editorial-ai.schemas.js';
 import type { EditorialAiServiceContract } from './editorial-ai.service.js';
@@ -41,6 +44,34 @@ export function createEditorialAiController(service: EditorialAiServiceContract)
         ),
       });
     }),
+    evaluateCandidate: handler(async (request, response) => {
+      const { candidateId } = parse(candidateParamsSchema, request.params, 'path parameters');
+      response.status(200).json({
+        data: await service.evaluateCandidate(candidateId, principal(request), requestId(request)),
+      });
+    }),
+    evaluateBatch: handler(async (request, response) => {
+      const { candidateIds } = parse(evaluateBatchSchema, request.body, 'request body');
+      response.status(200).json({
+        data: await service.evaluateCandidates(
+          candidateIds,
+          principal(request),
+          requestId(request),
+        ),
+      });
+    }),
+    overrideQuality: handler(async (request, response) => {
+      const { candidateId } = parse(candidateParamsSchema, request.params, 'path parameters');
+      const input = parse(qualityOverrideSchema, request.body, 'request body');
+      response.status(200).json({
+        data: await service.overrideCandidateQuality(
+          candidateId,
+          input,
+          principal(request),
+          requestId(request),
+        ),
+      });
+    }),
     regenerate: handler(async (request, response) => {
       const { articleId } = parse(articleParamsSchema, request.params, 'path parameters');
       const input = parse(regenerateDraftSchema, request.body, 'request body');
@@ -57,6 +88,12 @@ export function createEditorialAiController(service: EditorialAiServiceContract)
     coverage: handler(async (request, response) => {
       const { target } = parse(coverageQuerySchema, request.query, 'query parameters');
       response.status(200).json({ data: await service.coverage(target) });
+    }),
+    discoverLaunchCandidates: handler(async (request, response) => {
+      const input = parse(launchDiscoverySchema, request.body ?? {}, 'request body');
+      response.status(200).json({
+        data: await service.discoverLaunchCandidates(input, principal(request), requestId(request)),
+      });
     }),
     review: handler(async (request, response) => {
       const { articleId } = parse(articleParamsSchema, request.params, 'path parameters');

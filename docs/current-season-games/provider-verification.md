@@ -22,6 +22,8 @@ The complete backend suite passed 309 tests with 39 environment-gated tests skip
 
 ## Rights posture
 
+Update, August 21, 2026: Highlightly's July 24, 2026 terms now expressly permit use, distribution, transfer, and storage of API data in applications/products, subject to restrictions on API resale/proxying and competing-database extraction. Visual rights remain the user's responsibility. The earlier August 8 wording below records the gate in force at that time; Milestone 25 retains the gate as an explicit conservative production control. See [sync-hardening.md](sync-hardening.md).
+
 The owner has authorized Highlightly only as a temporary proof-of-concept current-game provider in development/staging evaluation mode. This is not approval for production publication, redistribution, logo storage, or general provider activation. `HIGHLIGHTLY_PUBLICATION_APPROVED` remains false. The service rejects production mutation in that state even if evaluation mode is enabled.
 
 Provider IDs, raw payloads, credentials, mappings, and the evaluation-mode audit remain private. The adapter stores no logos or provider URLs and adds no attribution claim beyond the private synchronization audit. A separate written rights decision remains required before production use.

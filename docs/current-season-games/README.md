@@ -6,16 +6,20 @@ The temporary provider is selected explicitly with `CURRENT_GAME_PROVIDER=highli
 
 ## Commands
 
-All commands require an existing internal UUID. Verification and dry-run fetch provider data and read PostgreSQL but do not mutate it.
+Commands accept either an existing internal UUID or a bounded reviewed-schedule week/date window. Verification and dry-run fetch provider data and read PostgreSQL but do not mutate it.
 
 ```text
 npm run games:current:verify -- --gameId=<internal-uuid>
 npm run games:current:sync -- --gameId=<internal-uuid> --dry-run
 npm run games:current:sync -- --gameId=<internal-uuid> --apply
+npm run games:current:sync -- --season=2026 --seasonType=PRE --week=1 --dry-run
+npm run games:current:sync -- --season=2026 --seasonType=PRE --week=1 --apply
 ```
 
 The apply command is intentionally manual. There is no cron, queue, worker, polling loop, webhook, or public-route provider call.
 
-Reports include sanitized outcome counts, intended field changes, matching method, mapping intent, bounded request count, and provider/matching/database/total timing. They never include the provider key or raw payload.
+Reports include sanitized internal identity, coverage/outcome counts, intended field changes, matching method, mapping intent, provider-only records, bounded request count, and provider/matching/database/total timing. They never include credentials or raw payloads. Completed games also report independent team-stat results; the weekly path never requests or writes player data.
+
+Milestone 25 semantics and hosted results are in [sync-hardening.md](sync-hardening.md) and [provider-coverage.md](provider-coverage.md).
 
 See [provider-verification.md](provider-verification.md) for evidence and rights posture, [sync-semantics.md](sync-semantics.md) for matching and update rules, and [performance-report.md](performance-report.md) for hosted timings. Box-score evidence and operations are documented in [box-score-capabilities.md](box-score-capabilities.md), [game-stats-sync.md](game-stats-sync.md), and [player-identity-reconciliation.md](player-identity-reconciliation.md).

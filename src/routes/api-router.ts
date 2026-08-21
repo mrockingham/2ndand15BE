@@ -39,6 +39,9 @@ import { createTeamHubRouter } from '../modules/team-hub/team-hub.routes.js';
 import type { TeamHubReader } from '../modules/team-hub/team-hub.service.js';
 import { createEditorialAiRouters } from '../modules/editorial-ai/editorial-ai.routes.js';
 import type { EditorialAiServiceContract } from '../modules/editorial-ai/editorial-ai.service.js';
+import { createPredictionRouters } from '../modules/ai-hub/prediction.routes.js';
+import type { PredictionService } from '../modules/ai-hub/prediction.service.js';
+import type { AiHubWeeklyInsightsService } from '../modules/ai-hub/weekly-insights.service.js';
 
 export interface ApiRouterOptions {
   readonly rateLimit: AppConfig['rateLimit'];
@@ -60,6 +63,8 @@ export interface ApiRouterOptions {
   readonly statsHubReader?: StatsHubReader;
   readonly teamHubReader?: TeamHubReader;
   readonly editorialAiService?: EditorialAiServiceContract;
+  readonly predictionService?: PredictionService;
+  readonly weeklyInsightsService?: AiHubWeeklyInsightsService;
 }
 
 export function createApiRouter(options: ApiRouterOptions): Router {
@@ -88,6 +93,18 @@ export function createApiRouter(options: ApiRouterOptions): Router {
     swaggerUi.setup(openApiDocument),
   );
   router.use('/health', createHealthRouter(options.health));
+  if (options.predictionService !== undefined && options.adminIdentities !== undefined) {
+    const predictions = createPredictionRouters({
+      authenticate: options.authenticate,
+      identities: options.adminIdentities,
+      service: options.predictionService,
+      ...(options.weeklyInsightsService === undefined
+        ? {}
+        : { weeklyInsightsService: options.weeklyInsightsService }),
+    });
+    router.use('/ai-hub', predictions.publicRouter);
+    router.use('/admin/predictions', predictions.adminRouter);
+  }
   if (options.editorialAiService !== undefined && options.adminIdentities !== undefined) {
     const editorialAi = createEditorialAiRouters({
       authenticate: options.authenticate,

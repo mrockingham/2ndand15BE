@@ -40,6 +40,18 @@ import {
   OpenAiEditorialAiProvider,
   UnconfiguredEditorialAiProvider,
 } from './modules/editorial-ai/editorial-ai.provider.js';
+import { PrismaCandidateQualityRepository } from './modules/editorial-ai/candidate-quality.repository.js';
+import { CandidateQualityService } from './modules/editorial-ai/candidate-quality.service.js';
+import { OpenAiCandidateClassifier } from './modules/editorial-ai/candidate-quality.provider.js';
+import { PrismaLaunchDiscoveryRepository } from './modules/editorial-ai/launch-discovery.repository.js';
+import { LaunchDiscoveryService } from './modules/editorial-ai/launch-discovery.service.js';
+import { PrismaPredictionRepository } from './modules/ai-hub/prediction.repository.js';
+import { PredictionService } from './modules/ai-hub/prediction.service.js';
+import { AiHubWeeklyInsightsService } from './modules/ai-hub/weekly-insights.service.js';
+import {
+  OpenAiPredictionExplainer,
+  UnconfiguredPredictionExplainer,
+} from './modules/ai-hub/prediction-explainer.js';
 
 const config = loadConfig();
 const logger = createLogger(config);
@@ -62,11 +74,52 @@ const editorialAiProvider =
         timeoutMs: config.editorialAi.timeoutMs,
       })
     : new UnconfiguredEditorialAiProvider();
+const candidateClassifier =
+  config.editorialAi.provider === 'openai' &&
+  config.editorialAi.apiKey !== null &&
+  config.editorialAi.model !== null
+    ? new OpenAiCandidateClassifier({
+        apiKey: config.editorialAi.apiKey,
+        model: config.editorialAi.model,
+        baseUrl: config.editorialAi.baseUrl,
+        timeoutMs: config.editorialAi.timeoutMs,
+      })
+    : null;
+const candidateQualityService = new CandidateQualityService(
+  new PrismaCandidateQualityRepository(prisma),
+  candidateClassifier,
+);
+const launchDiscoveryService = new LaunchDiscoveryService(
+  new PrismaLaunchDiscoveryRepository(prisma),
+  newsInboxService,
+  candidateQualityService,
+);
 const editorialAiService = new EditorialAiService(
   new PrismaEditorialAiRepository(prisma),
   editorialAiProvider,
+  undefined,
+  candidateQualityService,
+  launchDiscoveryService,
 );
 const teamReader = new TeamService(new PrismaTeamRepository(prisma));
+const predictionExplainer =
+  config.editorialAi.provider === 'openai' &&
+  config.editorialAi.apiKey !== null &&
+  config.editorialAi.model !== null
+    ? new OpenAiPredictionExplainer({
+        apiKey: config.editorialAi.apiKey,
+        model: config.editorialAi.model,
+        baseUrl: config.editorialAi.baseUrl,
+        timeoutMs: config.editorialAi.timeoutMs,
+      })
+    : new UnconfiguredPredictionExplainer();
+const predictionRepository = new PrismaPredictionRepository(prisma);
+const predictionService = new PredictionService(
+  predictionRepository,
+  undefined,
+  predictionExplainer,
+);
+const weeklyInsightsService = new AiHubWeeklyInsightsService(predictionRepository);
 const playerReader = new PlayerService(new PrismaPlayerRepository(prisma));
 const statsHubReader = new StatsHubService(new PrismaStatsHubRepository(prisma));
 const publicGameSource = resolvePublicGameDataSource(config.sports);
@@ -124,6 +177,8 @@ const app = createApp({
   playerReader,
   statsHubReader,
   teamHubReader,
+  predictionService,
+  weeklyInsightsService,
 });
 
 const server = app.listen(config.port, config.host, (error?: Error) => {

@@ -11,6 +11,7 @@ export const newsCandidateInclude = {
     include: { team: true },
     orderBy: { team: { abbreviation: 'asc' } },
   },
+  qualityEvaluation: true,
 } satisfies Prisma.NewsCandidateInclude;
 
 export type NewsSourceRecord = Prisma.NewsSourceGetPayload<{ include: typeof newsSourceInclude }>;
@@ -40,6 +41,12 @@ export function toNewsSourceDto(source: NewsSourceRecord) {
     isOfficialLeague: source.isOfficialLeague,
     isOfficialTeam: source.isOfficialTeam,
     allowsDescriptionUse: source.allowsDescriptionUse,
+    sourcePreference: {
+      reliability: source.reliabilityWeight,
+      metadataRichness: source.metadataRichnessWeight,
+      teamSpecificity: source.teamSpecificityWeight,
+      editorialUsefulness: source.editorialUsefulnessWeight,
+    },
     notes: source.notes,
     health: {
       lastCheckedAt: source.lastCheckedAt?.toISOString() ?? null,
@@ -71,6 +78,18 @@ export function toNewsCandidateListDto(candidate: NewsCandidateRecord) {
     discoveredAt: candidate.discoveredAt.toISOString(),
     status: candidate.status,
     convertedArticleId: candidate.convertedArticleId,
+    quality:
+      candidate.qualityEvaluation === null
+        ? null
+        : {
+            relevance: candidate.qualityEvaluation.relevance,
+            relevanceConfidence: candidate.qualityEvaluation.relevanceConfidence,
+            sufficiency: candidate.qualityEvaluation.sufficiency,
+            decision: candidate.qualityEvaluation.decision,
+            qualityScore: candidate.qualityEvaluation.qualityScore,
+            generationEligible: candidate.qualityEvaluation.generationEligible,
+            evaluatedAt: candidate.qualityEvaluation.evaluatedAt.toISOString(),
+          },
     suggestedTeams: candidate.suggestedTeams.map(({ team, rule }) => ({
       id: team.id,
       abbreviation: team.abbreviation,
@@ -89,6 +108,23 @@ export function toNewsCandidateDetailDto(candidate: NewsCandidateRecord) {
     dismissalReason: candidate.dismissalReason,
     reviewedBySnapshot: candidate.reviewedBySnapshot,
     reviewedAt: candidate.reviewedAt?.toISOString() ?? null,
+    qualityDetail:
+      candidate.qualityEvaluation === null
+        ? null
+        : {
+            qualityFactors: candidate.qualityEvaluation.qualityFactors,
+            reasons: candidate.qualityEvaluation.reasons,
+            riskFlags: candidate.qualityEvaluation.riskFlags,
+            duplicate: {
+              status: candidate.qualityEvaluation.overlapStatus,
+              score: candidate.qualityEvaluation.duplicateScore,
+              closestCandidateId: candidate.qualityEvaluation.closestCandidateId,
+              closestArticleId: candidate.qualityEvaluation.closestArticleId,
+            },
+            evaluatedBy: candidate.qualityEvaluation.evaluatedBy,
+            overridden: candidate.qualityEvaluation.overridden,
+            overrideReason: candidate.qualityEvaluation.overrideReason,
+          },
     createdAt: candidate.createdAt.toISOString(),
   };
 }

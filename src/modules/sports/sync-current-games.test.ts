@@ -74,6 +74,7 @@ function harness(game: CurrentGameRecord = internalGame) {
   const repository: CurrentGameSyncRepository = {
     findGame: vi.fn(() => Promise.resolve(stored)),
     findMappedGameId,
+    findMappedGameOwners: vi.fn(() => Promise.resolve(new Map())),
     applyCurrentGame,
   };
   const getCurrentGames = vi.fn<CurrentGameProvider['getCurrentGames']>(() =>
@@ -170,6 +171,40 @@ describe('CurrentGameSyncService', () => {
     expect(matchCurrentGame(internalGame, [candidate]).kind).toBe(expectedKind);
   });
 
+  it('matches a provider-null week to the reviewed internal week and preserves kickoff tolerance', () => {
+    expect(
+      matchCurrentGame({ ...internalGame, week: 1 }, [
+        { ...providerGame, week: null, startTime: '2026-08-07T00:10:00.000Z' },
+      ]),
+    ).toMatchObject({ kind: 'matched', method: 'SCHEDULE' });
+    expect(
+      matchCurrentGame({ ...internalGame, week: 1 }, [
+        { ...providerGame, week: null, startTime: '2026-08-07T00:16:00.000Z' },
+      ]).kind,
+    ).toBe('unmatched');
+  });
+
+  it('prefers an exact kickoff over another candidate inside tolerance', () => {
+    expect(
+      matchCurrentGame(internalGame, [
+        { ...providerGame, providerGameId: 'near', startTime: '2026-08-07T00:05:00.000Z' },
+        providerGame,
+      ]),
+    ).toMatchObject({ kind: 'matched', game: { providerGameId: '565788' } });
+  });
+
+  it('accepts the provider WSH alias for the reviewed WAS abbreviation', () => {
+    expect(
+      matchCurrentGame(
+        {
+          ...internalGame,
+          homeTeam: { abbreviation: 'WAS', providerTeamId: null },
+        },
+        [{ ...providerGame, homeAbbreviation: 'WSH' }],
+      ),
+    ).toMatchObject({ kind: 'matched' });
+  });
+
   it('matches a neutral-site game by reviewed orientation rather than venue', () => {
     expect(
       matchCurrentGame(internalGame, [{ ...providerGame, isNeutralSite: true }]),
@@ -223,5 +258,77 @@ describe('CurrentGameSyncService', () => {
       }),
     ).rejects.toMatchObject({ code: 'HIGHLIGHTLY_PUBLICATION_NOT_APPROVED' });
     expect(test.getCurrentGames).not.toHaveBeenCalled();
+  });
+
+  it('syncs a reviewed week, reports provider omissions, and is idempotent', async () => {
+    let stored = { ...internalGame, week: 1 };
+    const missing = {
+      ...internalGame,
+      id: '1768c441-16a6-457c-b50f-e7273d750d77',
+      week: 1,
+      startTime: new Date('2026-08-08T00:00:00.000Z'),
+      homeTeam: { abbreviation: 'BUF', providerTeamId: 'buf' },
+      awayTeam: { abbreviation: 'NYG', providerTeamId: 'nyg' },
+    };
+    const applyCurrentGame = vi.fn((input: ApplyCurrentGameInput) => {
+      stored = {
+        ...stored,
+        ...input.state,
+        providerMapping: { providerGameId: input.providerGameId },
+      };
+      return Promise.resolve();
+    });
+    const repository: CurrentGameSyncRepository = {
+      findGame: vi.fn(() => Promise.resolve(stored)),
+      findReviewedGames: vi.fn(() => Promise.resolve([stored, missing])),
+      findMappedGameId: vi.fn(() => Promise.resolve(null)),
+      findMappedGameOwners: vi.fn(() =>
+        Promise.resolve(
+          stored.providerMapping === null
+            ? new Map()
+            : new Map([[stored.providerMapping.providerGameId, stored.id]]),
+        ),
+      ),
+      applyCurrentGame,
+    };
+    const provider: CurrentGameProvider = {
+      providerKey: 'highlightly',
+      getCurrentGames: vi.fn(() =>
+        Promise.resolve({
+          provider: 'highlightly',
+          received: 1,
+          records: [{ ...providerGame, week: null }],
+          failures: [],
+          requestsUsed: 1,
+          responseDurationMs: 10,
+        }),
+      ),
+    };
+    const service = new CurrentGameSyncService(provider, repository);
+    const options = {
+      season: 2026,
+      seasonType: 'PRE' as const,
+      week: 1,
+      apply: true,
+      policy: evaluationPolicy,
+    };
+    await expect(service.syncWindow(options)).resolves.toMatchObject({
+      internalReviewed: 2,
+      matched: 1,
+      updated: 1,
+      unmatched: 1,
+      providerMissing: 1,
+      providerOnlyUnmatched: 0,
+      results: [
+        { outcome: 'UPDATED', mappingChange: 'CREATE' },
+        { outcome: 'UNMATCHED', reason: 'Provider omitted this reviewed internal game.' },
+      ],
+    });
+    await expect(service.syncWindow(options)).resolves.toMatchObject({
+      matched: 1,
+      unchanged: 1,
+      unmatched: 1,
+    });
+    expect(applyCurrentGame).toHaveBeenCalledOnce();
   });
 });

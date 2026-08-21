@@ -271,6 +271,156 @@ export const openApiDocument = {
   },
   servers: [{ url: '/api/v1' }],
   paths: {
+    '/ai-hub/predictions': {
+      get: {
+        tags: ['AI Hub'],
+        summary: 'List the latest public weekly game predictions',
+        parameters: [
+          { name: 'season', in: 'query', schema: { type: 'integer' } },
+          {
+            name: 'seasonType',
+            in: 'query',
+            schema: { type: 'string', enum: ['PRE', 'REG', 'POST'] },
+          },
+          { name: 'week', in: 'query', schema: { type: 'integer' } },
+          { name: 'teamId', in: 'query', schema: { type: 'string', format: 'uuid' } },
+          {
+            name: 'status',
+            in: 'query',
+            schema: { type: 'string', enum: ['UPCOMING', 'COMPLETED'] },
+          },
+        ],
+        responses: {
+          200: {
+            description:
+              'Published prediction list. Private feature and AI usage snapshots are excluded.',
+          },
+        },
+      },
+    },
+    '/ai-hub/summary': {
+      get: {
+        tags: ['AI Hub'],
+        summary: 'Get a compact prediction summary',
+        responses: { 200: { description: 'Compact latest-public prediction summary.' } },
+      },
+    },
+    '/ai-hub/weekly-insights': {
+      get: {
+        tags: ['AI Hub'],
+        summary: 'Get deterministic Tier 1 intelligence from published weekly predictions',
+        parameters: [
+          { name: 'season', in: 'query', required: true, schema: { type: 'integer' } },
+          {
+            name: 'seasonType',
+            in: 'query',
+            required: true,
+            schema: { type: 'string', enum: ['PRE', 'REG', 'POST'] },
+          },
+          { name: 'week', in: 'query', required: true, schema: { type: 'integer' } },
+          { name: 'teamId', in: 'query', schema: { type: 'string', format: 'uuid' } },
+          {
+            name: 'top',
+            in: 'query',
+            description: 'Maximum ranked cards per list.',
+            schema: { type: 'integer', minimum: 1, maximum: 5, default: 5 },
+          },
+        ],
+        responses: {
+          200: {
+            description:
+              'Derived weekly cards, optional favorite-team view, and evaluated model performance. Raw feature snapshots remain private.',
+          },
+          400: { description: 'Invalid or unbounded query.' },
+          404: { description: 'No eligible published predictions for the selected week.' },
+        },
+      },
+    },
+    '/ai-hub/performance': {
+      get: {
+        tags: ['AI Hub'],
+        summary: 'Get evaluated prediction accuracy and Brier score',
+        responses: {
+          200: { description: 'Aggregate performance; ties are excluded from accuracy.' },
+        },
+      },
+    },
+    '/ai-hub/predictions/{gameId}': {
+      get: {
+        tags: ['AI Hub'],
+        summary: 'Get the latest public prediction for a game',
+        parameters: [
+          {
+            name: 'gameId',
+            in: 'path',
+            required: true,
+            schema: { type: 'string', format: 'uuid' },
+          },
+        ],
+        responses: {
+          200: { description: 'Prediction detail.' },
+          404: { description: 'No published prediction.' },
+        },
+      },
+    },
+    '/admin/predictions/generate': {
+      post: {
+        tags: ['AI Hub Admin'],
+        summary: 'Dry-run or persist bounded game/weekly predictions',
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                additionalProperties: false,
+                properties: {
+                  gameId: { type: 'string', format: 'uuid' },
+                  season: { type: 'integer' },
+                  seasonType: { type: 'string', enum: ['PRE', 'REG', 'POST'] },
+                  week: { type: ['integer', 'null'] },
+                  dryRun: { type: 'boolean', default: true },
+                  retrospective: { type: 'boolean', default: false },
+                  includeAiExplanation: { type: 'boolean', default: false },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          200: { description: 'Generation result. Dry-run performs no database writes.' },
+          409: { description: 'Kickoff or retrospective-state conflict.' },
+        },
+      },
+    },
+    '/admin/predictions/evaluate': {
+      post: {
+        tags: ['AI Hub Admin'],
+        summary: 'Lock started predictions and evaluate final games',
+        security: [{ bearerAuth: [] }],
+        responses: { 200: { description: 'Lock/evaluation counts.' } },
+      },
+    },
+    '/admin/predictions/{predictionId}/publish': {
+      post: {
+        tags: ['AI Hub Admin'],
+        summary: 'Explicitly publish a draft prediction',
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: 'predictionId',
+            in: 'path',
+            required: true,
+            schema: { type: 'string', format: 'uuid' },
+          },
+        ],
+        responses: {
+          200: { description: 'Published prediction.' },
+          409: { description: 'Retrospective predictions cannot be published.' },
+        },
+      },
+    },
     '/auth/register': {
       post: {
         operationId: 'register',
@@ -1092,6 +1242,75 @@ export const openApiDocument = {
         },
       },
     },
+    '/admin/news-candidates/{candidateId}/evaluate': {
+      post: {
+        operationId: 'evaluateNewsCandidateQuality',
+        summary:
+          'Evaluate private NFL relevance, sufficiency, duplicate risk, and generation eligibility',
+        tags: ['Editorial AI'],
+        security: [{ bearerAuth: [] }],
+        parameters: [newsCandidateIdParameter],
+        responses: {
+          '200': {
+            description: 'Persisted private quality evaluation; no article is created.',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/CandidateQualityResponse' },
+              },
+            },
+          },
+          '401': { $ref: '#/components/responses/UnauthorizedError' },
+          '403': { $ref: '#/components/responses/ForbiddenError' },
+          '404': { $ref: '#/components/responses/NotFoundError' },
+        },
+      },
+    },
+    '/admin/news-candidates/evaluate-batch': {
+      post: {
+        operationId: 'evaluateNewsCandidateQualityBatch',
+        summary: 'Evaluate up to 50 candidates without generating articles',
+        tags: ['Editorial AI'],
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: { $ref: '#/components/schemas/CandidateQualityBatchRequest' },
+            },
+          },
+        },
+        responses: {
+          '200': { description: 'Bounded partial-failure evaluation summary.' },
+          '400': { $ref: '#/components/responses/ValidationError' },
+          '401': { $ref: '#/components/responses/UnauthorizedError' },
+          '403': { $ref: '#/components/responses/ForbiddenError' },
+        },
+      },
+    },
+    '/admin/news-candidates/{candidateId}/quality-override': {
+      post: {
+        operationId: 'overrideNewsCandidateQuality',
+        summary: 'Record an audited manual quality override without publishing',
+        tags: ['Editorial AI'],
+        security: [{ bearerAuth: [] }],
+        parameters: [newsCandidateIdParameter],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: { $ref: '#/components/schemas/CandidateQualityOverrideRequest' },
+            },
+          },
+        },
+        responses: {
+          '200': { description: 'Private overridden quality evaluation.' },
+          '400': { $ref: '#/components/responses/ValidationError' },
+          '401': { $ref: '#/components/responses/UnauthorizedError' },
+          '403': { $ref: '#/components/responses/ForbiddenError' },
+          '404': { $ref: '#/components/responses/NotFoundError' },
+        },
+      },
+    },
     '/admin/editorial/coverage': {
       get: {
         operationId: 'getEditorialLaunchCoverage',
@@ -1116,6 +1335,28 @@ export const openApiDocument = {
           },
           '401': { $ref: '#/components/responses/UnauthorizedError' },
           '403': { $ref: '#/components/responses/ForbiddenError' },
+        },
+      },
+    },
+    '/admin/editorial/discover-launch-candidates': {
+      post: {
+        operationId: 'discoverLaunchNewsCandidates',
+        summary: 'Run bounded launch discovery through approved active RSS/Atom sources',
+        tags: ['Editorial AI'],
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          content: {
+            'application/json': { schema: { $ref: '#/components/schemas/LaunchDiscoveryRequest' } },
+          },
+        },
+        responses: {
+          '200': {
+            description: 'Discovery/evaluation report; never generates or publishes articles.',
+          },
+          '400': { $ref: '#/components/responses/ValidationError' },
+          '401': { $ref: '#/components/responses/UnauthorizedError' },
+          '403': { $ref: '#/components/responses/ForbiddenError' },
+          '409': { $ref: '#/components/responses/ConflictError' },
         },
       },
     },
@@ -2771,6 +3012,7 @@ export const openApiDocument = {
           'isOfficialLeague',
           'isOfficialTeam',
           'allowsDescriptionUse',
+          'sourcePreference',
           'notes',
           'health',
           'createdBySnapshot',
@@ -2791,6 +3033,15 @@ export const openApiDocument = {
           isOfficialLeague: { type: 'boolean' },
           isOfficialTeam: { type: 'boolean' },
           allowsDescriptionUse: { type: 'boolean' },
+          sourcePreference: {
+            type: 'object',
+            properties: {
+              reliability: { type: 'integer', minimum: 0, maximum: 100 },
+              metadataRichness: { type: 'integer', minimum: 0, maximum: 100 },
+              teamSpecificity: { type: 'integer', minimum: 0, maximum: 100 },
+              editorialUsefulness: { type: 'integer', minimum: 0, maximum: 100 },
+            },
+          },
           notes: { type: ['string', 'null'], maxLength: 1000 },
           health: {
             type: 'object',
@@ -2839,6 +3090,10 @@ export const openApiDocument = {
           isOfficialLeague: { type: 'boolean', default: false },
           isOfficialTeam: { type: 'boolean', default: false },
           allowsDescriptionUse: { type: 'boolean', default: false },
+          reliabilityWeight: { type: 'integer', minimum: 0, maximum: 100, default: 50 },
+          metadataRichnessWeight: { type: 'integer', minimum: 0, maximum: 100, default: 50 },
+          teamSpecificityWeight: { type: 'integer', minimum: 0, maximum: 100, default: 50 },
+          editorialUsefulnessWeight: { type: 'integer', minimum: 0, maximum: 100, default: 50 },
           notes: { type: ['string', 'null'], maxLength: 1000 },
         },
       },
@@ -2860,6 +3115,10 @@ export const openApiDocument = {
           isOfficialLeague: { type: 'boolean' },
           isOfficialTeam: { type: 'boolean' },
           allowsDescriptionUse: { type: 'boolean' },
+          reliabilityWeight: { type: 'integer', minimum: 0, maximum: 100 },
+          metadataRichnessWeight: { type: 'integer', minimum: 0, maximum: 100 },
+          teamSpecificityWeight: { type: 'integer', minimum: 0, maximum: 100 },
+          editorialUsefulnessWeight: { type: 'integer', minimum: 0, maximum: 100 },
           notes: { type: ['string', 'null'], maxLength: 1000 },
         },
       },
@@ -2946,6 +3205,7 @@ export const openApiDocument = {
           'discoveredAt',
           'status',
           'convertedArticleId',
+          'quality',
           'suggestedTeams',
           'updatedAt',
         ],
@@ -2960,10 +3220,19 @@ export const openApiDocument = {
           discoveredAt: { type: 'string', format: 'date-time' },
           status: { $ref: '#/components/schemas/NewsCandidateStatus' },
           convertedArticleId: { type: ['string', 'null'], format: 'uuid' },
+          quality: {
+            type: ['object', 'null'],
+            description: 'Private persisted candidate-quality summary for administrative routes.',
+          },
           suggestedTeams: { type: 'array', maxItems: 32, items: { type: 'object' } },
           sourceExternalId: { type: ['string', 'null'], maxLength: 512 },
           sourceDescription: { type: ['string', 'null'], maxLength: 2000 },
           dismissalReason: { type: ['string', 'null'], maxLength: 500 },
+          qualityDetail: {
+            type: ['object', 'null'],
+            description:
+              'Private factors, reasons, overlap, and override metadata on detail reads.',
+          },
           reviewedBySnapshot: { type: ['string', 'null'] },
           reviewedAt: { type: ['string', 'null'], format: 'date-time' },
           createdAt: { type: 'string', format: 'date-time' },
@@ -3124,6 +3393,61 @@ export const openApiDocument = {
               performance: { type: 'object' },
             },
           },
+        },
+      },
+      CandidateQualityBatchRequest: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['candidateIds'],
+        properties: {
+          candidateIds: {
+            type: 'array',
+            minItems: 1,
+            maxItems: 50,
+            uniqueItems: true,
+            items: { type: 'string', format: 'uuid' },
+          },
+        },
+      },
+      CandidateQualityOverrideRequest: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['relevance', 'sufficiency', 'reason'],
+        properties: {
+          relevance: { type: 'string', enum: ['NFL', 'NOT_NFL', 'UNCERTAIN'] },
+          sufficiency: {
+            type: 'string',
+            enum: [
+              'FULL_DRAFT_ELIGIBLE',
+              'SHORT_BRIEF_ELIGIBLE',
+              'LINK_ONLY',
+              'INSUFFICIENT',
+              'MANUAL_REVIEW',
+            ],
+          },
+          allowDuplicate: { type: 'boolean', default: false },
+          reason: { type: 'string', minLength: 1, maxLength: 500 },
+        },
+      },
+      CandidateQualityResponse: {
+        type: 'object',
+        required: ['data'],
+        properties: {
+          data: {
+            type: 'object',
+            description:
+              'Private evaluation containing interpretable factors, overlap, entity resolution, eligibility, and optional classifier usage.',
+          },
+        },
+      },
+      LaunchDiscoveryRequest: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          targetPerTeam: { type: 'integer', minimum: 1, maximum: 20, default: 10 },
+          freshnessDays: { type: 'integer', minimum: 1, maximum: 30, default: 14 },
+          maxNewCandidates: { type: 'integer', minimum: 1, maximum: 320, default: 320 },
+          pilot: { type: 'boolean', default: false },
         },
       },
       EditorialCoverageResponse: {

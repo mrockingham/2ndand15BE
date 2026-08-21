@@ -16,6 +16,7 @@ const source: EditorialSourceMaterial = {
   publishedAt: null,
   suggestedTeams: ['ARI'],
   rights: { textUsage: 'UNKNOWN', quotationPolicy: 'UNKNOWN' },
+  contentMode: 'SHORT_BRIEF',
 };
 
 const validDraft = {

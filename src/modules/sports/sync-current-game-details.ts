@@ -108,6 +108,8 @@ const PLAYER_STAT_FIELDS = [
 
 export interface SyncCurrentGameDetailsOptions {
   readonly gameId: string;
+  readonly providerGameId?: string;
+  readonly includePlayerStats?: boolean;
   readonly apply: boolean;
   readonly policy: CurrentGameExecutionPolicy;
 }
@@ -192,6 +194,7 @@ export interface CurrentGameDetailsSyncReport {
   };
   readonly performance: {
     readonly providerMs: number;
+    readonly normalizationMs: number;
     readonly databaseReadMs: number;
     readonly playerMappingMs: number;
     readonly profileMs: number;
@@ -222,25 +225,37 @@ export class CurrentGameDetailsSyncService {
     const databaseReadMs = performance.now() - readStarted;
     if (target === null)
       throw new CurrentGameSyncError('GAME_NOT_FOUND', 'The internal game was not found.');
-    if (target.providerMapping === null) {
+    const providerGameId = options.providerGameId ?? target.providerMapping?.providerGameId;
+    if (providerGameId === undefined) {
       throw new CurrentGameSyncError(
         'GAME_PROVIDER_MAPPING_REQUIRED',
         'Current-game details require a verified provider game mapping.',
       );
     }
 
-    const batch = await this.provider.getGameDetails(target.providerMapping.providerGameId);
+    if (
+      target.providerMapping !== null &&
+      options.providerGameId !== undefined &&
+      options.providerGameId !== target.providerMapping.providerGameId
+    ) {
+      throw new CurrentGameSyncError(
+        'CURRENT_GAME_DETAILS_IDENTITY_MISMATCH',
+        'Requested provider details conflict with the existing mapping.',
+      );
+    }
+    const includePlayerStats = options.includePlayerStats !== false;
+    const batch = await this.provider.getGameDetails(providerGameId, { includePlayerStats });
     if (batch.provider !== this.provider.providerKey || batch.record === null) {
       throw new CurrentGameSyncError(
         'CURRENT_GAME_DETAILS_INVALID',
         batch.failures[0]?.reason ?? 'Provider details were unavailable.',
       );
     }
-    const detail = batch.record;
+    const detail = includePlayerStats ? batch.record : { ...batch.record, playerStats: [] };
     if (
-      detail.providerGameId !== target.providerMapping.providerGameId ||
-      detail.homeAbbreviation !== target.homeAbbreviation ||
-      detail.awayAbbreviation !== target.awayAbbreviation
+      detail.providerGameId !== providerGameId ||
+      !sameTeamAbbreviation(detail.homeAbbreviation, target.homeAbbreviation) ||
+      !sameTeamAbbreviation(detail.awayAbbreviation, target.awayAbbreviation)
     ) {
       throw new CurrentGameSyncError(
         'CURRENT_GAME_DETAILS_IDENTITY_MISMATCH',
@@ -250,10 +265,12 @@ export class CurrentGameDetailsSyncService {
 
     const playerMappingStarted = performance.now();
     const playerIdentities = classifyPlayerIdentities(detail.playerStats);
-    const playerMappings = await this.repository.findPlayerMappings(
-      this.provider.providerKey,
-      playerIdentities.uniqueIds,
-    );
+    const playerMappings = includePlayerStats
+      ? await this.repository.findPlayerMappings(
+          this.provider.providerKey,
+          playerIdentities.uniqueIds,
+        )
+      : new Map<string, string>();
     const playerMappingMs = performance.now() - playerMappingStarted;
     let profileMs = 0;
     let candidateDatabaseMs = 0;
@@ -399,6 +416,7 @@ export class CurrentGameDetailsSyncService {
 
     if (
       options.apply &&
+      includePlayerStats &&
       (actionablePlayerPlans.length > 0 || coverageChanged) &&
       this.repository.applyPlayerStats !== undefined
     ) {
@@ -455,7 +473,10 @@ export class CurrentGameDetailsSyncService {
         unmatched: resolutionMethods.UNRESOLVED,
         ambiguous: playerIdentities.ambiguous + resolutionMethods.AMBIGUOUS,
         persisted: options.apply ? resolvedPlans.length : 0,
-        reason: this.identityProvider === undefined ? 'PLAYER_IDENTITY_MAPPING_REQUIRED' : null,
+        reason:
+          !includePlayerStats || this.identityProvider !== undefined
+            ? null
+            : 'PLAYER_IDENTITY_MAPPING_REQUIRED',
         resolutionMethods,
         profiles: {
           requested: playerIdentities.uniqueIds.length - playerMappings.size,
@@ -491,7 +512,8 @@ export class CurrentGameDetailsSyncService {
         structuredPlays: detail.structuredPlayCount,
       },
       performance: {
-        providerMs: batch.responseDurationMs,
+        providerMs: batch.responseDurationMs - (batch.normalizationDurationMs ?? 0),
+        normalizationMs: batch.normalizationDurationMs ?? 0,
         databaseReadMs: Math.round(databaseReadMs),
         playerMappingMs: Math.round(playerMappingMs),
         profileMs: Math.round(profileMs),
@@ -551,6 +573,12 @@ function teamIdForProviderTeam(
   if (providerTeamId === detail.homeProviderTeamId) return target.homeTeamId;
   if (providerTeamId === detail.awayProviderTeamId) return target.awayTeamId;
   throw new Error('Player team does not match the verified game orientation.');
+}
+
+function sameTeamAbbreviation(left: string, right: string): boolean {
+  const canonical = (value: string): string =>
+    value.trim().toUpperCase() === 'WSH' ? 'WAS' : value.trim().toUpperCase();
+  return canonical(left) === canonical(right);
 }
 
 function rejectDuplicateBindings(

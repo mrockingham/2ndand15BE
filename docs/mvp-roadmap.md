@@ -348,6 +348,24 @@ Boundaries:
 - No hosted apply until all 82 profiles are available and the complete dry-run passes the ambiguity gate
 - No fuzzy automatic match, mass catalog/roster import, historical aggregation, 2026 Stats Hub, provider promotion, polling, scheduling, or frontend work
 
+## Milestone 25 — Current-game sync hardening and preseason backfill
+
+Goal: treat the reviewed schedule as authoritative while safely enriching bounded current-game windows from incomplete, week-null Highlightly data.
+
+**Status:** Complete on August 21, 2026. Dry-run-first hosted Week 1 and Week 2 backfills applied 15 verified finals, preserved 14 upcoming games with null scores, reported three provider omissions without destructive action, synced 30 team-stat rows, and passed identical no-write replays.
+
+Deliverables:
+
+- Mapping-first/exact-first deterministic matching with a 15-minute maximum kickoff tolerance and explicit ambiguity/orientation rejection
+- Preseason provider-null week handling, internal-week preservation, WSH/WAS alias normalization, and scheduled 0-0/clock placeholder removal
+- Game/week/date bounded update-only CLI with reviewed-provenance selection, provider-missing/provider-only coverage, sanitized internal identity, and batch mapping ownership checks
+- Independent completed-game team-stat-only enrichment with no player requests or player/historical mutations
+- Hosted coverage, fallback, rights, performance, preservation, public API, and idempotency verification
+
+Boundaries:
+
+- No new games, schedule reconciliation/deletion, inferred missing scores, player reconciliation/stats, play-by-play, polling, cron, scheduler, queue, WebSocket, SSE, new provider, or frontend work
+
 ## Milestone 23 — AI editorial assistant and media candidates
 
 Goal: reduce launch editorial preparation through original, attributed, human-reviewed drafts without scraping or automatic publication.
@@ -368,6 +386,64 @@ Boundaries:
 
 - No auto-publishing, arbitrary page fetching, autonomous ingestion, automatic YouTube search, media downloading/rehosting, scheduled generation, cron, worker, queue, social/newsletter/push delivery, frontend work, or game/player-provider changes
 - Public article DTOs remain unchanged and exclude all AI, duplicate, rights, unresolved-entity, usage, timing, and audit metadata
+
+## Milestone 23.1 — Candidate quality gate and launch discovery
+
+Goal: prevent unsafe or irrelevant AI generation and expand launch discovery only through reviewed, bounded source mechanisms.
+
+**Status:** Completed through the hosted pilot gate on August 9, 2026. The additive migration and 22-candidate re-evaluation succeeded; the NCAA-only candidate is rejected, all existing authorized material is link-only, and 29 of 31 final evaluations were deterministic. The bounded ESPN RSS pilot created nine metadata candidates but produced no opportunity for its four target teams, so full 32-team discovery was correctly stopped.
+
+Deliverables:
+
+- Persisted private deterministic-first NFL relevance, authorized-source sufficiency, duplicate, quality-factor, and generation-eligibility decisions
+- Compact structured AI fallback only for deterministic uncertainty with separate classification usage accounting
+- Full-draft and 40-120 word short-brief provider modes with no-padding constraints
+- First-generation blocking for non-NFL, duplicate, insufficient, manual-review, and link-only decisions
+- Audited quality override that cannot change rights or publish
+- One/50-candidate admin evaluation routes, enhanced 32-team coverage, configurable source preference, and OpenAPI
+- Sequential approved-feed launch discovery with 1-30 day freshness, global 320 maximum, dynamic gap priority, four-team pilot, partial-failure reporting, and no article generation
+
+Boundaries:
+
+- No full discovery after a failed pilot, paid/search provider activation, inferred team feeds, arbitrary crawling, HTML/article/image fetching, auto-publication, media rehosting, scheduled jobs, or Highlightly changes
+- Private quality, classifier, rights, source-query, duplicate, and audit metadata remains absent from public APIs
+
+## Milestone 24 — AI Hub weekly predictions foundation
+
+Goal: provide reproducible, provider-neutral weekly NFL predictions with immutable revisions, explicit publication, and honest historical evaluation.
+
+**Status:** Complete on August 9, 2026. The additive migration is deployed; two chronological backtest samples passed sanity gates; one private Hall of Fame retrospective and three pre-kickoff published preseason POC snapshots were verified; public privacy, audit, idempotency, performance, preservation, and all regression gates passed.
+
+Deliverables:
+
+- Deterministic `baseline-v1` Elo plus historical team-stat model with strict pre-kickoff cutoffs
+- Immutable prediction revisions, private feature/availability provenance, explicit publish/lock/evaluate lifecycle, accuracy and Brier reporting
+- Dry-run-first single-game and maximum 20-game weekly generation, chronological backtest CLI, null-week retrospective support
+- Optional team-level OpenAI explanation that cannot alter numerical outputs and fails independently
+- Public list/detail/summary/performance routes, admin generation/publication/evaluation routes, cache policy, OpenAPI, tests, and `docs/ai-hub/`
+
+Boundaries:
+
+- No frontend, fantasy advice, betting/odds, injuries, depth charts, weather, scheduling, cron, queue, worker, provider call, or ML training
+- Public DTOs exclude feature snapshots, availability internals, actors, audits, provider metadata, prompts, tokens, and timing
+
+## Milestone 24.1 — AI Hub Tier 1 weekly intelligence
+
+Goal: compose honest, reproducible weekly game and team intelligence from existing published prediction snapshots without creating a second prediction source of truth.
+
+**Status:** Complete on August 9, 2026. All 16 hosted Week 1 snapshots produced deterministic Tier 1 output; two team filters, public privacy, zero-record performance, idempotence, query bounds, and quality gates passed without a database mutation.
+
+Deliverables:
+
+- Deterministic strongest, closest, upset-watch, blowout, projected-total, and confidence rankings
+- Supported offense, defense, and turnover-profile comparisons plus an optional favorite-team view
+- Same-model evaluated season and previous-week performance with honest zero/null handling
+- One bounded public endpoint, five-minute cache policy, OpenAPI, formula documentation, and regression coverage
+
+Boundaries:
+
+- No new database model, player intelligence, fantasy or betting advice, injuries, depth charts, weather, provider calls, AI calls, scheduling, cron, queues, or workers
+- Raw feature snapshots, availability internals, provider IDs, prompts, tokens, timings, actors, and audits remain private
 
 ## Milestone 13 — Controlled news-source inbox
 

@@ -31,6 +31,9 @@ export function createEditorialAiRouters(options: {
     sources = Router();
   for (const router of [candidates, articles, editorial, sources]) router.use(options.authenticate);
   candidates.post('/generate-drafts', requireEditorial, controller.generateBatch);
+  candidates.post('/evaluate-batch', requireEditorial, controller.evaluateBatch);
+  candidates.post('/:candidateId/evaluate', requireEditorial, controller.evaluateCandidate);
+  candidates.post('/:candidateId/quality-override', requireEditorial, controller.overrideQuality);
   candidates.post('/:candidateId/generate-draft', requireEditorial, controller.generateDraft);
   articles.post('/:articleId/editorial-review', requireEditorial, controller.review);
   articles.post('/:articleId/regenerate', requireEditorial, controller.regenerate);
@@ -41,6 +44,11 @@ export function createEditorialAiRouters(options: {
     controller.attachMedia,
   );
   editorial.get('/coverage', requireView, controller.coverage);
+  editorial.post(
+    '/discover-launch-candidates',
+    requireEditorial,
+    controller.discoverLaunchCandidates,
+  );
   sources.get('/:sourceId/rights', requireView, controller.getRights);
   sources.put('/:sourceId/rights', requireSourceManagement, controller.updateRights);
   return { candidates, articles, editorial, sources };

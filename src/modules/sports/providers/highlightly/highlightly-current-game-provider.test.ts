@@ -60,11 +60,20 @@ describe('HighlightlyCurrentGameProvider', () => {
     expect(mapHighlightlyStatus(input)).toBe(expected);
   });
 
-  it('rejects scheduled scores and final games without both scores', () => {
+  it('treats the provider scheduled 0 - 0 placeholder as no score', () => {
     expect(
       normalizeHighlightlyCurrentGame({
         ...hallOfFameGame,
         state: { description: 'Scheduled', score: { current: '0 - 0' } },
+      }),
+    ).toMatchObject({ status: 'SCHEDULED', homeScore: null, awayScore: null, clock: null });
+  });
+
+  it('rejects non-zero scheduled scores and final games without both scores', () => {
+    expect(
+      normalizeHighlightlyCurrentGame({
+        ...hallOfFameGame,
+        state: { description: 'Scheduled', score: { current: '7 - 0' } },
       }),
     ).toBeNull();
     expect(

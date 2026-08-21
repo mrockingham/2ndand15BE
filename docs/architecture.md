@@ -2,7 +2,7 @@
 
 ## Status
 
-This document defines the backend architecture through the public Team Hub milestone. The service foundation, normalized mock/API-Sports-backed team and game catalogs, authentication lifecycle, favorite-team personalization, role-protected schedule maintenance, revisioned original/curated editorial content, manual RSS/Atom candidate workflow, local 2020-2025 nflverse player data, Stats Hub, and composed Team Hub reads are implemented.
+This document defines the backend architecture through the AI Hub weekly-predictions foundation. The service foundation, normalized team/game catalogs, authentication lifecycle, favorite-team personalization, schedule maintenance, editorial content and candidate workflows, local 2020-2025 nflverse player data, Stats Hub, Team Hub, and deterministic versioned game predictions are implemented.
 
 ## System context
 
@@ -239,53 +239,61 @@ The team stat-leader path injects its internal path `teamId` into the existing S
 
 All initial routes are under `/api/v1`.
 
-| Method | Path                                   | Authentication        | Purpose                                                     |
-| ------ | -------------------------------------- | --------------------- | ----------------------------------------------------------- |
-| GET    | `/health`                              | None                  | Process health; dependency readiness can be separate later  |
-| POST   | `/auth/register`                       | None                  | Create a user and return authentication result              |
-| POST   | `/auth/login`                          | None                  | Authenticate credentials and return authentication result   |
-| POST   | `/auth/refresh`                        | Refresh token         | Rotate a refresh token and issue a new access token         |
-| POST   | `/auth/logout`                         | Refresh token/session | Revoke the current refresh session                          |
-| POST   | `/auth/forgot-password`                | None                  | Return a generic reset-request response                     |
-| POST   | `/auth/reset-password`                 | Reset token in body   | Replace the password and revoke all sessions                |
-| GET    | `/users/me`                            | Access token          | Return the authenticated active user                        |
-| PATCH  | `/users/me/favorite-team`              | Access token          | Set, replace, or optionally clear the favorite team         |
-| GET    | `/teams`                               | None                  | Return active normalized teams                              |
-| GET    | `/teams/:teamId`                       | None                  | Return one normalized team                                  |
-| GET    | `/teams/:teamId/hub`                   | None                  | Return compact schedule/news/historical Team Hub data       |
-| GET    | `/teams/:teamId/roster`                | None                  | Return a historical weekly-roster-derived player page       |
-| GET    | `/teams/:teamId/stat-leaders`          | None                  | Return the exact Stats Hub team-split leaderboard           |
-| GET    | `/games`                               | None                  | Return a bounded, filterable page of normalized games       |
-| GET    | `/games/:gameId`                       | None                  | Return one normalized game                                  |
-| GET    | `/teams/:teamId/games`                 | None                  | Return games involving one active team                      |
-| GET    | `/players`                             | None                  | Return a bounded normalized player page                     |
-| GET    | `/players/:playerId`                   | None                  | Return one player by internal UUID                          |
-| GET    | `/players/:playerId/stats`             | None                  | Return bounded weekly performances                          |
-| GET    | `/players/:playerId/seasons`           | None                  | Return bounded-by-domain derived season summaries           |
-| GET    | `/stats/metadata`                      | None                  | Return Stats Hub capabilities and imported coverage         |
-| GET    | `/stats/leaders`                       | None                  | Return a deterministic player-season leaderboard            |
-| GET    | `/stats/weekly-leaders`                | None                  | Return a deterministic weekly performance leaderboard       |
-| GET    | `/stats/recent`                        | None                  | Return one player’s bounded recent performances             |
-| GET    | `/articles`                            | None                  | Return visible article summaries                            |
-| GET    | `/articles/featured`                   | None                  | Return active featured articles                             |
-| GET    | `/articles/:slug`                      | None                  | Return one visible article with Markdown                    |
-| GET    | `/teams/:teamId/articles`              | None                  | Return visible articles tagged to a team                    |
-| GET    | `/admin/articles`                      | Editor/Admin          | View drafts and editorial article summaries                 |
-| POST   | `/admin/articles`                      | Editor/Admin          | Create a draft and initial revision                         |
-| PATCH  | `/admin/articles/:articleId`           | Editor/Admin          | Versioned article edit                                      |
-| PUT    | `/admin/articles/:articleId/teams`     | Editor/Admin          | Replace active internal-team tags                           |
-| POST   | `/admin/articles/:articleId/*`         | Editor/Admin          | Publish, unpublish, or schedule content                     |
-| POST   | `/admin/articles/:articleId/archive`   | Admin                 | Archive content                                             |
-| POST   | `/admin/articles/:articleId/restore`   | Admin                 | Restore archived content as unpublished                     |
-| GET    | `/admin/articles/:articleId/revisions` | Editor/Admin          | Read immutable article revisions                            |
-| GET    | `/admin/games`                         | Editor/Admin          | View games with internal provenance and overrides           |
-| POST   | `/admin/games`                         | Editor/Admin          | Create a manually owned game                                |
-| PATCH  | `/admin/games/:gameId`                 | Editor/Admin          | Edit a manually owned base game                             |
-| PUT    | `/admin/games/:gameId/override`        | Editor/Admin          | Create or partially update an editorial override            |
-| DELETE | `/admin/games/:gameId/override`        | Admin                 | Remove an editorial override                                |
-| PUT    | `/admin/games/:gameId/verification`    | Editor/Admin          | Record factual verification                                 |
-| POST   | `/admin/schedule-imports`              | Editor/Admin          | Validate or import bounded schedule rows                    |
-| GET    | `/admin/audit-events`                  | Editor/Admin          | Read game-scoped (editor) or complete (admin) audit history |
+| Method | Path                                       | Authentication        | Purpose                                                     |
+| ------ | ------------------------------------------ | --------------------- | ----------------------------------------------------------- |
+| GET    | `/health`                                  | None                  | Process health; dependency readiness can be separate later  |
+| POST   | `/auth/register`                           | None                  | Create a user and return authentication result              |
+| POST   | `/auth/login`                              | None                  | Authenticate credentials and return authentication result   |
+| POST   | `/auth/refresh`                            | Refresh token         | Rotate a refresh token and issue a new access token         |
+| POST   | `/auth/logout`                             | Refresh token/session | Revoke the current refresh session                          |
+| POST   | `/auth/forgot-password`                    | None                  | Return a generic reset-request response                     |
+| POST   | `/auth/reset-password`                     | Reset token in body   | Replace the password and revoke all sessions                |
+| GET    | `/users/me`                                | Access token          | Return the authenticated active user                        |
+| PATCH  | `/users/me/favorite-team`                  | Access token          | Set, replace, or optionally clear the favorite team         |
+| GET    | `/teams`                                   | None                  | Return active normalized teams                              |
+| GET    | `/teams/:teamId`                           | None                  | Return one normalized team                                  |
+| GET    | `/teams/:teamId/hub`                       | None                  | Return compact schedule/news/historical Team Hub data       |
+| GET    | `/teams/:teamId/roster`                    | None                  | Return a historical weekly-roster-derived player page       |
+| GET    | `/teams/:teamId/stat-leaders`              | None                  | Return the exact Stats Hub team-split leaderboard           |
+| GET    | `/games`                                   | None                  | Return a bounded, filterable page of normalized games       |
+| GET    | `/games/:gameId`                           | None                  | Return one normalized game                                  |
+| GET    | `/teams/:teamId/games`                     | None                  | Return games involving one active team                      |
+| GET    | `/players`                                 | None                  | Return a bounded normalized player page                     |
+| GET    | `/players/:playerId`                       | None                  | Return one player by internal UUID                          |
+| GET    | `/players/:playerId/stats`                 | None                  | Return bounded weekly performances                          |
+| GET    | `/players/:playerId/seasons`               | None                  | Return bounded-by-domain derived season summaries           |
+| GET    | `/stats/metadata`                          | None                  | Return Stats Hub capabilities and imported coverage         |
+| GET    | `/stats/leaders`                           | None                  | Return a deterministic player-season leaderboard            |
+| GET    | `/stats/weekly-leaders`                    | None                  | Return a deterministic weekly performance leaderboard       |
+| GET    | `/stats/recent`                            | None                  | Return one player’s bounded recent performances             |
+| GET    | `/ai-hub/predictions`                      | None                  | Return latest published prediction cards                    |
+| GET    | `/ai-hub/predictions/:gameId`              | None                  | Return the latest published prediction for one game         |
+| GET    | `/ai-hub/summary`                          | None                  | Return a deterministic weekly prediction summary            |
+| GET    | `/ai-hub/weekly-insights`                  | None                  | Return derived Tier 1 weekly intelligence                   |
+| GET    | `/ai-hub/performance`                      | None                  | Return evaluated accuracy and Brier aggregates              |
+| POST   | `/admin/predictions/generate`              | Editor/Admin          | Dry-run or persist a bounded prediction batch               |
+| POST   | `/admin/predictions/:predictionId/publish` | Editor/Admin          | Explicitly publish a pre-kickoff prediction                 |
+| POST   | `/admin/predictions/evaluate`              | Editor/Admin          | Lock started predictions and evaluate final games           |
+| GET    | `/articles`                                | None                  | Return visible article summaries                            |
+| GET    | `/articles/featured`                       | None                  | Return active featured articles                             |
+| GET    | `/articles/:slug`                          | None                  | Return one visible article with Markdown                    |
+| GET    | `/teams/:teamId/articles`                  | None                  | Return visible articles tagged to a team                    |
+| GET    | `/admin/articles`                          | Editor/Admin          | View drafts and editorial article summaries                 |
+| POST   | `/admin/articles`                          | Editor/Admin          | Create a draft and initial revision                         |
+| PATCH  | `/admin/articles/:articleId`               | Editor/Admin          | Versioned article edit                                      |
+| PUT    | `/admin/articles/:articleId/teams`         | Editor/Admin          | Replace active internal-team tags                           |
+| POST   | `/admin/articles/:articleId/*`             | Editor/Admin          | Publish, unpublish, or schedule content                     |
+| POST   | `/admin/articles/:articleId/archive`       | Admin                 | Archive content                                             |
+| POST   | `/admin/articles/:articleId/restore`       | Admin                 | Restore archived content as unpublished                     |
+| GET    | `/admin/articles/:articleId/revisions`     | Editor/Admin          | Read immutable article revisions                            |
+| GET    | `/admin/games`                             | Editor/Admin          | View games with internal provenance and overrides           |
+| POST   | `/admin/games`                             | Editor/Admin          | Create a manually owned game                                |
+| PATCH  | `/admin/games/:gameId`                     | Editor/Admin          | Edit a manually owned base game                             |
+| PUT    | `/admin/games/:gameId/override`            | Editor/Admin          | Create or partially update an editorial override            |
+| DELETE | `/admin/games/:gameId/override`            | Admin                 | Remove an editorial override                                |
+| PUT    | `/admin/games/:gameId/verification`        | Editor/Admin          | Record factual verification                                 |
+| POST   | `/admin/schedule-imports`                  | Editor/Admin          | Validate or import bounded schedule rows                    |
+| GET    | `/admin/audit-events`                      | Editor/Admin          | Read game-scoped (editor) or complete (admin) audit history |
 
 The favorite-team endpoint accepts `favoriteTeamId: null` to clear the favorite. Every non-null value must reference an existing, active internal team.
 
@@ -403,7 +411,7 @@ Any changed default should be reflected here and in an architecture decision rec
 
 ## Game query and time behavior
 
-Game list reads are capped at 100 records and use a UUID cursor with stable start-time/ID ordering. A request without an explicit season is constrained to `CURRENT_NFL_SEASON`; an entirely unfiltered request also defaults to a 14-day upcoming UTC window. If that season has no games, the result is empty and never falls back to an older season. Explicit historical seasons remain supported. Explicit date ranges require both bounds and may not exceed 31 days. Date-only bounds are interpreted as UTC calendar-day boundaries; timestamps must include an offset. Display timezone conversion belongs to clients.
+Game list reads are capped at 100 records and use a UUID cursor with stable start-time/ID ordering. A request without an explicit season is constrained to `CURRENT_NFL_SEASON`; an entirely unfiltered home-page request defaults to a UTC window covering the previous 7 days and next 14 days so recent finals and upcoming games coexist. This includes special preseason games with `week: null` when their factual kickoff is in range; it never relabels them as Week 1. If that season has no games, the result is empty and never falls back to an older season. Explicit historical seasons remain supported. Explicit date ranges require both bounds and may not exceed 31 days. Date-only bounds are interpreted as UTC calendar-day boundaries; timestamps must include an offset. Display timezone conversion belongs to clients.
 
 ## Provider synchronization architecture
 
@@ -415,7 +423,7 @@ API-Sports teams are matched to stable internal teams by existing mapping, abbre
 
 Provider evaluation is a separate read-only boundary. Evaluators produce validated, sanitized reports with explicit verified, unavailable, and untested evidence states plus pass/warning/failure findings. Evaluation never mutates PostgreSQL or stores request credentials. Reports live under `docs/provider-evaluations/` so future providers can be assessed before adapter approval.
 
-The Highlightly evaluator is intentionally not an active general-purpose `SportsDataProvider`. Its evaluation client validates the limited external payloads it inspects, authenticates through a private header, counts requests, and applies timeouts and bounded idempotent retries. Milestone 22 reuses that transport behind a separate temporary current-game adapter and an explicit evaluation-mode configuration. Only the manual update-only command may persist a verified current-game result; it cannot create games, alter `SPORTS_PROVIDER`, or expose provider metadata through public DTOs or routes. Production mutation has a separate rights-approval guard.
+The Highlightly evaluator is intentionally not an active general-purpose `SportsDataProvider`. Its evaluation client validates the limited external payloads it inspects, authenticates through a private header, counts requests, and applies timeouts and bounded idempotent retries. Milestones 22 and 25 reuse that transport behind a separate temporary current-game adapter and explicit evaluation-mode configuration. The manual update-only command accepts one existing game or a bounded reviewed week/date scope; it cannot create games, alter `SPORTS_PROVIDER`, reconcile schedule existence, or expose provider metadata through public DTOs or routes. Mapping-first deterministic matching tolerates provider-null preseason weeks and at most 15 minutes of kickoff drift, while the internal week/kickoff/orientation/provenance remain authoritative. Completed-game team-only detail sync is independent and never enters player reconciliation. Production mutation retains a separate rights-approval guard.
 
 Current-game box scores use a separate `CurrentGameTeamStat` model rather than historical nflverse `PlayerGameStat`. The manual detail adapter validates one mapped game, normalizes directly supplied team totals and period scores, batch-checks player external IDs, and atomically upserts only the two internal game/team rows. Unresolved provider players are not persisted or published. `GET /games/:gameId/stats` remains PostgreSQL-only and provider-private; it does not participate in historical Stats Hub aggregation.
 
@@ -451,6 +459,14 @@ Generation deterministically compares source identity/headlines, resolves active
 
 `SourceRightsProfile` defaults missing sources to conservative unknown behavior. `ArticleMediaCandidate` stores external references only; attachment requires explicit embed compatibility and reviewed rights. There is no downloading, proxying, rehosting, scraping, scheduled generation, queue, worker, or automatic YouTube search. Coverage aggregates all 32 active teams with batched PostgreSQL queries and excludes rejected or obvious duplicate drafts. See `docs/editorial-ai/`.
 
+## AI Hub prediction architecture
+
+`GamePrediction` stores immutable `(game, modelVersion, revision)` snapshots. `baseline-v1` deterministically combines chronological Elo, recent normalized team-stat aggregates, and home/neutral context. Live generation requires a factual kickoff; imported historical rows without timestamps use a conservative season-type/week cutoff that excludes the target week. Regeneration creates a revision, publication is explicit, kickoff locking is monotonic, and final evaluation appends outcome fields without changing the original probability.
+
+The optional `PredictionExplainer` receives only fixed team-level outputs and deterministic factors. It cannot produce numerical predictions, gets at most one remediation attempt, and is discarded independently on invalid or unsupported prose. Public reads return only latest published non-retrospective snapshots and safe coverage labels; feature snapshots, availability internals, actors, audits, prompts, provider/model usage, tokens, and timings remain private. Generation is manual and PostgreSQL-backed; no provider call, scheduler, queue, worker, or public-time AI call exists. See `docs/ai-hub/`.
+
+Tier 1 weekly intelligence is derived at request time from those immutable public-eligible snapshots. One exact-week query supplies latest revisions and one season-bounded query supplies evaluated performance. Pure deterministic functions rank confidence, closeness, projected totals and blowout signals, and calculate supported team-level offense, defense, and turnover-profile edges. No intelligence table, player projection, provider call, or AI call is introduced.
+
 ## Deferred architecture
 
-The game fixture is development-only and is not official current NFL information. A CMS frontend, autonomous ingestion/scraping, automatic publication, hosted media, automatic media search, live polling, WebSockets, play-by-play, drives, standings, injuries, odds, predictions, fantasy, notifications, distributed caches, and queues remain deferred. These features need their own requirements around latency, licensing, provenance, corrections, cost, and historical auditability.
+The game fixture is development-only and is not official current NFL information. A CMS frontend, autonomous ingestion/scraping, automatic publication, hosted media, automatic media search, live polling, WebSockets, play-by-play, drives, standings, injuries, odds, fantasy, notifications, distributed caches, and queues remain deferred. These features need their own requirements around latency, licensing, provenance, corrections, cost, and historical auditability.

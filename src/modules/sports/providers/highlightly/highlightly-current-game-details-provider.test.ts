@@ -78,6 +78,14 @@ describe('normalizeHighlightlyCurrentGameDetails', () => {
       'Box-score teams',
     );
   });
+
+  it('normalizes team details without a player box score in team-only mode', () => {
+    expect(normalizeHighlightlyCurrentGameDetails(detail(), [], '565788', false)).toMatchObject({
+      providerGameId: '565788',
+      playerStats: [],
+      homeTeamStats: { totalYards: 425 },
+    });
+  });
 });
 
 describe('normalizeHighlightlyPlayerProfile', () => {

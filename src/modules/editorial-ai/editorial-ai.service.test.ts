@@ -291,6 +291,14 @@ describe('EditorialAiService', () => {
       candidateCount: 4,
       recentPublishedCount: 1,
       videoArticleCount: 0,
+      eligibleCandidateCount: 0,
+      fullDraftEligibleCount: 0,
+      shortBriefEligibleCount: 0,
+      linkOnlyCount: 0,
+      rejectedCount: 0,
+      uniqueSourceCount: 0,
+      categoryCounts: {},
+      qualityAverage: null,
     }));
     const result = await new EditorialAiService(
       repository({

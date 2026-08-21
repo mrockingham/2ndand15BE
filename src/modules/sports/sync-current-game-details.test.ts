@@ -171,6 +171,24 @@ describe('CurrentGameDetailsSyncService', () => {
     expect(test.applyStats.mock.calls[0]?.[0].rows).toHaveLength(2);
   });
 
+  it('supports team-stat-only enrichment without reading or writing player data', async () => {
+    const test = harness();
+    await expect(
+      test.service.sync({
+        gameId,
+        providerGameId: '565788',
+        includePlayerStats: false,
+        apply: true,
+        policy,
+      }),
+    ).resolves.toMatchObject({
+      teamStats: { created: 2 },
+      playerStats: { received: 0, persisted: 0, reason: null },
+    });
+    expect(test.getGameDetails).toHaveBeenCalledWith('565788', { includePlayerStats: false });
+    expect(test.findPlayerMappings).not.toHaveBeenCalled();
+  });
+
   it('rejects provider orientation mismatches without writing', async () => {
     const test = harness();
     test.getGameDetails.mockResolvedValueOnce({

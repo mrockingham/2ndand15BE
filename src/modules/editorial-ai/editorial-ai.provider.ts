@@ -72,6 +72,7 @@ export interface EditorialSourceMaterial {
     readonly textUsage: 'SUMMARY_ALLOWED' | 'LINK_ONLY' | 'UNKNOWN';
     readonly quotationPolicy: 'SHORT_QUOTES_ONLY' | 'UNKNOWN';
   };
+  readonly contentMode: 'FULL_DRAFT' | 'SHORT_BRIEF';
 }
 
 export interface EditorialAiUsage {
@@ -240,6 +241,7 @@ function editorialSystemPrompt(): string {
     'If the source is thin or rights are LINK_ONLY/UNKNOWN, write a short brief, lower confidence, and add THIN_SOURCE or UNSOURCED_CLAIM as appropriate.',
     'When description is null, treat the headline as the complete factual record: do not expand initials or abbreviations and do not add a role, team membership, amount interpretation, mechanism, venue, timing, quotation, reaction, attribution detail, or surrounding circumstance that is not literally present in the supplied metadata.',
     'A thin-source brief may explicitly say that no further verified details were supplied; repetition is safer than filling gaps.',
+    'When contentMode is SHORT_BRIEF, write approximately 40-120 words with no filler. When contentMode is FULL_DRAFT, aim for 250-600 words only when the supplied material supports it; never pad to reach a minimum.',
     'Team values must be NFL names or abbreviations. Player entries are suggestions only.',
     'Return only the requested JSON schema.',
   ].join(' ');

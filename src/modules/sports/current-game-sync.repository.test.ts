@@ -65,6 +65,32 @@ function harness(mappingError?: Error) {
 }
 
 describe('PrismaCurrentGameSyncRepository', () => {
+  it('selects only reviewed internal games inside the bounded week scope', async () => {
+    const findMany = vi.fn().mockResolvedValue([
+      {
+        ...input.game,
+        homeTeam: { abbreviation: 'ARI', providerMaps: [{ providerTeamId: '7' }] },
+        awayTeam: { abbreviation: 'CAR', providerMaps: [{ providerTeamId: '29' }] },
+        providerMaps: [],
+      },
+    ]);
+    const repository = new PrismaCurrentGameSyncRepository({
+      game: { findMany },
+    } as unknown as PrismaClient);
+    await expect(
+      repository.findReviewedGames({ season: 2026, seasonType: 'PRE', week: 1 }, 'highlightly'),
+    ).resolves.toMatchObject([{ week: null, providerMapping: null }]);
+    const query = findMany.mock.calls[0]?.[0] as { readonly where: unknown } | undefined;
+    expect(query?.where).toMatchObject({
+      season: 2026,
+      seasonType: 'PRE',
+      week: 1,
+      provenance: {
+        is: { sourceType: { in: ['OFFICIAL_WEB', 'MANUAL_IMPORT', 'MANUAL_ENTRY'] } },
+      },
+    });
+  });
+
   it('updates only the existing game, creates its mapping, and writes a private audit atomically', async () => {
     const test = harness();
     await expect(test.repository.applyCurrentGame(input)).resolves.toBeUndefined();

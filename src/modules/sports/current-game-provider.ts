@@ -14,6 +14,7 @@ export interface CurrentGameBatch {
   readonly failures: readonly ProviderRecordFailure[];
   readonly requestsUsed: number;
   readonly responseDurationMs: number;
+  readonly normalizationDurationMs?: number;
 }
 
 export interface CurrentGameProvider {

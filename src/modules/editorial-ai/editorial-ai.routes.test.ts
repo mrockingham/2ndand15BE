@@ -17,6 +17,15 @@ function service(): EditorialAiServiceContract {
       reviewStatus: 'NEEDS_REVIEW',
     }),
     generateBatch: vi.fn().mockResolvedValue({ requested: 1, generated: 1 }),
+    evaluateCandidate: vi
+      .fn()
+      .mockResolvedValue({ candidateId: 'candidate', decision: 'NFL_RELEVANT_LINK_ONLY' }),
+    evaluateCandidates: vi.fn().mockResolvedValue({ requested: 1, evaluated: 1 }),
+    evaluateAllCandidates: vi.fn().mockResolvedValue({ requested: 1, evaluated: 1 }),
+    overrideCandidateQuality: vi
+      .fn()
+      .mockResolvedValue({ candidateId: 'candidate', decision: 'NFL_RELEVANT_SHORT_BRIEF' }),
+    discoverLaunchCandidates: vi.fn().mockResolvedValue({ mode: 'PILOT', teamsAttempted: [] }),
     regenerateDraft: vi.fn().mockResolvedValue({
       article: { id: 'a', slug: 'draft', version: 2, status: 'DRAFT' },
       reviewStatus: 'NEEDS_REVIEW',
@@ -119,6 +128,45 @@ describe('editorial AI admin routes', () => {
     await request(app(service()))
       .get('/api/v1/admin/editorial/coverage?target=100')
       .set('authorization', 'Bearer editor')
+      .expect(400);
+  });
+
+  it('evaluates candidates and validates bounded quality overrides', async () => {
+    const editorial = service();
+    await request(app(editorial))
+      .post(`/api/v1/admin/news-candidates/${candidateId}/evaluate`)
+      .set('authorization', 'Bearer editor')
+      .send({})
+      .expect(200);
+    await request(app(editorial))
+      .post('/api/v1/admin/news-candidates/evaluate-batch')
+      .set('authorization', 'Bearer editor')
+      .send({ candidateIds: [] })
+      .expect(400);
+    await request(app(editorial))
+      .post(`/api/v1/admin/news-candidates/${candidateId}/quality-override`)
+      .set('authorization', 'Bearer editor')
+      .send({
+        relevance: 'NFL',
+        sufficiency: 'SHORT_BRIEF_ELIGIBLE',
+        reason: 'Editor verified the NFL connection.',
+      })
+      .expect(200);
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    expect(editorial.evaluateCandidate).toHaveBeenCalledOnce();
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    expect(editorial.overrideCandidateQuality).toHaveBeenCalledOnce();
+  });
+
+  it('validates launch discovery bounds and remains admin-only', async () => {
+    await request(app(service()))
+      .post('/api/v1/admin/editorial/discover-launch-candidates')
+      .send({ pilot: true })
+      .expect(401);
+    await request(app(service()))
+      .post('/api/v1/admin/editorial/discover-launch-candidates')
+      .set('authorization', 'Bearer editor')
+      .send({ targetPerTeam: 10, freshnessDays: 14, maxNewCandidates: 321, pilot: true })
       .expect(400);
   });
 });

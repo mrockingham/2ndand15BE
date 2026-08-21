@@ -141,6 +141,14 @@ export interface EditorialCoverageRow {
   readonly candidateCount: number;
   readonly recentPublishedCount: number;
   readonly videoArticleCount: number;
+  readonly eligibleCandidateCount: number;
+  readonly fullDraftEligibleCount: number;
+  readonly shortBriefEligibleCount: number;
+  readonly linkOnlyCount: number;
+  readonly rejectedCount: number;
+  readonly uniqueSourceCount: number;
+  readonly categoryCounts: Readonly<Record<string, number>>;
+  readonly qualityAverage: number | null;
 }
 
 export interface EditorialAiRepository {
@@ -477,66 +485,84 @@ export class PrismaEditorialAiRepository implements EditorialAiRepository {
   }
 
   async listCoverage(now: Date, recentSince: Date): Promise<readonly EditorialCoverageRow[]> {
-    const [teams, published, recent, drafts, candidates, videoRows] = await Promise.all([
-      this.listTeams(),
-      this.prisma.articleTeam.groupBy({
-        by: ['teamId'],
-        where: {
-          article: {
-            OR: [
-              { status: 'PUBLISHED', publishedAt: { lte: now } },
-              { status: 'SCHEDULED', scheduledFor: { lte: now } },
-            ],
+    const [teams, published, recent, drafts, candidates, videoRows, qualityRows, categoryRows] =
+      await Promise.all([
+        this.listTeams(),
+        this.prisma.articleTeam.groupBy({
+          by: ['teamId'],
+          where: {
+            article: {
+              OR: [
+                { status: 'PUBLISHED', publishedAt: { lte: now } },
+                { status: 'SCHEDULED', scheduledFor: { lte: now } },
+              ],
+            },
           },
-        },
-        _count: { _all: true },
-      }),
-      this.prisma.articleTeam.groupBy({
-        by: ['teamId'],
-        where: {
-          article: {
-            OR: [
-              { status: 'PUBLISHED', publishedAt: { gte: recentSince, lte: now } },
-              { status: 'SCHEDULED', scheduledFor: { gte: recentSince, lte: now } },
-            ],
+          _count: { _all: true },
+        }),
+        this.prisma.articleTeam.groupBy({
+          by: ['teamId'],
+          where: {
+            article: {
+              OR: [
+                { status: 'PUBLISHED', publishedAt: { gte: recentSince, lte: now } },
+                { status: 'SCHEDULED', scheduledFor: { gte: recentSince, lte: now } },
+              ],
+            },
           },
-        },
-        _count: { _all: true },
-      }),
-      this.prisma.articleTeam.groupBy({
-        by: ['teamId'],
-        where: {
-          article: {
-            status: 'DRAFT',
-            aiMetadata: {
-              is: {
-                reviewStatus: { not: 'REJECTED' },
-                overlapStatus: { notIn: ['LIKELY_DUPLICATE', 'DUPLICATE'] },
+          _count: { _all: true },
+        }),
+        this.prisma.articleTeam.groupBy({
+          by: ['teamId'],
+          where: {
+            article: {
+              status: 'DRAFT',
+              aiMetadata: {
+                is: {
+                  reviewStatus: { not: 'REJECTED' },
+                  overlapStatus: { notIn: ['LIKELY_DUPLICATE', 'DUPLICATE'] },
+                },
               },
             },
           },
-        },
-        _count: { _all: true },
-      }),
-      this.prisma.newsCandidateTeam.groupBy({
-        by: ['teamId'],
-        where: { candidate: { status: { in: ['NEW', 'REVIEWING', 'SAVED'] } } },
-        _count: { _all: true },
-      }),
-      this.prisma.articleMediaCandidate.findMany({
-        where: {
-          status: 'ATTACHED',
-          type: { in: ['YOUTUBE', 'VIDEO_EMBED'] },
-          article: {
-            OR: [
-              { status: 'PUBLISHED', publishedAt: { lte: now } },
-              { status: 'SCHEDULED', scheduledFor: { lte: now } },
-            ],
+          _count: { _all: true },
+        }),
+        this.prisma.newsCandidateTeam.groupBy({
+          by: ['teamId'],
+          where: { candidate: { status: { in: ['NEW', 'REVIEWING', 'SAVED'] } } },
+          _count: { _all: true },
+        }),
+        this.prisma.articleMediaCandidate.findMany({
+          where: {
+            status: 'ATTACHED',
+            type: { in: ['YOUTUBE', 'VIDEO_EMBED'] },
+            article: {
+              OR: [
+                { status: 'PUBLISHED', publishedAt: { lte: now } },
+                { status: 'SCHEDULED', scheduledFor: { lte: now } },
+              ],
+            },
           },
-        },
-        select: { articleId: true, article: { select: { teams: { select: { teamId: true } } } } },
-      }),
-    ]);
+          select: { articleId: true, article: { select: { teams: { select: { teamId: true } } } } },
+        }),
+        this.prisma.newsCandidate.findMany({
+          where: { qualityEvaluation: { isNot: null } },
+          select: {
+            sourceId: true,
+            suggestedTeams: { select: { teamId: true } },
+            qualityEvaluation: {
+              select: { decision: true, sufficiency: true, qualityScore: true },
+            },
+          },
+        }),
+        this.prisma.article.findMany({
+          where: { aiMetadata: { isNot: null } },
+          select: {
+            teams: { select: { teamId: true } },
+            aiMetadata: { select: { category: true } },
+          },
+        }),
+      ]);
     const map = (rows: readonly { teamId: string; _count: { _all: number } }[]) =>
       new Map(rows.map((row) => [row.teamId, row._count._all]));
     const video = new Map<string, Set<string>>();
@@ -550,6 +576,55 @@ export class PrismaEditorialAiRepository implements EditorialAiRepository {
       r = map(recent),
       d = map(drafts),
       c = map(candidates);
+    const quality = new Map<
+      string,
+      {
+        eligible: number;
+        full: number;
+        brief: number;
+        link: number;
+        rejected: number;
+        scoreTotal: number;
+        scoreCount: number;
+        sources: Set<string>;
+      }
+    >();
+    for (const row of qualityRows) {
+      if (row.qualityEvaluation === null) continue;
+      for (const { teamId } of row.suggestedTeams) {
+        const value = quality.get(teamId) ?? {
+          eligible: 0,
+          full: 0,
+          brief: 0,
+          link: 0,
+          rejected: 0,
+          scoreTotal: 0,
+          scoreCount: 0,
+          sources: new Set<string>(),
+        };
+        const decision = row.qualityEvaluation.decision;
+        if (decision === 'NFL_RELEVANT_FULL_DRAFT' || decision === 'NFL_RELEVANT_SHORT_BRIEF')
+          value.eligible++;
+        if (row.qualityEvaluation.sufficiency === 'FULL_DRAFT_ELIGIBLE') value.full++;
+        if (row.qualityEvaluation.sufficiency === 'SHORT_BRIEF_ELIGIBLE') value.brief++;
+        if (row.qualityEvaluation.sufficiency === 'LINK_ONLY') value.link++;
+        if (decision.startsWith('REJECT_')) value.rejected++;
+        value.scoreTotal += row.qualityEvaluation.qualityScore;
+        value.scoreCount++;
+        if (row.sourceId !== null) value.sources.add(row.sourceId);
+        quality.set(teamId, value);
+      }
+    }
+    const categories = new Map<string, Record<string, number>>();
+    for (const row of categoryRows) {
+      const category = row.aiMetadata?.category;
+      if (category === undefined) continue;
+      for (const { teamId } of row.teams) {
+        const value = categories.get(teamId) ?? {};
+        value[category] = (value[category] ?? 0) + 1;
+        categories.set(teamId, value);
+      }
+    }
     return teams.map((team) => ({
       id: team.id,
       abbreviation: team.abbreviation,
@@ -558,6 +633,21 @@ export class PrismaEditorialAiRepository implements EditorialAiRepository {
       candidateCount: c.get(team.id) ?? 0,
       recentPublishedCount: r.get(team.id) ?? 0,
       videoArticleCount: video.get(team.id)?.size ?? 0,
+      eligibleCandidateCount: quality.get(team.id)?.eligible ?? 0,
+      fullDraftEligibleCount: quality.get(team.id)?.full ?? 0,
+      shortBriefEligibleCount: quality.get(team.id)?.brief ?? 0,
+      linkOnlyCount: quality.get(team.id)?.link ?? 0,
+      rejectedCount: quality.get(team.id)?.rejected ?? 0,
+      uniqueSourceCount: quality.get(team.id)?.sources.size ?? 0,
+      categoryCounts: categories.get(team.id) ?? {},
+      qualityAverage:
+        (quality.get(team.id)?.scoreCount ?? 0) === 0
+          ? null
+          : Number(
+              (
+                (quality.get(team.id)?.scoreTotal ?? 0) / (quality.get(team.id)?.scoreCount ?? 1)
+              ).toFixed(2),
+            ),
     }));
   }
 

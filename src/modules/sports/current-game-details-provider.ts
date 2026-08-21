@@ -110,9 +110,13 @@ export interface CurrentGameDetailsBatch {
   readonly failures: readonly ProviderRecordFailure[];
   readonly requestsUsed: number;
   readonly responseDurationMs: number;
+  readonly normalizationDurationMs?: number;
 }
 
 export interface CurrentGameDetailsProvider {
   readonly providerKey: string;
-  getGameDetails(providerGameId: string): Promise<CurrentGameDetailsBatch>;
+  getGameDetails(
+    providerGameId: string,
+    options?: { readonly includePlayerStats?: boolean },
+  ): Promise<CurrentGameDetailsBatch>;
 }

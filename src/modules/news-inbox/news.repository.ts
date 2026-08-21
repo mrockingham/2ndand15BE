@@ -242,6 +242,18 @@ export class PrismaNewsInboxRepository implements NewsInboxRepository {
           ...(input.allowsDescriptionUse === undefined
             ? {}
             : { allowsDescriptionUse: input.allowsDescriptionUse }),
+          ...(input.reliabilityWeight === undefined
+            ? {}
+            : { reliabilityWeight: input.reliabilityWeight }),
+          ...(input.metadataRichnessWeight === undefined
+            ? {}
+            : { metadataRichnessWeight: input.metadataRichnessWeight }),
+          ...(input.teamSpecificityWeight === undefined
+            ? {}
+            : { teamSpecificityWeight: input.teamSpecificityWeight }),
+          ...(input.editorialUsefulnessWeight === undefined
+            ? {}
+            : { editorialUsefulnessWeight: input.editorialUsefulnessWeight }),
           ...(input.notes === undefined ? {} : { notes: input.notes }),
           updatedById: actor.userId,
           updatedBySnapshot: actor.email,

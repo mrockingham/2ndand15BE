@@ -3,10 +3,11 @@ import type {
   CurrentGameRecord,
   CurrentGameStateWrite,
   CurrentGameSyncRepository,
+  CurrentGameWindowScope,
 } from './current-game-sync.repository.js';
 import type { NormalizedGame } from './normalized-game.js';
 
-const MATCH_TOLERANCE_MS = 12 * 60 * 60 * 1_000;
+export const MATCH_TOLERANCE_MS = 15 * 60 * 1_000;
 
 export type CurrentGameOutcome =
   'WOULD_UPDATE' | 'UPDATED' | 'UNCHANGED' | 'UNMATCHED' | 'AMBIGUOUS' | 'FAILED';
@@ -19,6 +20,7 @@ export interface CurrentGameFieldChange {
 
 export interface CurrentGameSyncItem {
   readonly internalGameId: string;
+  readonly internalSnapshot: CurrentGameInternalSnapshot;
   readonly providerGameId: string | null;
   readonly outcome: CurrentGameOutcome;
   readonly matchMethod: 'PROVIDER_MAPPING' | 'SCHEDULE' | null;
@@ -26,6 +28,17 @@ export interface CurrentGameSyncItem {
   readonly mappingChange: 'CREATE' | 'NONE';
   readonly reason: string | null;
   readonly providerSnapshot: CurrentGameProviderSnapshot | null;
+}
+
+export interface CurrentGameInternalSnapshot {
+  readonly season: number;
+  readonly seasonType: CurrentGameRecord['seasonType'];
+  readonly week: number | null;
+  readonly startTime: string | null;
+  readonly status: CurrentGameRecord['status'];
+  readonly homeAbbreviation: string;
+  readonly awayAbbreviation: string;
+  readonly providerMappingPresent: boolean;
 }
 
 export interface CurrentGameProviderSnapshot {
@@ -49,22 +62,27 @@ export interface CurrentGameSyncReport {
   readonly provider: string;
   readonly usageMode: 'evaluation' | 'approved';
   readonly dryRun: boolean;
+  readonly internalReviewed: number;
   readonly providerRecordsReceived: number;
   readonly fetched: number;
   readonly matched: number;
   readonly updated: number;
   readonly unchanged: number;
   readonly unmatched: number;
+  readonly providerMissing: number;
+  readonly providerOnlyUnmatched: number;
   readonly ambiguous: number;
   readonly failed: number;
   readonly requestsUsed: number;
   readonly performance: {
     readonly providerResponseMs: number;
+    readonly normalizationMs: number;
     readonly matchingMs: number;
     readonly databaseMs: number;
     readonly totalMs: number;
   };
   readonly results: readonly CurrentGameSyncItem[];
+  readonly providerOnly: readonly CurrentGameProviderSnapshot[];
 }
 
 export interface CurrentGameExecutionPolicy {
@@ -75,6 +93,11 @@ export interface CurrentGameExecutionPolicy {
 
 export interface SyncCurrentGameOptions {
   readonly gameId: string;
+  readonly apply: boolean;
+  readonly policy: CurrentGameExecutionPolicy;
+}
+
+export interface SyncCurrentGameWindowOptions extends CurrentGameWindowScope {
   readonly apply: boolean;
   readonly policy: CurrentGameExecutionPolicy;
 }
@@ -134,16 +157,16 @@ export class CurrentGameSyncService {
     if (match.kind === 'unmatched') {
       item =
         batch.failures.length === 0
-          ? resultItem(game.id, 'UNMATCHED', match.reason)
+          ? resultItem(game, 'UNMATCHED', match.reason)
           : resultItem(
-              game.id,
+              game,
               'FAILED',
               `Provider records in the matching window failed normalization (${String(batch.failures.length)}).`,
             );
     } else if (match.kind === 'ambiguous') {
-      item = resultItem(game.id, 'AMBIGUOUS', 'Multiple provider games matched safely.');
+      item = resultItem(game, 'AMBIGUOUS', 'Multiple provider games matched safely.');
     } else if (match.kind === 'failed') {
-      item = resultItem(game.id, 'FAILED', match.reason, match.providerGameId);
+      item = resultItem(game, 'FAILED', match.reason, match.providerGameId);
     } else {
       const mappedLookupStarted = performance.now();
       const mappedGameId = await this.repository.findMappedGameId(
@@ -153,7 +176,7 @@ export class CurrentGameSyncService {
       databaseMs += performance.now() - mappedLookupStarted;
       if (mappedGameId !== null && mappedGameId !== game.id) {
         item = resultItem(
-          game.id,
+          game,
           'FAILED',
           'The provider game ID is already mapped to a different internal game.',
           match.game.providerGameId,
@@ -178,6 +201,113 @@ export class CurrentGameSyncService {
       dryRun: !options.apply,
       batch,
       item,
+      providerOnly: [],
+      matchingMs: Math.round(matchingMs),
+      databaseMs: Math.round(databaseMs),
+      totalMs: Math.round(performance.now() - totalStarted),
+    });
+  }
+
+  async syncWindow(options: SyncCurrentGameWindowOptions): Promise<CurrentGameSyncReport> {
+    const totalStarted = performance.now();
+    assertCurrentGameMutationAllowed(this.provider.providerKey, options.apply, options.policy);
+    assertBoundedWindow(options);
+    if (this.repository.findReviewedGames === undefined) {
+      throw new CurrentGameSyncError(
+        'WINDOW_SYNC_UNSUPPORTED',
+        'The repository does not support window synchronization.',
+      );
+    }
+    const usageMode = options.policy.publicationApproved ? 'approved' : 'evaluation';
+    const databaseStarted = performance.now();
+    const games = await this.repository.findReviewedGames(options, this.provider.providerKey);
+    let databaseMs = performance.now() - databaseStarted;
+    if (games.length === 0) {
+      throw new CurrentGameSyncError(
+        'NO_REVIEWED_GAMES',
+        'No reviewed internal games matched the requested scope.',
+      );
+    }
+    if (games.some((game) => game.startTime === null)) {
+      throw new CurrentGameSyncError(
+        'GAME_KICKOFF_REQUIRED',
+        'Every game in a current-game window requires a reviewed kickoff.',
+      );
+    }
+    const kickoffs = games.map((game) => game.startTime?.getTime() ?? 0);
+    const batch = await this.provider.getCurrentGames({
+      season: options.season,
+      startTime: options.startTime ?? new Date(Math.min(...kickoffs) - MATCH_TOLERANCE_MS),
+      endTime: options.endTime ?? new Date(Math.max(...kickoffs) + MATCH_TOLERANCE_MS),
+    });
+    if (batch.provider !== this.provider.providerKey) {
+      throw new CurrentGameSyncError(
+        'PROVIDER_BATCH_MISMATCH',
+        'Current-game provider returned an inconsistent provider key.',
+      );
+    }
+
+    const matchingStarted = performance.now();
+    const results: CurrentGameSyncItem[] = [];
+    const consumedProviderIds = new Set<string>();
+    const mappedLookupStarted = performance.now();
+    const mappedOwners = await this.repository.findMappedGameOwners(
+      this.provider.providerKey,
+      batch.records.map((record) => record.providerGameId),
+    );
+    databaseMs += performance.now() - mappedLookupStarted;
+    for (const game of games) {
+      const match = matchCurrentGame(game, batch.records);
+      if (match.kind === 'unmatched') {
+        results.push(
+          resultItem(game, 'UNMATCHED', 'Provider omitted this reviewed internal game.'),
+        );
+        continue;
+      }
+      if (match.kind === 'ambiguous') {
+        results.push(resultItem(game, 'AMBIGUOUS', 'Multiple provider games matched safely.'));
+        continue;
+      }
+      if (match.kind === 'failed') {
+        results.push(resultItem(game, 'FAILED', match.reason, match.providerGameId));
+        continue;
+      }
+      consumedProviderIds.add(match.game.providerGameId);
+      const mappedGameId = mappedOwners.get(match.game.providerGameId) ?? null;
+      if (mappedGameId !== null && mappedGameId !== game.id) {
+        results.push(
+          resultItem(
+            game,
+            'FAILED',
+            'The provider game ID is already mapped to a different internal game.',
+            match.game.providerGameId,
+          ),
+        );
+        continue;
+      }
+      results.push(
+        await this.planAndMaybeApply(
+          game,
+          match.game,
+          match.method,
+          usageMode,
+          options,
+          (duration) => {
+            databaseMs += duration;
+          },
+        ),
+      );
+    }
+    const matchingMs = performance.now() - matchingStarted;
+    return buildMultiReport({
+      provider: this.provider.providerKey,
+      usageMode,
+      dryRun: !options.apply,
+      batch,
+      results,
+      providerOnly: batch.records
+        .filter((game) => !consumedProviderIds.has(game.providerGameId))
+        .map(toProviderSnapshot),
       matchingMs: Math.round(matchingMs),
       databaseMs: Math.round(databaseMs),
       totalMs: Math.round(performance.now() - totalStarted),
@@ -189,12 +319,12 @@ export class CurrentGameSyncService {
     providerGame: NormalizedGame,
     matchMethod: 'PROVIDER_MAPPING' | 'SCHEDULE',
     usageMode: 'evaluation' | 'approved',
-    options: SyncCurrentGameOptions,
+    options: Pick<SyncCurrentGameOptions, 'apply'>,
     captureDatabaseDuration: (duration: number) => void,
   ): Promise<CurrentGameSyncItem> {
     const invalidReason = validateScoreSemantics(providerGame);
     if (invalidReason !== null) {
-      return resultItem(game.id, 'FAILED', invalidReason, providerGame.providerGameId);
+      return resultItem(game, 'FAILED', invalidReason, providerGame.providerGameId);
     }
     const state = toStateWrite(game, providerGame);
     const changes = compareState(game, state);
@@ -202,6 +332,7 @@ export class CurrentGameSyncService {
     if (changes.length === 0 && !createMapping) {
       return {
         internalGameId: game.id,
+        internalSnapshot: toInternalSnapshot(game),
         providerGameId: providerGame.providerGameId,
         outcome: 'UNCHANGED',
         matchMethod,
@@ -226,6 +357,7 @@ export class CurrentGameSyncService {
     }
     return {
       internalGameId: game.id,
+      internalSnapshot: toInternalSnapshot(game),
       providerGameId: providerGame.providerGameId,
       outcome: options.apply ? 'UPDATED' : 'WOULD_UPDATE',
       matchMethod,
@@ -291,7 +423,11 @@ export function matchCurrentGame(
         };
   }
 
-  const exact = candidates.filter((candidate) => identityMismatch(target, candidate) === null);
+  const compatible = candidates.filter((candidate) => identityMismatch(target, candidate) === null);
+  const exactKickoff = compatible.filter(
+    (candidate) => target.startTime?.getTime() === new Date(candidate.startTime).getTime(),
+  );
+  const exact = exactKickoff.length > 0 ? exactKickoff : compatible;
   if (exact.length === 1) {
     const game = exact[0];
     return game === undefined
@@ -346,7 +482,13 @@ function teamMatches(
 ): boolean {
   return target.providerTeamId !== null
     ? target.providerTeamId === providerTeamId
-    : abbreviation?.toUpperCase() === target.abbreviation.toUpperCase();
+    : abbreviation !== undefined &&
+        canonicalAbbreviation(abbreviation) === canonicalAbbreviation(target.abbreviation);
+}
+
+function canonicalAbbreviation(value: string): string {
+  const abbreviation = value.trim().toUpperCase();
+  return abbreviation === 'WSH' ? 'WAS' : abbreviation;
 }
 
 function validateScoreSemantics(game: NormalizedGame): string | null {
@@ -396,13 +538,14 @@ function compareState(
 }
 
 function resultItem(
-  gameId: string,
+  game: CurrentGameRecord,
   outcome: Extract<CurrentGameOutcome, 'UNMATCHED' | 'AMBIGUOUS' | 'FAILED'>,
   reason: string,
   providerGameId: string | null = null,
 ): CurrentGameSyncItem {
   return {
-    internalGameId: gameId,
+    internalGameId: game.id,
+    internalSnapshot: toInternalSnapshot(game),
     providerGameId,
     outcome,
     matchMethod: null,
@@ -410,6 +553,19 @@ function resultItem(
     mappingChange: 'NONE',
     reason,
     providerSnapshot: null,
+  };
+}
+
+function toInternalSnapshot(game: CurrentGameRecord): CurrentGameInternalSnapshot {
+  return {
+    season: game.season,
+    seasonType: game.seasonType,
+    week: game.week,
+    startTime: game.startTime?.toISOString() ?? null,
+    status: game.status,
+    homeAbbreviation: game.homeTeam.abbreviation,
+    awayAbbreviation: game.awayTeam.abbreviation,
+    providerMappingPresent: game.providerMapping !== null,
   };
 }
 
@@ -438,6 +594,7 @@ function buildReport(input: {
   readonly dryRun: boolean;
   readonly batch: Awaited<ReturnType<CurrentGameProvider['getCurrentGames']>>;
   readonly item: CurrentGameSyncItem;
+  readonly providerOnly: readonly CurrentGameProviderSnapshot[];
   readonly matchingMs: number;
   readonly databaseMs: number;
   readonly totalMs: number;
@@ -447,21 +604,96 @@ function buildReport(input: {
     provider: input.provider,
     usageMode: input.usageMode,
     dryRun: input.dryRun,
+    internalReviewed: 1,
     providerRecordsReceived: input.batch.received,
     fetched: input.batch.records.length,
     matched: ['WOULD_UPDATE', 'UPDATED', 'UNCHANGED'].includes(outcome) ? 1 : 0,
     updated: outcome === 'UPDATED' ? 1 : 0,
     unchanged: outcome === 'UNCHANGED' ? 1 : 0,
     unmatched: outcome === 'UNMATCHED' ? 1 : 0,
+    providerMissing: outcome === 'UNMATCHED' ? 1 : 0,
+    providerOnlyUnmatched: input.providerOnly.length,
     ambiguous: outcome === 'AMBIGUOUS' ? 1 : 0,
     failed: outcome === 'FAILED' ? 1 : 0,
     requestsUsed: input.batch.requestsUsed,
     performance: {
-      providerResponseMs: input.batch.responseDurationMs,
+      providerResponseMs:
+        input.batch.responseDurationMs - (input.batch.normalizationDurationMs ?? 0),
+      normalizationMs: input.batch.normalizationDurationMs ?? 0,
       matchingMs: input.matchingMs,
       databaseMs: input.databaseMs,
       totalMs: input.totalMs,
     },
     results: [input.item],
+    providerOnly: input.providerOnly,
   };
+}
+
+function buildMultiReport(input: {
+  readonly provider: string;
+  readonly usageMode: 'evaluation' | 'approved';
+  readonly dryRun: boolean;
+  readonly batch: Awaited<ReturnType<CurrentGameProvider['getCurrentGames']>>;
+  readonly results: readonly CurrentGameSyncItem[];
+  readonly providerOnly: readonly CurrentGameProviderSnapshot[];
+  readonly matchingMs: number;
+  readonly databaseMs: number;
+  readonly totalMs: number;
+}): CurrentGameSyncReport {
+  const count = (outcome: CurrentGameOutcome): number =>
+    input.results.filter((item) => item.outcome === outcome).length;
+  return {
+    provider: input.provider,
+    usageMode: input.usageMode,
+    dryRun: input.dryRun,
+    internalReviewed: input.results.length,
+    providerRecordsReceived: input.batch.received,
+    fetched: input.batch.records.length,
+    matched: count('WOULD_UPDATE') + count('UPDATED') + count('UNCHANGED'),
+    updated: count('UPDATED'),
+    unchanged: count('UNCHANGED'),
+    unmatched: count('UNMATCHED'),
+    providerMissing: count('UNMATCHED'),
+    providerOnlyUnmatched: input.providerOnly.length,
+    ambiguous: count('AMBIGUOUS'),
+    failed: count('FAILED'),
+    requestsUsed: input.batch.requestsUsed,
+    performance: {
+      providerResponseMs:
+        input.batch.responseDurationMs - (input.batch.normalizationDurationMs ?? 0),
+      normalizationMs: input.batch.normalizationDurationMs ?? 0,
+      matchingMs: input.matchingMs,
+      databaseMs: input.databaseMs,
+      totalMs: input.totalMs,
+    },
+    results: input.results,
+    providerOnly: input.providerOnly,
+  };
+}
+
+function assertBoundedWindow(options: SyncCurrentGameWindowOptions): void {
+  const hasWeek = options.week !== undefined;
+  const hasDates = options.startTime !== undefined && options.endTime !== undefined;
+  if (!hasWeek && !hasDates) {
+    throw new CurrentGameSyncError(
+      'BOUNDED_SCOPE_REQUIRED',
+      'Window sync requires a week or a start/end date range.',
+    );
+  }
+  if ((options.startTime === undefined) !== (options.endTime === undefined)) {
+    throw new CurrentGameSyncError(
+      'INVALID_DATE_RANGE',
+      'Both start and end dates are required together.',
+    );
+  }
+  if (
+    options.startTime !== undefined &&
+    options.endTime !== undefined &&
+    options.endTime.getTime() - options.startTime.getTime() > 31 * 24 * 60 * 60 * 1_000
+  ) {
+    throw new CurrentGameSyncError(
+      'DATE_RANGE_TOO_LARGE',
+      'Current-game date ranges cannot exceed 31 days.',
+    );
+  }
 }

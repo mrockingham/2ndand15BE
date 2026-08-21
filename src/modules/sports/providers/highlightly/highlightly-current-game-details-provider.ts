@@ -42,12 +42,24 @@ export class HighlightlyCurrentGameDetailsProvider
       new Promise((resolve) => setTimeout(resolve, milliseconds)),
   ) {}
 
-  async getGameDetails(providerGameId: string): Promise<CurrentGameDetailsBatch> {
+  async getGameDetails(
+    providerGameId: string,
+    options: { readonly includePlayerStats?: boolean } = {},
+  ): Promise<CurrentGameDetailsBatch> {
     const startedAt = performance.now();
-    const [detailPayload, boxScore] = await Promise.all([
-      this.client.get(`/matches/${providerGameId}`, {}, highlightlyRawMatchDetailResponseSchema),
-      this.client.get(`/box-score/${providerGameId}`, {}, highlightlyBoxScoreResponseSchema),
-    ]);
+    const detailPayload = await this.client.get(
+      `/matches/${providerGameId}`,
+      {},
+      highlightlyRawMatchDetailResponseSchema,
+    );
+    const boxScore =
+      options.includePlayerStats === false
+        ? []
+        : await this.client.get(
+            `/box-score/${providerGameId}`,
+            {},
+            highlightlyBoxScoreResponseSchema,
+          );
     const parsed = highlightlyDetailedMatchSchema.safeParse(detailPayload[0]);
     if (!parsed.success) {
       return failedBatch(
@@ -58,12 +70,20 @@ export class HighlightlyCurrentGameDetailsProvider
       );
     }
     try {
+      const normalizationStarted = performance.now();
+      const record = normalizeHighlightlyCurrentGameDetails(
+        parsed.data,
+        boxScore,
+        providerGameId,
+        options.includePlayerStats !== false,
+      );
       return {
         provider: HIGHLIGHTLY_PROVIDER_KEY,
-        record: normalizeHighlightlyCurrentGameDetails(parsed.data, boxScore, providerGameId),
+        record,
         failures: [],
         requestsUsed: this.client.getRequestCount(),
         responseDurationMs: Math.round(performance.now() - startedAt),
+        normalizationDurationMs: Math.round(performance.now() - normalizationStarted),
       };
     } catch (error: unknown) {
       return failedBatch(
@@ -189,6 +209,7 @@ export function normalizeHighlightlyCurrentGameDetails(
   detail: HighlightlyDetailedMatch,
   boxScore: HighlightlyBoxScoreResponse,
   expectedProviderGameId = String(detail.id),
+  requireBoxScore = true,
 ): NormalizedCurrentGameDetails {
   if (String(detail.id) !== expectedProviderGameId) throw new Error('Provider game ID mismatch.');
   if (detail.matchStatistics === null || detail.matchStatistics === undefined) {
@@ -203,9 +224,8 @@ export function normalizeHighlightlyCurrentGameDetails(
   const awayProviderTeamId = String(detail.awayTeam.id);
   const boxTeams = new Map(boxScore.map(({ team }) => [String(team.id), team]));
   if (
-    boxTeams.size !== 2 ||
-    !boxTeams.has(homeProviderTeamId) ||
-    !boxTeams.has(awayProviderTeamId)
+    requireBoxScore &&
+    (boxTeams.size !== 2 || !boxTeams.has(homeProviderTeamId) || !boxTeams.has(awayProviderTeamId))
   ) {
     throw new Error('Box-score teams do not match the detailed game.');
   }

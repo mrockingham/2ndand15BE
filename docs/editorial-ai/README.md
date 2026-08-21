@@ -4,6 +4,7 @@ Milestone 23 extends the existing `NewsCandidate -> Article` workflow. It does n
 
 ```text
 bounded candidate metadata
+  -> NFL relevance + authorized-source sufficiency quality gate
   -> deterministic duplicate/source-rights preparation
   -> provider-neutral EditorialAiProvider
   -> strict normalized draft result
@@ -24,16 +25,20 @@ Private metadata includes provider/model/prompt version, confidence, risk flags,
 ## Admin operations
 
 - `POST /api/v1/admin/news-candidates/:candidateId/generate-draft`
+- `POST /api/v1/admin/news-candidates/:candidateId/evaluate`
+- `POST /api/v1/admin/news-candidates/evaluate-batch` (1-50 distinct IDs, concurrency 4)
+- `POST /api/v1/admin/news-candidates/:candidateId/quality-override`
 - `POST /api/v1/admin/news-candidates/generate-drafts` (1-10 distinct IDs, concurrency 2)
 - `POST /api/v1/admin/articles/:articleId/editorial-review`
 - `POST /api/v1/admin/articles/:articleId/regenerate` (current draft version only)
 - `POST /api/v1/admin/articles/:articleId/media-candidates`
 - `POST /api/v1/admin/articles/:articleId/media/:mediaCandidateId/attach`
 - `GET /api/v1/admin/editorial/coverage?target=7`
+- `POST /api/v1/admin/editorial/discover-launch-candidates`
 - `GET|PUT /api/v1/admin/news-sources/:sourceId/rights`
 
 Generation independently resolves exact NFL team names/abbreviations to the active 32-team catalog. Player suggestions require one exact normalized-name result with compatible team context; fuzzy/ambiguous suggestions remain private unresolved entities and never create players.
 
-Known limitations: candidate metadata contains no full article text; unreviewed or non-approved source descriptions are omitted, producing shorter low-confidence briefs. Semantic duplicate comparison, automatic YouTube search, and launch preparation are not active in this implementation. Media search terms are returned for manual/approved search workflows.
+Candidate quality and launch discovery are documented in [candidate-quality.md](candidate-quality.md) and [launch-discovery.md](launch-discovery.md). Known limitations remain: candidate metadata contains no full article text; unreviewed descriptions are omitted; the only hosted source is one league-wide RSS feed; and no approved query-news or YouTube provider is configured.
 
-Hosted deployment prerequisites, the M22.6 schema/data distinction, preservation evidence, and the current configuration blocker are recorded in [hosted-enablement.md](hosted-enablement.md).
+Hosted deployment prerequisites, the M22.6 schema/data distinction, preservation evidence, and verification results are recorded in [hosted-enablement.md](hosted-enablement.md).

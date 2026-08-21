@@ -57,6 +57,10 @@ export const newsSourceCreateSchema = z
     isOfficialLeague: z.boolean().default(false),
     isOfficialTeam: z.boolean().default(false),
     allowsDescriptionUse: z.boolean().default(false),
+    reliabilityWeight: z.number().int().min(0).max(100).default(50),
+    metadataRichnessWeight: z.number().int().min(0).max(100).default(50),
+    teamSpecificityWeight: z.number().int().min(0).max(100).default(50),
+    editorialUsefulnessWeight: z.number().int().min(0).max(100).default(50),
     notes: nullableText(1_000).default(null),
   })
   .strict()
@@ -81,6 +85,10 @@ export const newsSourceUpdateSchema = z
     isOfficialLeague: z.boolean().optional(),
     isOfficialTeam: z.boolean().optional(),
     allowsDescriptionUse: z.boolean().optional(),
+    reliabilityWeight: z.number().int().min(0).max(100).optional(),
+    metadataRichnessWeight: z.number().int().min(0).max(100).optional(),
+    teamSpecificityWeight: z.number().int().min(0).max(100).optional(),
+    editorialUsefulnessWeight: z.number().int().min(0).max(100).optional(),
     notes: nullableText(1_000).optional(),
   })
   .strict()
