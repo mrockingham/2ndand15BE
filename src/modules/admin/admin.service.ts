@@ -2,6 +2,7 @@ import type { UserRole } from '../../generated/prisma/client.js';
 import { AppError } from '../../common/errors/app-error.js';
 import { normalizeEmail } from '../auth/auth.service.js';
 import { roleHasCapability, type AdministrativePrincipal } from './admin-authorization.js';
+import { classifyCurrentGameTeamStats } from '../sports/current-game-team-stat-coverage.js';
 import {
   toAdminGameDto,
   toAuditEventDto,
@@ -18,6 +19,7 @@ import type {
   AdminGameListQuery,
   AuditListQuery,
   GameOverrideInput,
+  GameResultFallbackInput,
   ManualGameCreateInput,
   ManualGameUpdateInput,
   ScheduleImportRequest,
@@ -44,6 +46,15 @@ export interface ScheduleImportResult {
   readonly failures: readonly ScheduleImportFailure[];
 }
 
+export interface GameResultFallbackReport {
+  readonly dryRun: boolean;
+  readonly outcome: 'WOULD_CREATE' | 'WOULD_UPDATE' | 'CREATED' | 'UPDATED' | 'UNCHANGED';
+  readonly game: AdminGameDto;
+  readonly resultCoverage: 'EDITORIAL_RESULT_FALLBACK';
+  readonly teamStatCoverage:
+    'TEAM_STATS_COMPLETE' | 'TEAM_STATS_PARTIAL' | 'TEAM_STATS_UNAVAILABLE';
+}
+
 export interface AdministrativeScheduleService {
   listGames(
     query: AdminGameListQuery,
@@ -66,6 +77,12 @@ export interface AdministrativeScheduleService {
     principal: AdministrativePrincipal,
     requestId: string | null,
   ): Promise<AdminGameDto>;
+  upsertResultFallback(
+    gameId: string,
+    input: GameResultFallbackInput,
+    principal: AdministrativePrincipal,
+    requestId: string | null,
+  ): Promise<GameResultFallbackReport>;
   deleteOverride(
     gameId: string,
     principal: AdministrativePrincipal,
@@ -159,10 +176,81 @@ export class AdminService implements AdministrativeScheduleService {
     principal: AdministrativePrincipal,
     requestId: string | null,
   ): Promise<AdminGameDto> {
-    await this.requireGame(gameId);
+    const existing = await this.requireGame(gameId);
+    if (
+      existing.editorialOverride?.resultVerifiedAt !== null &&
+      existing.editorialOverride?.resultVerifiedAt !== undefined &&
+      input.status !== undefined
+    ) {
+      throw new AppError({
+        code: 'RESULT_FALLBACK_STATUS_PROTECTED',
+        message: 'Use the reviewed result fallback operation to change a fallback final status.',
+        statusCode: 409,
+      });
+    }
     return toAdminGameDto(
       await this.repository.upsertOverride(gameId, input, toActor(principal, requestId)),
     );
+  }
+
+  async upsertResultFallback(
+    gameId: string,
+    input: GameResultFallbackInput,
+    principal: AdministrativePrincipal,
+    requestId: string | null,
+  ): Promise<GameResultFallbackReport> {
+    const existing = await this.requireGame(gameId);
+    if (!sourceIsManuallyOwned(existing.provenance?.sourceType)) {
+      throw new AppError({
+        code: 'REVIEWED_GAME_REQUIRED',
+        message: 'Result fallback is limited to an existing reviewed internal game.',
+        statusCode: 409,
+      });
+    }
+    const unchanged = resultFallbackMatches(existing, input);
+    const teamStats = await this.repository.findCurrentTeamStats(gameId);
+    const coverage = classifyCurrentGameTeamStats({
+      rows: teamStats,
+      homeTeamId: existing.homeTeamId,
+      awayTeamId: existing.awayTeamId,
+    });
+    const teamStatCoverage =
+      coverage.classification === 'COMPLETE'
+        ? ('TEAM_STATS_COMPLETE' as const)
+        : coverage.classification === 'PARTIAL'
+          ? ('TEAM_STATS_PARTIAL' as const)
+          : ('TEAM_STATS_UNAVAILABLE' as const);
+    if (unchanged || input.dryRun) {
+      return {
+        dryRun: input.dryRun,
+        outcome: unchanged
+          ? 'UNCHANGED'
+          : existing.editorialOverride?.resultVerifiedAt === null ||
+              existing.editorialOverride === null
+            ? 'WOULD_CREATE'
+            : 'WOULD_UPDATE',
+        game: toAdminGameDto(
+          unchanged ? existing : withPlannedResultFallback(existing, input, principal, this.now()),
+        ),
+        resultCoverage: 'EDITORIAL_RESULT_FALLBACK',
+        teamStatCoverage,
+      };
+    }
+    const existingVerifiedAt = existing.editorialOverride?.resultVerifiedAt;
+    const created = existingVerifiedAt === null || existingVerifiedAt === undefined;
+    const updated = await this.repository.upsertResultFallback(
+      gameId,
+      input,
+      toActor(principal, requestId),
+      this.now(),
+    );
+    return {
+      dryRun: false,
+      outcome: created ? 'CREATED' : 'UPDATED',
+      game: toAdminGameDto(updated),
+      resultCoverage: 'EDITORIAL_RESULT_FALLBACK',
+      teamStatCoverage,
+    };
   }
 
   async deleteOverride(
@@ -468,4 +556,57 @@ function duplicateGameError(gameId: string): AppError {
     statusCode: 409,
     details: { gameId },
   });
+}
+
+function resultFallbackMatches(game: AdminGameRecord, input: GameResultFallbackInput): boolean {
+  const override = game.editorialOverride;
+  return (
+    override !== null &&
+    override.resultVerifiedAt !== null &&
+    override.status === input.status &&
+    override.homeScore === input.homeScore &&
+    override.awayScore === input.awayScore &&
+    override.resultSourceName === input.sourceName &&
+    override.resultSourceUrl === (input.sourceUrl ?? null) &&
+    override.resultReason === input.reason &&
+    override.internalNote === (input.internalNote ?? null) &&
+    override.publicCorrectionNote === (input.publicCorrectionNote ?? null)
+  );
+}
+
+function withPlannedResultFallback(
+  game: AdminGameRecord,
+  input: GameResultFallbackInput,
+  principal: AdministrativePrincipal,
+  now: Date,
+): AdminGameRecord {
+  const existing = game.editorialOverride;
+  return {
+    ...game,
+    editorialOverride: {
+      id: existing?.id ?? '00000000-0000-4000-8000-000000000000',
+      gameId: game.id,
+      startTime: existing?.startTime ?? null,
+      status: input.status,
+      homeScore: input.homeScore,
+      awayScore: input.awayScore,
+      week: existing?.week ?? null,
+      venueName: existing?.venueName ?? null,
+      venueCity: existing?.venueCity ?? null,
+      broadcastNetwork: existing?.broadcastNetwork ?? null,
+      isNeutralSite: existing?.isNeutralSite ?? null,
+      publicCorrectionNote: input.publicCorrectionNote ?? null,
+      internalNote: input.internalNote ?? null,
+      resultSourceName: input.sourceName,
+      resultSourceUrl: input.sourceUrl ?? null,
+      resultVerifiedAt: now,
+      resultReason: input.reason,
+      createdById: existing?.createdById ?? principal.userId,
+      updatedById: principal.userId,
+      createdBySnapshot: existing?.createdBySnapshot ?? principal.email,
+      updatedBySnapshot: principal.email,
+      createdAt: existing?.createdAt ?? now,
+      updatedAt: now,
+    },
+  };
 }

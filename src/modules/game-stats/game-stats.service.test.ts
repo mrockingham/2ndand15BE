@@ -12,6 +12,67 @@ import { GameStatsService } from './game-stats.service.js';
 const game = toGameDto(createGameRecord());
 
 describe('GameStatsService', () => {
+  it('returns one bounded current-season collection with complete, unavailable, and pending states', async () => {
+    const complete = { ...game, seasonType: 'PRE' as const, week: 1, status: 'FINAL' as const };
+    const unavailable = {
+      ...complete,
+      id: '00000000-0000-4000-8000-000000000102',
+      homeScore: 7,
+      awayScore: 27,
+    };
+    const pending = {
+      ...complete,
+      id: '00000000-0000-4000-8000-000000000103',
+      week: 2,
+      status: 'SCHEDULED' as const,
+    };
+    const stats = [
+      { ...row(complete.homeTeam.id, true, { turnovers: 0 }), gameId: complete.id },
+      { ...row(complete.awayTeam.id, false, { turnovers: 2 }), gameId: complete.id },
+    ];
+    const findTeamStatsForGames = vi.fn().mockResolvedValue(stats);
+    const listGames = vi.fn().mockResolvedValue({
+      games: [complete, unavailable, pending],
+      nextCursor: null,
+    });
+    const service = new GameStatsService(
+      {
+        findTeamStats: vi.fn(),
+        findTeamStatsForGames,
+        findCurrentAvailability: vi
+          .fn()
+          .mockResolvedValue([
+            availability('PRE', 1, 'FINAL', 2),
+            availability('PRE', 1, 'FINAL', 0),
+            availability('PRE', 2, 'IN_PROGRESS', 0),
+            availability('REG', 1, 'SCHEDULED', 0),
+          ]),
+      },
+      { getGame: vi.fn(), listGames },
+      2026,
+    );
+
+    const response = await service.listCurrentGameStats({
+      season: 2026,
+      seasonType: 'PRE',
+      week: 'ALL',
+    });
+    expect(listGames).toHaveBeenCalledOnce();
+    expect(findTeamStatsForGames).toHaveBeenCalledWith([complete.id, unavailable.id, pending.id]);
+    expect(response.meta).toMatchObject({
+      availableSeasons: [2026],
+      availableSeasonTypes: ['PRE'],
+      availableWeeks: [1, 2],
+    });
+    expect(response.data.games.map((entry) => entry.coverage)).toEqual([
+      'COMPLETE',
+      'UNAVAILABLE',
+      'PENDING',
+    ]);
+    expect(response.data.games[0]?.teamStats.home?.turnovers).toBe(0);
+    expect(response.data.games[1]?.teamStats.home).toBeNull();
+  });
+
   it('returns correctly oriented game-only team totals with distinct null and zero values', async () => {
     const repository: GameStatsRepository = {
       findTeamStats: vi
@@ -83,6 +144,22 @@ describe('GameStatsService', () => {
     expect(JSON.stringify(response)).not.toMatch(/highlightly|providerPlayerId|externalId/);
   });
 });
+
+function availability(
+  seasonType: 'PRE' | 'REG' | 'POST',
+  week: number | null,
+  status: 'SCHEDULED' | 'IN_PROGRESS' | 'FINAL',
+  teamStatRows: number,
+) {
+  return {
+    seasonType,
+    week,
+    status,
+    overrideStatus: null,
+    overrideWeek: null,
+    teamStatRows,
+  };
+}
 
 function playerRow(
   teamId: string,

@@ -290,6 +290,7 @@ All initial routes are under `/api/v1`.
 | POST   | `/admin/games`                             | Editor/Admin          | Create a manually owned game                                |
 | PATCH  | `/admin/games/:gameId`                     | Editor/Admin          | Edit a manually owned base game                             |
 | PUT    | `/admin/games/:gameId/override`            | Editor/Admin          | Create or partially update an editorial override            |
+| PUT    | `/admin/games/:gameId/result-fallback`     | Editor/Admin          | Dry-run/apply a sourced reviewed final result               |
 | DELETE | `/admin/games/:gameId/override`            | Admin                 | Remove an editorial override                                |
 | PUT    | `/admin/games/:gameId/verification`        | Editor/Admin          | Record factual verification                                 |
 | POST   | `/admin/schedule-imports`                  | Editor/Admin          | Validate or import bounded schedule rows                    |
@@ -433,7 +434,7 @@ Current-game individual box scores use the separate typed `CurrentGamePlayerStat
 
 `User.role` is constrained to `USER`, `EDITOR`, or `ADMIN` and defaults to `USER`. Registration writes `USER` explicitly. Access-token claims remain limited to user/session identity; administrative middleware reads the active user's current role from PostgreSQL and checks an explicit capability map, so demotions do not wait for token expiry. Role management remains a deliberately narrow audited CLI operation.
 
-`GameProvenance` records source type/name, optional source URL and external reference, import time, notes, and factual verification. Existing mock games are classified as `DEVELOPMENT_FIXTURE`; API-Sports games are classified as `PROVIDER`. `GameEditorialOverride` is one-to-one with a game and stores only supported schedule corrections. Nullable override fields fall back to the normalized base record. `AdminAuditEvent` is append-only through application APIs and retains actor snapshots even if relational actor IDs are later set null.
+`GameProvenance` records source type/name, optional source URL and external reference, import time, notes, and factual verification. Existing mock games are classified as `DEVELOPMENT_FIXTURE`; API-Sports games are classified as `PROVIDER`. `GameEditorialOverride` is one-to-one with a game and stores supported schedule corrections plus a separately sourced, verified final-result fallback. Nullable override fields fall back to the normalized base record. Result fallbacks require an existing reviewed game, oriented scores, source, reason, actor, and server verification timestamp. `AdminAuditEvent` is append-only through application APIs and retains actor snapshots even if relational actor IDs are later set null.
 
 Public game reads fetch overrides with teams in one bounded query. Effective date, week, and status filtering and kickoff ordering use override values before base values. Candidate resolution is capped at 1,000 records; an overbroad query fails explicitly. Public DTOs expose only the effective game and retain their existing schema.
 

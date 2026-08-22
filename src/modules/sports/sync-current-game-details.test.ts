@@ -147,6 +147,7 @@ describe('CurrentGameDetailsSyncService', () => {
     expect(report).toMatchObject({
       dryRun: true,
       requestsUsed: 2,
+      coverage: { classification: 'COMPLETE', rowCount: 2, orientationValid: true },
       teamStats: { wouldCreate: 2, created: 0, updated: 0, unchanged: 0 },
       playerStats: { received: 2, matched: 1, unmatched: 1, ambiguous: 0, persisted: 0 },
       discovery: { scoringEvents: 12, plays: 183, structuredPlays: 0 },

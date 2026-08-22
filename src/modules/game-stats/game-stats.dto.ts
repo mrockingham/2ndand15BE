@@ -2,6 +2,7 @@ import type {
   PublicCurrentGamePlayerStatRow,
   PublicCurrentGameTeamStatRow,
 } from './game-stats.repository.js';
+import type { GameDto } from '../games/game.dto.js';
 
 export interface GameTeamStatsDto {
   readonly teamId: string;
@@ -58,6 +59,30 @@ export interface CurrentGameStatsResponse {
       readonly unresolvedRows: number;
     } | null;
     readonly limitations: readonly string[];
+  };
+}
+
+export type CurrentGameTeamStatsCoverage = 'PENDING' | 'COMPLETE' | 'PARTIAL' | 'UNAVAILABLE';
+
+export interface CurrentGameStatsListResponse {
+  readonly data: {
+    readonly season: number;
+    readonly seasonType: 'PRE' | 'REG' | 'POST';
+    readonly week: number | 'ALL';
+    readonly games: readonly {
+      readonly game: GameDto;
+      readonly coverage: CurrentGameTeamStatsCoverage;
+      readonly teamStats: {
+        readonly home: GameTeamStatsDto | null;
+        readonly away: GameTeamStatsDto | null;
+      };
+    }[];
+  };
+  readonly meta: {
+    readonly availableSeasons: readonly number[];
+    readonly availableSeasonTypes: readonly ('PRE' | 'REG' | 'POST')[];
+    readonly availableWeeks: readonly number[];
+    readonly coverageNote: string;
   };
 }
 

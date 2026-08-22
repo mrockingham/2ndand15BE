@@ -25,6 +25,8 @@ Date ranges require both endpoints and cannot exceed 31 days. The adapter makes 
 
 Completed matches additionally use the existing detail normalizer to upsert two `CurrentGameTeamStat` rows. Team-only mode requests no box score or player profiles and performs no `Player`, `PlayerExternalIdentifier`, `CurrentGamePlayerStat`, coverage, historical `PlayerGameStat`, or roster write. A team-stat failure is reported separately and cannot roll back or block the game-state result.
 
+Each successful detail report classifies normalized team data as `COMPLETE`, `PARTIAL`, or `UNAVAILABLE`, validates home/away row orientation, and reports non-null counts for every stored field. Weekly output aggregates those classifications and field counts. Recorded zero is present data; null remains unavailable/not applicable. See [team-stat-coverage.md](team-stat-coverage.md) for the hosted measurements and readiness gate.
+
 ## Idempotency and future reuse
 
 An identical replay uses existing mappings and returns `UNCHANGED`; pure no-ops create neither writes nor audits. The same `sync(gameId)` matching path remains suitable for a later explicitly approved poller, but Milestone 25 adds no polling, scheduler, cron, queue, WebSocket, SSE, or play-by-play behavior.

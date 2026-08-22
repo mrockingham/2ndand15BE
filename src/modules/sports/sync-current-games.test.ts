@@ -26,6 +26,7 @@ const internalGame: CurrentGameRecord = {
   homeTeam: { abbreviation: 'ARI', providerTeamId: null },
   awayTeam: { abbreviation: 'CAR', providerTeamId: null },
   providerMapping: null,
+  editorialResultOverride: null,
 };
 
 const providerGame: NormalizedGame = {
@@ -219,6 +220,47 @@ describe('CurrentGameSyncService', () => {
     expect(result).toMatchObject({ kind: 'matched', method: 'PROVIDER_MAPPING' });
   });
 
+  it('reports provider agreement with an active reviewed result fallback', async () => {
+    const test = harness({
+      ...internalGame,
+      editorialResultOverride: { status: 'FINAL', homeScore: 30, awayScore: 33 },
+    });
+    await expect(
+      test.service.sync({ gameId: internalGame.id, apply: false, policy: evaluationPolicy }),
+    ).resolves.toMatchObject({
+      resultConflict: 0,
+      results: [
+        {
+          resultCoverage: 'EDITORIAL_RESULT_FALLBACK',
+          resultReconciliation: 'AGREES',
+          mappingChange: 'CREATE',
+        },
+      ],
+    });
+  });
+
+  it('reports disagreement and performs no provider or mapping write', async () => {
+    const test = harness({
+      ...internalGame,
+      editorialResultOverride: { status: 'FINAL', homeScore: 27, awayScore: 7 },
+    });
+    await expect(
+      test.service.sync({ gameId: internalGame.id, apply: true, policy: evaluationPolicy }),
+    ).resolves.toMatchObject({
+      resultConflict: 1,
+      updated: 0,
+      results: [
+        {
+          outcome: 'RESULT_CONFLICT',
+          resultCoverage: 'RESULT_CONFLICT',
+          resultReconciliation: 'DISAGREES',
+          mappingChange: 'NONE',
+        },
+      ],
+    });
+    expect(test.applyCurrentGame).not.toHaveBeenCalled();
+  });
+
   it('reports ambiguous matches without mutating', async () => {
     const test = harness();
     test.getCurrentGames.mockResolvedValueOnce({
@@ -269,6 +311,7 @@ describe('CurrentGameSyncService', () => {
       startTime: new Date('2026-08-08T00:00:00.000Z'),
       homeTeam: { abbreviation: 'BUF', providerTeamId: 'buf' },
       awayTeam: { abbreviation: 'NYG', providerTeamId: 'nyg' },
+      editorialResultOverride: { status: 'FINAL' as const, homeScore: 20, awayScore: 17 },
     };
     const applyCurrentGame = vi.fn((input: ApplyCurrentGameInput) => {
       stored = {
@@ -321,7 +364,12 @@ describe('CurrentGameSyncService', () => {
       providerOnlyUnmatched: 0,
       results: [
         { outcome: 'UPDATED', mappingChange: 'CREATE' },
-        { outcome: 'UNMATCHED', reason: 'Provider omitted this reviewed internal game.' },
+        {
+          outcome: 'UNMATCHED',
+          reason: 'Provider omitted this reviewed internal game.',
+          resultCoverage: 'EDITORIAL_RESULT_FALLBACK',
+          resultReconciliation: 'PROVIDER_STILL_MISSING',
+        },
       ],
     });
     await expect(service.syncWindow(options)).resolves.toMatchObject({

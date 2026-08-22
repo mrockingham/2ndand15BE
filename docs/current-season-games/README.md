@@ -20,6 +20,10 @@ The apply command is intentionally manual. There is no cron, queue, worker, poll
 
 Reports include sanitized internal identity, coverage/outcome counts, intended field changes, matching method, mapping intent, provider-only records, bounded request count, and provider/matching/database/total timing. They never include credentials or raw payloads. Completed games also report independent team-stat results; the weekly path never requests or writes player data.
 
-Milestone 25 semantics and hosted results are in [sync-hardening.md](sync-hardening.md) and [provider-coverage.md](provider-coverage.md).
+Milestone 25 semantics and hosted results are in [sync-hardening.md](sync-hardening.md), [provider-coverage.md](provider-coverage.md), and [team-stat-coverage.md](team-stat-coverage.md). The sourced admin-only omission path and provider reconciliation rules are in [result-fallback.md](result-fallback.md). Week 1 result coverage is now complete, while current-season team-stat API readiness remains **PARTIALLY_READY**.
+
+Completed-game structured play ingestion, deterministic identity, reconciliation safeguards, and the provider-neutral public feed are documented in [play-by-play.md](play-by-play.md).
+
+The batched public Current Season Stats contract, availability semantics, and coverage classifications are documented in [current-season-stats-api.md](current-season-stats-api.md).
 
 See [provider-verification.md](provider-verification.md) for evidence and rights posture, [sync-semantics.md](sync-semantics.md) for matching and update rules, and [performance-report.md](performance-report.md) for hosted timings. Box-score evidence and operations are documented in [box-score-capabilities.md](box-score-capabilities.md), [game-stats-sync.md](game-stats-sync.md), and [player-identity-reconciliation.md](player-identity-reconciliation.md).

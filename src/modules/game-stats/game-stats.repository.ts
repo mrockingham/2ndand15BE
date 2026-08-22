@@ -1,4 +1,10 @@
-import type { Prisma, PrismaClient } from '../../generated/prisma/client.js';
+import type {
+  GameStatus,
+  Prisma,
+  PrismaClient,
+  SeasonType,
+} from '../../generated/prisma/client.js';
+import { publicGameSourceWhere, type GameDataSource } from '../games/game.repository.js';
 
 export const publicCurrentGameTeamStatSelect = {
   teamId: true,
@@ -76,7 +82,24 @@ export interface PublicCurrentGameTeamStatRow {
 
 export interface GameStatsRepository {
   findTeamStats(gameId: string): Promise<readonly PublicCurrentGameTeamStatRow[]>;
+  findTeamStatsForGames?(
+    gameIds: readonly string[],
+  ): Promise<readonly PublicCurrentGameTeamStatRowWithGame[]>;
+  findCurrentAvailability?(season: number): Promise<readonly CurrentGameStatsAvailabilityRow[]>;
   findPlayerBoxScore?(gameId: string): Promise<PublicCurrentGamePlayerBoxScore>;
+}
+
+export interface PublicCurrentGameTeamStatRowWithGame extends PublicCurrentGameTeamStatRow {
+  readonly gameId: string;
+}
+
+export interface CurrentGameStatsAvailabilityRow {
+  readonly seasonType: SeasonType;
+  readonly week: number | null;
+  readonly status: GameStatus;
+  readonly overrideStatus: GameStatus | null;
+  readonly overrideWeek: number | null;
+  readonly teamStatRows: number;
 }
 
 export const publicCurrentGamePlayerStatSelect = {
@@ -149,7 +172,10 @@ export interface PublicCurrentGamePlayerBoxScore {
 }
 
 export class PrismaGameStatsRepository implements GameStatsRepository {
-  constructor(private readonly prisma: PrismaClient) {}
+  constructor(
+    private readonly prisma: PrismaClient,
+    private readonly sourceProvider?: GameDataSource,
+  ) {}
 
   findTeamStats(gameId: string): Promise<readonly PublicCurrentGameTeamStatRow[]> {
     return this.prisma.currentGameTeamStat.findMany({
@@ -157,6 +183,44 @@ export class PrismaGameStatsRepository implements GameStatsRepository {
       select: publicCurrentGameTeamStatSelect,
       orderBy: { isHome: 'desc' },
     });
+  }
+
+  findTeamStatsForGames(
+    gameIds: readonly string[],
+  ): Promise<readonly PublicCurrentGameTeamStatRowWithGame[]> {
+    if (gameIds.length === 0) return Promise.resolve([]);
+    return this.prisma.currentGameTeamStat.findMany({
+      where: { gameId: { in: [...gameIds] } },
+      select: { gameId: true, ...publicCurrentGameTeamStatSelect },
+      orderBy: [{ gameId: 'asc' }, { isHome: 'desc' }],
+    });
+  }
+
+  async findCurrentAvailability(
+    season: number,
+  ): Promise<readonly CurrentGameStatsAvailabilityRow[]> {
+    const rows = await this.prisma.game.findMany({
+      where: {
+        league: 'NFL',
+        season,
+        ...publicGameSourceWhere(this.sourceProvider),
+      },
+      select: {
+        seasonType: true,
+        week: true,
+        status: true,
+        editorialOverride: { select: { status: true, week: true } },
+        _count: { select: { currentTeamStats: true } },
+      },
+    });
+    return rows.map((row) => ({
+      seasonType: row.seasonType,
+      week: row.week,
+      status: row.status,
+      overrideStatus: row.editorialOverride?.status ?? null,
+      overrideWeek: row.editorialOverride?.week ?? null,
+      teamStatRows: row._count.currentTeamStats,
+    }));
   }
 
   async findPlayerBoxScore(gameId: string): Promise<PublicCurrentGamePlayerBoxScore> {

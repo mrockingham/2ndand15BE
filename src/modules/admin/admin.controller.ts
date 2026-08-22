@@ -7,6 +7,7 @@ import {
   adminGameListQuerySchema,
   auditListQuerySchema,
   gameOverrideInputSchema,
+  gameResultFallbackInputSchema,
   manualGameCreateSchema,
   manualGameUpdateSchema,
   scheduleImportRequestSchema,
@@ -20,6 +21,7 @@ export interface AdminController {
   readonly createGame: RequestHandler;
   readonly updateGame: RequestHandler;
   readonly upsertOverride: RequestHandler;
+  readonly upsertResultFallback: RequestHandler;
   readonly deleteOverride: RequestHandler;
   readonly verifyGame: RequestHandler;
   readonly validateImport: RequestHandler;
@@ -61,6 +63,18 @@ export function createAdminController(service: AdministrativeScheduleService): A
       const input = parseOrThrow(gameOverrideInputSchema, request.body, 'request body');
       response.status(200).json({
         data: await service.upsertOverride(
+          gameId,
+          input,
+          requirePrincipal(request.admin),
+          requestId(request),
+        ),
+      });
+    },
+    upsertResultFallback: async (request, response) => {
+      const { gameId } = parseOrThrow(adminGameIdParamsSchema, request.params, 'path parameters');
+      const input = parseOrThrow(gameResultFallbackInputSchema, request.body, 'request body');
+      response.status(200).json({
+        data: await service.upsertResultFallback(
           gameId,
           input,
           requirePrincipal(request.admin),

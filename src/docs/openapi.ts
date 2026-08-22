@@ -1735,6 +1735,47 @@ export const openApiDocument = {
         },
       },
     },
+    '/admin/games/{gameId}/result-fallback': {
+      put: {
+        operationId: 'upsertGameResultFallback',
+        summary: 'Dry-run or apply a sourced reviewed final-result fallback',
+        description:
+          'Updates only an existing reviewed game through editorial precedence. It never creates a game or team statistics.',
+        tags: ['Administration'],
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: 'gameId',
+            in: 'path',
+            required: true,
+            schema: { type: 'string', format: 'uuid' },
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: { $ref: '#/components/schemas/GameResultFallbackRequest' },
+            },
+          },
+        },
+        responses: {
+          '200': {
+            description: 'Mutation-free plan, applied result, or idempotent no-op.',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/GameResultFallbackResponse' },
+              },
+            },
+          },
+          '400': { $ref: '#/components/responses/ValidationError' },
+          '401': { $ref: '#/components/responses/UnauthorizedError' },
+          '403': { $ref: '#/components/responses/ForbiddenError' },
+          '404': { $ref: '#/components/responses/NotFoundError' },
+          '409': { $ref: '#/components/responses/ConflictError' },
+        },
+      },
+    },
     '/admin/schedule-imports/validate': {
       post: {
         operationId: 'validateScheduleImport',
@@ -2427,6 +2468,86 @@ export const openApiDocument = {
               'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } },
             },
           },
+          '429': { $ref: '#/components/responses/RateLimitError' },
+        },
+      },
+    },
+    '/games/current-stats': {
+      get: {
+        operationId: 'listCurrentGameStats',
+        summary: 'List current-season games with batched team-stat coverage',
+        tags: ['Games'],
+        description:
+          'Returns one bounded current-season context with resolved public games, provider-neutral home/away team statistics where stored, coverage classifications, and backend-derived availability. It avoids per-game client fan-out and does not expose provider identities or aggregate league rankings.',
+        parameters: [
+          {
+            name: 'season',
+            in: 'query',
+            schema: { type: 'integer', minimum: 1920, maximum: 2100 },
+          },
+          {
+            name: 'seasonType',
+            in: 'query',
+            schema: { type: 'string', enum: ['PRE', 'REG', 'POST'] },
+          },
+          {
+            name: 'week',
+            in: 'query',
+            schema: {
+              oneOf: [
+                { type: 'integer', minimum: 1, maximum: 22 },
+                { type: 'string', enum: ['ALL'] },
+              ],
+            },
+          },
+          { name: 'teamId', in: 'query', schema: { type: 'string', format: 'uuid' } },
+        ],
+        responses: {
+          '200': {
+            description: 'One current-season game-stat context and availability metadata.',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/CurrentGameStatsListResponse' },
+              },
+            },
+          },
+          '400': { $ref: '#/components/responses/ValidationError' },
+          '404': { $ref: '#/components/responses/NotFoundError' },
+          '429': { $ref: '#/components/responses/RateLimitError' },
+        },
+      },
+    },
+    '/games/{gameId}/plays': {
+      get: {
+        operationId: 'getCurrentGamePlays',
+        summary: 'Get structured play-by-play for one completed game',
+        tags: ['Games'],
+        description:
+          'Returns provider-neutral, oldest-to-newest structured plays stored in PostgreSQL. Provider identifiers, identity hashes, raw payloads, and reconciliation metadata are private. An empty list means play-by-play has not been imported.',
+        parameters: [
+          {
+            name: 'gameId',
+            in: 'path',
+            required: true,
+            description: 'Application-owned game UUID.',
+            schema: { type: 'string', format: 'uuid' },
+          },
+        ],
+        responses: {
+          '200': {
+            description: 'The stored structured play sequence, which may be empty.',
+            headers: {
+              'Cache-Control': {
+                schema: { type: 'string' },
+                description: 'Completed-game cache policy with bounded revalidation.',
+              },
+            },
+            content: {
+              'application/json': { schema: { $ref: '#/components/schemas/GamePlaysResponse' } },
+            },
+          },
+          '400': { $ref: '#/components/responses/ValidationError' },
+          '404': { $ref: '#/components/responses/NotFoundError' },
           '429': { $ref: '#/components/responses/RateLimitError' },
         },
       },
@@ -3804,6 +3925,93 @@ export const openApiDocument = {
         required: ['data'],
         properties: { data: { $ref: '#/components/schemas/Game' } },
       },
+      GamePlayPosition: {
+        type: 'object',
+        required: ['down', 'distance', 'yardLine'],
+        properties: {
+          down: { type: ['integer', 'null'], minimum: 1, maximum: 4 },
+          distance: { type: ['integer', 'null'], minimum: 0, maximum: 100 },
+          yardLine: {
+            type: ['integer', 'null'],
+            minimum: 0,
+            maximum: 100,
+            description: 'Offense progress: own goal line 0, midfield 50, opponent goal line 100.',
+          },
+        },
+      },
+      GamePlay: {
+        type: 'object',
+        required: [
+          'id',
+          'sequence',
+          'period',
+          'clock',
+          'possessionTeam',
+          'type',
+          'description',
+          'start',
+          'end',
+          'flags',
+        ],
+        properties: {
+          id: { type: 'string', format: 'uuid' },
+          sequence: { type: 'integer', minimum: 1 },
+          period: { type: 'integer', minimum: 1, maximum: 10 },
+          clock: { type: 'string' },
+          possessionTeam: {
+            oneOf: [{ $ref: '#/components/schemas/GameTeamSummary' }, { type: 'null' }],
+          },
+          type: {
+            type: 'string',
+            enum: [
+              'PASS',
+              'RUSH',
+              'PUNT',
+              'KICKOFF',
+              'FIELD_GOAL',
+              'SACK',
+              'PENALTY',
+              'TIMEOUT',
+              'INTERCEPTION',
+              'FUMBLE',
+              'END_PERIOD',
+              'OTHER',
+            ],
+          },
+          description: { type: 'string' },
+          start: { $ref: '#/components/schemas/GamePlayPosition' },
+          end: { $ref: '#/components/schemas/GamePlayPosition' },
+          flags: {
+            type: 'object',
+            required: ['scoring', 'penalty', 'turnover'],
+            properties: {
+              scoring: { type: 'boolean' },
+              penalty: { type: 'boolean' },
+              turnover: { type: 'boolean' },
+            },
+          },
+        },
+      },
+      GamePlaysResponse: {
+        type: 'object',
+        required: ['data', 'meta'],
+        properties: {
+          data: {
+            type: 'object',
+            required: ['gameId', 'playCount', 'plays'],
+            properties: {
+              gameId: { type: 'string', format: 'uuid' },
+              playCount: { type: 'integer', minimum: 0 },
+              plays: { type: 'array', items: { $ref: '#/components/schemas/GamePlay' } },
+            },
+          },
+          meta: {
+            type: 'object',
+            required: ['limitations'],
+            properties: { limitations: { type: 'array', items: { type: 'string' } } },
+          },
+        },
+      },
       CurrentGameScoringByPeriod: {
         type: 'object',
         required: ['q1', 'q2', 'q3', 'q4', 'ot1', 'ot2'],
@@ -4099,6 +4307,71 @@ export const openApiDocument = {
           },
         },
       },
+      CurrentGameStatsListResponse: {
+        type: 'object',
+        required: ['data', 'meta'],
+        properties: {
+          data: {
+            type: 'object',
+            required: ['season', 'seasonType', 'week', 'games'],
+            properties: {
+              season: { type: 'integer' },
+              seasonType: { type: 'string', enum: ['PRE', 'REG', 'POST'] },
+              week: { oneOf: [{ type: 'integer' }, { type: 'string', enum: ['ALL'] }] },
+              games: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  required: ['game', 'coverage', 'teamStats'],
+                  properties: {
+                    game: { $ref: '#/components/schemas/Game' },
+                    coverage: {
+                      type: 'string',
+                      enum: ['PENDING', 'COMPLETE', 'PARTIAL', 'UNAVAILABLE'],
+                    },
+                    teamStats: {
+                      type: 'object',
+                      required: ['home', 'away'],
+                      properties: {
+                        home: {
+                          oneOf: [
+                            { $ref: '#/components/schemas/CurrentGameTeamStats' },
+                            { type: 'null' },
+                          ],
+                        },
+                        away: {
+                          oneOf: [
+                            { $ref: '#/components/schemas/CurrentGameTeamStats' },
+                            { type: 'null' },
+                          ],
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          meta: {
+            type: 'object',
+            required: [
+              'availableSeasons',
+              'availableSeasonTypes',
+              'availableWeeks',
+              'coverageNote',
+            ],
+            properties: {
+              availableSeasons: { type: 'array', items: { type: 'integer' } },
+              availableSeasonTypes: {
+                type: 'array',
+                items: { type: 'string', enum: ['PRE', 'REG', 'POST'] },
+              },
+              availableWeeks: { type: 'array', items: { type: 'integer' } },
+              coverageNote: { type: 'string' },
+            },
+          },
+        },
+      },
       GameListResponse: {
         type: 'object',
         required: ['data', 'meta'],
@@ -4326,7 +4599,20 @@ export const openApiDocument = {
         minProperties: 1,
         properties: {
           startTime: { type: ['string', 'null'], format: 'date-time' },
-          status: { oneOf: [{ $ref: '#/components/schemas/GameStatus' }, { type: 'null' }] },
+          status: {
+            type: ['string', 'null'],
+            enum: [
+              'SCHEDULED',
+              'PREGAME',
+              'IN_PROGRESS',
+              'HALFTIME',
+              'POSTPONED',
+              'CANCELED',
+              'SUSPENDED',
+              null,
+            ],
+            description: 'FINAL must use the sourced result-fallback operation.',
+          },
           week: { type: ['integer', 'null'], minimum: 1, maximum: 22 },
           venueName: { type: ['string', 'null'], maxLength: 160 },
           venueCity: { type: ['string', 'null'], maxLength: 128 },
@@ -4334,6 +4620,45 @@ export const openApiDocument = {
           isNeutralSite: { type: ['boolean', 'null'] },
           publicCorrectionNote: { type: ['string', 'null'], maxLength: 500 },
           internalNote: { type: ['string', 'null'], maxLength: 1000 },
+        },
+      },
+      GameResultFallbackRequest: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['status', 'homeScore', 'awayScore', 'sourceName', 'reason'],
+        properties: {
+          status: { type: 'string', enum: ['FINAL'] },
+          homeScore: { type: 'integer', minimum: 0 },
+          awayScore: { type: 'integer', minimum: 0 },
+          sourceName: { type: 'string', minLength: 1, maxLength: 160 },
+          sourceUrl: { type: ['string', 'null'], format: 'uri', maxLength: 2048 },
+          reason: { type: 'string', minLength: 1, maxLength: 500 },
+          internalNote: { type: ['string', 'null'], maxLength: 1000 },
+          publicCorrectionNote: { type: ['string', 'null'], maxLength: 500 },
+          dryRun: { type: 'boolean', default: true },
+        },
+      },
+      GameResultFallbackResponse: {
+        type: 'object',
+        required: ['data'],
+        properties: {
+          data: {
+            type: 'object',
+            required: ['dryRun', 'outcome', 'game', 'resultCoverage', 'teamStatCoverage'],
+            properties: {
+              dryRun: { type: 'boolean' },
+              outcome: {
+                type: 'string',
+                enum: ['WOULD_CREATE', 'WOULD_UPDATE', 'CREATED', 'UPDATED', 'UNCHANGED'],
+              },
+              game: { $ref: '#/components/schemas/AdminGame' },
+              resultCoverage: { type: 'string', enum: ['EDITORIAL_RESULT_FALLBACK'] },
+              teamStatCoverage: {
+                type: 'string',
+                enum: ['TEAM_STATS_COMPLETE', 'TEAM_STATS_PARTIAL', 'TEAM_STATS_UNAVAILABLE'],
+              },
+            },
+          },
         },
       },
       GameVerificationRequest: {

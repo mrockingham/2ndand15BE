@@ -16,13 +16,25 @@ function app(reader: GameStatsReader) {
   return instance;
 }
 
+const listCurrentGameStats = vi.fn().mockResolvedValue({
+  data: { season: 2026, seasonType: 'PRE', week: 1, games: [] },
+  meta: {
+    availableSeasons: [2026],
+    availableSeasonTypes: ['PRE'],
+    availableWeeks: [1, 2],
+    coverageNote: 'Coverage varies.',
+  },
+});
+
 describe('game stats routes', () => {
   it('returns the public box score without provider or unresolved-player metadata', async () => {
     const getGameStats = vi.fn().mockResolvedValue({
       data: { gameId, teamStats: { home: { teamId: 'home' }, away: { teamId: 'away' } } },
       meta: { playerStatsAvailable: false, limitations: ['Identity mapping required.'] },
     });
-    const response = await request(app({ getGameStats })).get(`/games/${gameId}/stats`).expect(200);
+    const response = await request(app({ getGameStats, listCurrentGameStats }))
+      .get(`/games/${gameId}/stats`)
+      .expect(200);
     expect(getGameStats).toHaveBeenCalledWith(gameId);
     expect(response.body).toMatchObject({ data: { gameId } });
     expect(JSON.stringify(response.body)).not.toMatch(
@@ -31,15 +43,35 @@ describe('game stats routes', () => {
   });
 
   it('validates the game UUID and preserves not-found errors', async () => {
-    await request(app({ getGameStats: vi.fn() }))
+    await request(app({ getGameStats: vi.fn(), listCurrentGameStats }))
       .get('/games/nope/stats')
       .expect(400);
     const reader: GameStatsReader = {
+      listCurrentGameStats,
       getGameStats: () =>
         Promise.reject(
           new AppError({ code: 'GAME_STATS_NOT_FOUND', message: 'Not found.', statusCode: 404 }),
         ),
     };
     await request(app(reader)).get(`/games/${gameId}/stats`).expect(404);
+  });
+
+  it('returns the bounded current-season collection and validates filters', async () => {
+    const getGameStats = vi.fn();
+    const response = await request(app({ getGameStats, listCurrentGameStats }))
+      .get('/games/current-stats?season=2026&seasonType=PRE&week=1')
+      .expect(200);
+    expect(response.headers['cache-control']).toBe(
+      'public, max-age=300, stale-while-revalidate=900',
+    );
+    expect((response.body as { data: unknown }).data).toMatchObject({
+      season: 2026,
+      seasonType: 'PRE',
+      week: 1,
+    });
+    expect(listCurrentGameStats).toHaveBeenCalledWith({ season: 2026, seasonType: 'PRE', week: 1 });
+    await request(app({ getGameStats, listCurrentGameStats }))
+      .get('/games/current-stats?week=nope')
+      .expect(400);
   });
 });

@@ -29,6 +29,8 @@ export interface AdminGameDto {
   readonly override: {
     readonly startTime: string | null;
     readonly status: string | null;
+    readonly homeScore: number | null;
+    readonly awayScore: number | null;
     readonly week: number | null;
     readonly venueName: string | null;
     readonly venueCity: string | null;
@@ -36,6 +38,10 @@ export interface AdminGameDto {
     readonly isNeutralSite: boolean | null;
     readonly publicCorrectionNote: string | null;
     readonly internalNote: string | null;
+    readonly resultSourceName: string | null;
+    readonly resultSourceUrl: string | null;
+    readonly resultVerifiedAt: string | null;
+    readonly resultReason: string | null;
     readonly createdBySnapshot: string;
     readonly updatedBySnapshot: string;
     readonly createdAt: string;
@@ -73,6 +79,8 @@ export function toAdminGameDto(game: AdminGameRecord): AdminGameDto {
         : {
             startTime: game.editorialOverride.startTime?.toISOString() ?? null,
             status: game.editorialOverride.status,
+            homeScore: game.editorialOverride.homeScore,
+            awayScore: game.editorialOverride.awayScore,
             week: game.editorialOverride.week,
             venueName: game.editorialOverride.venueName,
             venueCity: game.editorialOverride.venueCity,
@@ -80,6 +88,10 @@ export function toAdminGameDto(game: AdminGameRecord): AdminGameDto {
             isNeutralSite: game.editorialOverride.isNeutralSite,
             publicCorrectionNote: game.editorialOverride.publicCorrectionNote,
             internalNote: game.editorialOverride.internalNote,
+            resultSourceName: game.editorialOverride.resultSourceName,
+            resultSourceUrl: game.editorialOverride.resultSourceUrl,
+            resultVerifiedAt: game.editorialOverride.resultVerifiedAt?.toISOString() ?? null,
+            resultReason: game.editorialOverride.resultReason,
             createdBySnapshot: game.editorialOverride.createdBySnapshot,
             updatedBySnapshot: game.editorialOverride.updatedBySnapshot,
             createdAt: game.editorialOverride.createdAt.toISOString(),

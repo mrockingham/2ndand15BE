@@ -10,7 +10,19 @@ import type { NormalizedGame } from './normalized-game.js';
 export const MATCH_TOLERANCE_MS = 15 * 60 * 1_000;
 
 export type CurrentGameOutcome =
-  'WOULD_UPDATE' | 'UPDATED' | 'UNCHANGED' | 'UNMATCHED' | 'AMBIGUOUS' | 'FAILED';
+  | 'WOULD_UPDATE'
+  | 'UPDATED'
+  | 'UNCHANGED'
+  | 'UNMATCHED'
+  | 'AMBIGUOUS'
+  | 'FAILED'
+  | 'RESULT_CONFLICT';
+
+export type CurrentGameResultCoverage =
+  'PROVIDER_COMPLETE' | 'EDITORIAL_RESULT_FALLBACK' | 'PROVIDER_MISSING' | 'RESULT_CONFLICT';
+
+export type CurrentGameResultReconciliation =
+  'NOT_APPLICABLE' | 'PROVIDER_STILL_MISSING' | 'AGREES' | 'DISAGREES';
 
 export interface CurrentGameFieldChange {
   readonly field: keyof CurrentGameStateWrite;
@@ -28,6 +40,8 @@ export interface CurrentGameSyncItem {
   readonly mappingChange: 'CREATE' | 'NONE';
   readonly reason: string | null;
   readonly providerSnapshot: CurrentGameProviderSnapshot | null;
+  readonly resultCoverage: CurrentGameResultCoverage;
+  readonly resultReconciliation: CurrentGameResultReconciliation;
 }
 
 export interface CurrentGameInternalSnapshot {
@@ -73,6 +87,7 @@ export interface CurrentGameSyncReport {
   readonly providerOnlyUnmatched: number;
   readonly ambiguous: number;
   readonly failed: number;
+  readonly resultConflict: number;
   readonly requestsUsed: number;
   readonly performance: {
     readonly providerResponseMs: number;
@@ -326,6 +341,22 @@ export class CurrentGameSyncService {
     if (invalidReason !== null) {
       return resultItem(game, 'FAILED', invalidReason, providerGame.providerGameId);
     }
+    const reconciliation = reconcileEditorialResult(game, providerGame);
+    if (reconciliation === 'DISAGREES') {
+      return {
+        internalGameId: game.id,
+        internalSnapshot: toInternalSnapshot(game),
+        providerGameId: providerGame.providerGameId,
+        outcome: 'RESULT_CONFLICT',
+        matchMethod,
+        changes: [],
+        mappingChange: 'NONE',
+        reason: 'Provider final result conflicts with the active reviewed editorial fallback.',
+        providerSnapshot: toProviderSnapshot(providerGame),
+        resultCoverage: 'RESULT_CONFLICT',
+        resultReconciliation: 'DISAGREES',
+      };
+    }
     const state = toStateWrite(game, providerGame);
     const changes = compareState(game, state);
     const createMapping = game.providerMapping === null;
@@ -340,6 +371,9 @@ export class CurrentGameSyncService {
         mappingChange: 'NONE',
         reason: null,
         providerSnapshot: toProviderSnapshot(providerGame),
+        resultCoverage:
+          reconciliation === 'AGREES' ? 'EDITORIAL_RESULT_FALLBACK' : 'PROVIDER_COMPLETE',
+        resultReconciliation: reconciliation,
       };
     }
     if (options.apply) {
@@ -365,6 +399,9 @@ export class CurrentGameSyncService {
       mappingChange: createMapping ? 'CREATE' : 'NONE',
       reason: null,
       providerSnapshot: toProviderSnapshot(providerGame),
+      resultCoverage:
+        reconciliation === 'AGREES' ? 'EDITORIAL_RESULT_FALLBACK' : 'PROVIDER_COMPLETE',
+      resultReconciliation: reconciliation,
     };
   }
 }
@@ -553,7 +590,32 @@ function resultItem(
     mappingChange: 'NONE',
     reason,
     providerSnapshot: null,
+    resultCoverage: hasEditorialResultFallback(game)
+      ? 'EDITORIAL_RESULT_FALLBACK'
+      : 'PROVIDER_MISSING',
+    resultReconciliation: hasEditorialResultFallback(game)
+      ? 'PROVIDER_STILL_MISSING'
+      : 'NOT_APPLICABLE',
   };
+}
+
+function hasEditorialResultFallback(game: CurrentGameRecord): boolean {
+  const override = game.editorialResultOverride;
+  return override?.status === 'FINAL' && override.homeScore !== null && override.awayScore !== null;
+}
+
+export function reconcileEditorialResult(
+  game: CurrentGameRecord,
+  providerGame: NormalizedGame,
+): CurrentGameResultReconciliation {
+  if (!hasEditorialResultFallback(game)) return 'NOT_APPLICABLE';
+  const override = game.editorialResultOverride;
+  if (override === null) return 'NOT_APPLICABLE';
+  return providerGame.status === override.status &&
+    providerGame.homeScore === override.homeScore &&
+    providerGame.awayScore === override.awayScore
+    ? 'AGREES'
+    : 'DISAGREES';
 }
 
 function toInternalSnapshot(game: CurrentGameRecord): CurrentGameInternalSnapshot {
@@ -615,6 +677,7 @@ function buildReport(input: {
     providerOnlyUnmatched: input.providerOnly.length,
     ambiguous: outcome === 'AMBIGUOUS' ? 1 : 0,
     failed: outcome === 'FAILED' ? 1 : 0,
+    resultConflict: outcome === 'RESULT_CONFLICT' ? 1 : 0,
     requestsUsed: input.batch.requestsUsed,
     performance: {
       providerResponseMs:
@@ -657,6 +720,7 @@ function buildMultiReport(input: {
     providerOnlyUnmatched: input.providerOnly.length,
     ambiguous: count('AMBIGUOUS'),
     failed: count('FAILED'),
+    resultConflict: count('RESULT_CONFLICT'),
     requestsUsed: input.batch.requestsUsed,
     performance: {
       providerResponseMs:

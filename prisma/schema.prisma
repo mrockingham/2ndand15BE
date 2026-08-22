@@ -40,6 +40,21 @@ enum GameStatus {
   SUSPENDED
 }
 
+enum GamePlayType {
+  PASS
+  RUSH
+  PUNT
+  KICKOFF
+  FIELD_GOAL
+  SACK
+  PENALTY
+  TIMEOUT
+  INTERCEPTION
+  FUMBLE
+  END_PERIOD
+  OTHER
+}
+
 enum UserRole {
   USER
   EDITOR
@@ -335,6 +350,7 @@ model Team {
   opponentPlayerGameStats    PlayerGameStat[]        @relation("PlayerStatOpponent")
   currentGameTeamStats       CurrentGameTeamStat[]
   currentPlayerGameStats     CurrentGamePlayerStat[] @relation("TeamCurrentGamePlayerStats")
+  possessedGamePlays         GamePlay[]              @relation("GamePlayPossessionTeam")
   primaryEditorialDrafts     ArticleAiMetadata[]     @relation("EditorialPrimaryTeam")
   homePredictions            GamePrediction[]        @relation("PredictionHomeTeam")
   awayPredictions            GamePrediction[]        @relation("PredictionAwayTeam")
@@ -376,6 +392,7 @@ model Game {
   currentTeamStats      CurrentGameTeamStat[]
   currentPlayerStats    CurrentGamePlayerStat[]
   currentPlayerCoverage CurrentGamePlayerStatCoverage?
+  plays                 GamePlay[]
   predictions           GamePrediction[]
 
   @@index([league, season, seasonType, week, startTime], map: "games_schedule_idx")
@@ -383,6 +400,41 @@ model Game {
   @@index([homeTeamId, startTime], map: "games_home_team_start_time_idx")
   @@index([awayTeamId, startTime], map: "games_away_team_start_time_idx")
   @@map("games")
+}
+
+model GamePlay {
+  id                String       @id @default(uuid()) @db.Uuid
+  gameId            String       @map("game_id") @db.Uuid
+  playKey           String       @map("play_key") @db.Char(64)
+  reconciliationKey String       @map("reconciliation_key") @db.Char(64)
+  sequence          Int
+  period            Int
+  clock             String       @db.VarChar(8)
+  possessionTeamId  String?      @map("possession_team_id") @db.Uuid
+  playType          GamePlayType @map("play_type")
+  description       String       @db.Text
+  startDown         Int?         @map("start_down")
+  startDistance     Int?         @map("start_distance")
+  startYardLine     Int?         @map("start_yard_line")
+  endDown           Int?         @map("end_down")
+  endDistance       Int?         @map("end_distance")
+  endYardLine       Int?         @map("end_yard_line")
+  isScoringPlay     Boolean      @map("is_scoring_play")
+  isPenalty         Boolean      @map("is_penalty")
+  isTurnover        Boolean      @map("is_turnover")
+  sourceProvider    String       @map("source_provider") @db.VarChar(64)
+  sourcePlayType    String       @map("source_play_type") @db.VarChar(128)
+  sourceUpdatedAt   DateTime     @map("source_updated_at") @db.Timestamptz(3)
+  createdAt         DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
+  game              Game         @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  possessionTeam    Team?        @relation("GamePlayPossessionTeam", fields: [possessionTeamId], references: [id], onDelete: Restrict)
+
+  @@unique([gameId, playKey], map: "game_plays_game_play_key")
+  @@unique([gameId, sequence], map: "game_plays_game_sequence_key")
+  @@index([gameId, period, sequence], map: "game_plays_game_period_sequence_idx")
+  @@index([gameId, reconciliationKey], map: "game_plays_game_reconciliation_idx")
+  @@map("game_plays")
 }
 
 model GamePrediction {
@@ -594,6 +646,8 @@ model GameEditorialOverride {
   gameId               String      @unique(map: "game_editorial_overrides_game_id_key") @map("game_id") @db.Uuid
   startTime            DateTime?   @map("start_time") @db.Timestamptz(3)
   status               GameStatus?
+  homeScore            Int?        @map("home_score")
+  awayScore            Int?        @map("away_score")
   week                 Int?
   venueName            String?     @map("venue_name") @db.VarChar(160)
   venueCity            String?     @map("venue_city") @db.VarChar(128)
@@ -601,6 +655,10 @@ model GameEditorialOverride {
   isNeutralSite        Boolean?    @map("is_neutral_site")
   publicCorrectionNote String?     @map("public_correction_note") @db.VarChar(500)
   internalNote         String?     @map("internal_note") @db.VarChar(1000)
+  resultSourceName     String?     @map("result_source_name") @db.VarChar(160)
+  resultSourceUrl      String?     @map("result_source_url") @db.Text
+  resultVerifiedAt     DateTime?   @map("result_verified_at") @db.Timestamptz(3)
+  resultReason         String?     @map("result_reason") @db.VarChar(500)
   createdById          String?     @map("created_by_id") @db.Uuid
   updatedById          String?     @map("updated_by_id") @db.Uuid
   createdBySnapshot    String      @map("created_by_snapshot") @db.VarChar(254)

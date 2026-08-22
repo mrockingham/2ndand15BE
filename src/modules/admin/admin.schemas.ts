@@ -64,7 +64,10 @@ export const manualGameUpdateSchema = z
 export const gameOverrideInputSchema = z
   .object({
     startTime: kickoffSchema.nullable().optional(),
-    status: gameStatusSchema.nullable().optional(),
+    status: gameStatusSchema
+      .refine((status) => status !== 'FINAL', 'Use the reviewed result fallback for final games.')
+      .nullable()
+      .optional(),
     week: z.number().int().min(1).max(22).nullable().optional(),
     venueName: nullableTrimmed(160).optional(),
     venueCity: nullableTrimmed(128).optional(),
@@ -75,6 +78,20 @@ export const gameOverrideInputSchema = z
   })
   .strict()
   .refine((value) => Object.keys(value).length > 0, 'At least one override field is required.');
+
+export const gameResultFallbackInputSchema = z
+  .object({
+    status: z.literal('FINAL'),
+    homeScore: z.number().int().min(0),
+    awayScore: z.number().int().min(0),
+    sourceName: z.string().trim().min(1).max(160),
+    sourceUrl: z.url().max(2_048).nullable().optional(),
+    reason: z.string().trim().min(1).max(500),
+    internalNote: nullableTrimmed(1_000).optional(),
+    publicCorrectionNote: nullableTrimmed(500).optional(),
+    dryRun: z.boolean().default(true),
+  })
+  .strict();
 
 export const verificationInputSchema = z
   .object({
@@ -130,6 +147,7 @@ export type AdminGameListQuery = z.infer<typeof adminGameListQuerySchema>;
 export type ManualGameCreateInput = z.infer<typeof manualGameCreateSchema>;
 export type ManualGameUpdateInput = z.infer<typeof manualGameUpdateSchema>;
 export type GameOverrideInput = z.infer<typeof gameOverrideInputSchema>;
+export type GameResultFallbackInput = z.infer<typeof gameResultFallbackInputSchema>;
 export type VerificationInput = z.infer<typeof verificationInputSchema>;
 export type ScheduleImportRow = z.infer<typeof scheduleImportRowSchema>;
 export type ScheduleImportRequest = z.infer<typeof scheduleImportRequestSchema>;

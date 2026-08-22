@@ -11,6 +11,11 @@ import {
 } from '../modules/sports/evaluation/highlightly/highlightly-http-client.js';
 import { PrismaCurrentGameSyncRepository } from '../modules/sports/current-game-sync.repository.js';
 import { PrismaCurrentGameDetailsRepository } from '../modules/sports/current-game-details.repository.js';
+import {
+  CURRENT_GAME_TEAM_STAT_FIELDS,
+  summarizeCurrentGameTeamStatCoverage,
+  type CurrentGameTeamStatCoverage,
+} from '../modules/sports/current-game-team-stat-coverage.js';
 import { HighlightlyCurrentGameDetailsProvider } from '../modules/sports/providers/highlightly/highlightly-current-game-details-provider.js';
 import { HighlightlyCurrentGameProvider } from '../modules/sports/providers/highlightly/highlightly-current-game-provider.js';
 import { CurrentGameDetailsSyncService } from '../modules/sports/sync-current-game-details.js';
@@ -54,7 +59,14 @@ try {
     detailsProvider,
     new PrismaCurrentGameDetailsRepository(prisma),
   );
-  const teamStats: unknown[] = [];
+  const teamStats: (
+    | {
+        readonly internalGameId: string;
+        readonly outcome: 'AVAILABLE';
+        readonly report: Awaited<ReturnType<CurrentGameDetailsSyncService['sync']>>;
+      }
+    | { readonly internalGameId: string; readonly outcome: 'UNAVAILABLE'; readonly reason: string }
+  )[] = [];
   for (const item of report.results) {
     if (
       item.providerGameId === null ||
@@ -83,7 +95,33 @@ try {
       });
     }
   }
-  process.stdout.write(`${JSON.stringify({ gameState: report, teamStats }, null, 2)}\n`);
+  const unavailableCoverage = (): CurrentGameTeamStatCoverage => ({
+    classification: 'UNAVAILABLE',
+    rowCount: 0,
+    orientationValid: false,
+    fields: Object.fromEntries(
+      CURRENT_GAME_TEAM_STAT_FIELDS.map((field) => [field, { nonNull: 0, total: 0 }]),
+    ) as CurrentGameTeamStatCoverage['fields'],
+  });
+  const teamStatCoverage = summarizeCurrentGameTeamStatCoverage(
+    teamStats.map((item) =>
+      item.outcome === 'AVAILABLE' ? item.report.coverage : unavailableCoverage(),
+    ),
+  );
+  const resultCoverage = {
+    PROVIDER_COMPLETE: report.results.filter((item) => item.resultCoverage === 'PROVIDER_COMPLETE')
+      .length,
+    EDITORIAL_RESULT_FALLBACK: report.results.filter(
+      (item) => item.resultCoverage === 'EDITORIAL_RESULT_FALLBACK',
+    ).length,
+    PROVIDER_MISSING: report.results.filter((item) => item.resultCoverage === 'PROVIDER_MISSING')
+      .length,
+    RESULT_CONFLICT: report.results.filter((item) => item.resultCoverage === 'RESULT_CONFLICT')
+      .length,
+  };
+  process.stdout.write(
+    `${JSON.stringify({ gameState: report, resultCoverage, teamStats, teamStatCoverage }, null, 2)}\n`,
+  );
 } catch (error: unknown) {
   const providerError = error instanceof HighlightlyEvaluationError ? error : null;
   const syncError = error instanceof CurrentGameSyncError ? error : null;

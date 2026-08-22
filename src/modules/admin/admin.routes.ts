@@ -30,6 +30,11 @@ export function createAdminRouter(options: AdminRouterOptions): Router {
   router.post('/games', require('EDIT_SCHEDULE'), controller.createGame);
   router.patch('/games/:gameId', require('EDIT_SCHEDULE'), controller.updateGame);
   router.put('/games/:gameId/override', require('EDIT_SCHEDULE'), controller.upsertOverride);
+  router.put(
+    '/games/:gameId/result-fallback',
+    require('EDIT_SCHEDULE'),
+    controller.upsertResultFallback,
+  );
   router.delete('/games/:gameId/override', require('REMOVE_OVERRIDE'), controller.deleteOverride);
   router.put('/games/:gameId/verification', require('VERIFY_SCHEDULE'), controller.verifyGame);
   router.post(

@@ -31,6 +31,7 @@ function createHarness(role: UserRole) {
     createGame: vi.fn().mockResolvedValue(dummyGame),
     updateGame: vi.fn().mockResolvedValue(dummyGame),
     upsertOverride: vi.fn().mockResolvedValue(dummyGame),
+    upsertResultFallback: vi.fn().mockResolvedValue({}),
     deleteOverride: vi.fn().mockResolvedValue(dummyGame),
     verifyGame: vi.fn().mockResolvedValue(dummyGame),
     importSchedule: vi.fn().mockResolvedValue({
@@ -141,5 +142,71 @@ describe('administrative routes', () => {
       expect.objectContaining({ role: 'EDITOR' }),
       null,
     );
+  });
+
+  it('requires schedule-edit authorization and validates reviewed final-result input', async () => {
+    const path = '/api/v1/admin/games/00000000-0000-4000-8000-000000000101/result-fallback';
+    const denied = createHarness('USER');
+    await request(denied.app)
+      .put(path)
+      .set('authorization', 'Bearer valid')
+      .send({ status: 'FINAL', homeScore: 7, awayScore: 27 })
+      .expect(403);
+
+    const { app, service } = createHarness('EDITOR');
+    await request(app)
+      .put(path)
+      .set('authorization', 'Bearer valid')
+      .send({
+        status: 'FINAL',
+        homeScore: 7,
+        awayScore: 27,
+        sourceName: 'NFL.com',
+        sourceUrl: 'https://www.nfl.com/games/example',
+        reason: 'Primary provider omitted the reviewed game.',
+        dryRun: true,
+      })
+      .expect(200);
+    expect(vi.mocked(service.upsertResultFallback)).toHaveBeenCalledWith(
+      '00000000-0000-4000-8000-000000000101',
+      expect.objectContaining({ status: 'FINAL', homeScore: 7, awayScore: 27, dryRun: true }),
+      expect.objectContaining({ role: 'EDITOR' }),
+      null,
+    );
+
+    await request(app)
+      .put(path)
+      .set('authorization', 'Bearer valid')
+      .send({
+        status: 'FINAL',
+        homeScore: -1,
+        awayScore: 27,
+        sourceName: 'NFL.com',
+        reason: 'Reviewed.',
+      })
+      .expect(400);
+
+    await request(app)
+      .put(path)
+      .set('authorization', 'Bearer valid')
+      .send({
+        status: 'SCHEDULED',
+        homeScore: 7,
+        awayScore: 27,
+        sourceName: 'NFL.com',
+        reason: 'Reviewed.',
+      })
+      .expect(400);
+
+    await request(app)
+      .put(path)
+      .set('authorization', 'Bearer valid')
+      .send({
+        status: 'FINAL',
+        homeScore: 7,
+        awayScore: 27,
+        sourceName: 'NFL.com',
+      })
+      .expect(400);
   });
 });

@@ -20,6 +20,7 @@ import type {
 import type { HealthControllerOptions } from './modules/health/health.controller.js';
 import type { GameReader } from './modules/games/game.service.js';
 import type { GameStatsReader } from './modules/game-stats/game-stats.service.js';
+import type { GamePlayReader } from './modules/game-plays/game-plays.service.js';
 import type { TeamReader } from './modules/teams/team.service.js';
 import type { UserPersonalizationService } from './modules/users/user.service.js';
 import { createApiRouter } from './routes/api-router.js';
@@ -38,6 +39,7 @@ export interface CreateAppOptions {
   readonly teamReader: TeamReader;
   readonly gameReader: GameReader;
   readonly gameStatsReader?: GameStatsReader;
+  readonly gamePlayReader?: GamePlayReader;
   readonly authService: AuthenticationService;
   readonly userService: UserPersonalizationService;
   readonly accessTokens: AccessTokenService;
@@ -77,6 +79,7 @@ export function createApp(options: CreateAppOptions): Express {
       ...(options.gameStatsReader === undefined
         ? {}
         : { gameStatsReader: options.gameStatsReader }),
+      ...(options.gamePlayReader === undefined ? {} : { gamePlayReader: options.gamePlayReader }),
       authService: options.authService,
       userService: options.userService,
       authenticate: createAuthenticationMiddleware(options.accessTokens),

@@ -16,6 +16,8 @@ Public values resolve field-by-field as:
 
 ```text
 editorial override -> normalized Game -> null/unknown
+
+Final score corrections for provider omissions use the dedicated sourced result-fallback operation, not the generic schedule override. It is dry-run by default, requires an existing reviewed game plus `FINAL` and both oriented scores, records source/reason/server verification time/actor, and writes an append-only game audit only when state changes. See `docs/current-season-games/result-fallback.md`.
 ```
 
 Public game shapes remain unchanged and never expose provenance, internal notes, audit events, actor emails, or provider mappings. Date, week, and status filters plus kickoff ordering use resolved values. Resolution is performed from a bounded maximum of 1,000 season/source candidates; broader requests fail explicitly instead of returning incomplete results.

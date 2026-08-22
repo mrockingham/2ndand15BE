@@ -356,20 +356,23 @@ export class PrismaPredictionRepository {
   }
 
   async evaluate(now: Date, actor: AuditActor): Promise<number> {
-    const rows = await this.prisma.gamePrediction.findMany({
+    const candidates = await this.prisma.gamePrediction.findMany({
       where: {
         status: { in: ['PUBLISHED', 'LOCKED'] },
-        game: { status: 'FINAL', homeScore: { not: null }, awayScore: { not: null } },
       },
-      include: { game: true },
+      include: { game: { include: { editorialOverride: true } } },
+    });
+    const rows = candidates.flatMap((row) => {
+      const status = row.game.editorialOverride?.status ?? row.game.status;
+      const homeScore = row.game.editorialOverride?.homeScore ?? row.game.homeScore;
+      const awayScore = row.game.editorialOverride?.awayScore ?? row.game.awayScore;
+      return status === 'FINAL' && homeScore !== null && awayScore !== null
+        ? [{ row, homeScore, awayScore }]
+        : [];
     });
     await this.prisma.$transaction([
-      ...rows.map((row) => {
-        if (row.game.homeScore === null || row.game.awayScore === null)
-          throw new Error('Evaluation query returned a game without final scores.');
-        const home = row.game.homeScore,
-          away = row.game.awayScore,
-          tie = home === away;
+      ...rows.map(({ row, homeScore: home, awayScore: away }) => {
+        const tie = home === away;
         const actualWinnerTeamId = tie
           ? null
           : home > away

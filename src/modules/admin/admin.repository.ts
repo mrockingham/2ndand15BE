@@ -1,6 +1,7 @@
 import type {
   GameSourceType,
   GameStatus,
+  CurrentGameTeamStat,
   Prisma,
   PrismaClient,
   SeasonType,
@@ -16,6 +17,7 @@ import type {
   AdminGameListQuery,
   AuditListQuery,
   GameOverrideInput,
+  GameResultFallbackInput,
   ManualGameCreateInput,
   ManualGameUpdateInput,
   VerificationInput,
@@ -83,6 +85,13 @@ export interface AdminRepository extends AdministrativeIdentityReader {
     input: GameOverrideInput,
     actor: AuditActor,
   ): Promise<AdminGameRecord>;
+  upsertResultFallback(
+    gameId: string,
+    input: GameResultFallbackInput,
+    actor: AuditActor,
+    now: Date,
+  ): Promise<AdminGameRecord>;
+  findCurrentTeamStats(gameId: string): Promise<readonly CurrentGameTeamStat[]>;
   deleteOverride(gameId: string, actor: AuditActor): Promise<AdminGameRecord>;
   verifyGame(
     gameId: string,
@@ -298,6 +307,71 @@ export class PrismaAdminRepository implements AdminRepository {
         after,
       );
       return after;
+    });
+  }
+
+  upsertResultFallback(
+    gameId: string,
+    input: GameResultFallbackInput,
+    actor: AuditActor,
+    now: Date,
+  ): Promise<AdminGameRecord> {
+    return this.prisma.$transaction(async (transaction) => {
+      const before = await transaction.game.findUniqueOrThrow({
+        where: { id: gameId },
+        include: adminGameInclude,
+      });
+      const data = {
+        status: input.status,
+        homeScore: input.homeScore,
+        awayScore: input.awayScore,
+        resultSourceName: input.sourceName,
+        resultSourceUrl: input.sourceUrl ?? null,
+        resultVerifiedAt: now,
+        resultReason: input.reason,
+        internalNote: input.internalNote ?? null,
+        publicCorrectionNote: input.publicCorrectionNote ?? null,
+      } as const;
+      await transaction.gameEditorialOverride.upsert({
+        where: { gameId },
+        create: {
+          gameId,
+          ...data,
+          createdById: actor.userId,
+          updatedById: actor.userId,
+          createdBySnapshot: actor.emailSnapshot,
+          updatedBySnapshot: actor.emailSnapshot,
+        },
+        update: {
+          ...data,
+          updatedById: actor.userId,
+          updatedBySnapshot: actor.emailSnapshot,
+        },
+      });
+      const after = await transaction.game.findUniqueOrThrow({
+        where: { id: gameId },
+        include: adminGameInclude,
+      });
+      await createAudit(
+        transaction,
+        actor,
+        before.editorialOverride?.resultVerifiedAt === null || before.editorialOverride === null
+          ? 'GAME_RESULT_FALLBACK_CREATED'
+          : 'GAME_RESULT_FALLBACK_UPDATED',
+        'GAME',
+        gameId,
+        before,
+        after,
+        input.reason,
+      );
+      return after;
+    });
+  }
+
+  findCurrentTeamStats(gameId: string): Promise<readonly CurrentGameTeamStat[]> {
+    return this.prisma.currentGameTeamStat.findMany({
+      where: { gameId },
+      orderBy: { isHome: 'desc' },
     });
   }
 
@@ -558,7 +632,10 @@ function toImportedBaseData(input: ImportGameWrite) {
 function toImportOverride(input: ImportGameWrite, game: AdminGameRecord) {
   return {
     startTime: sameDate(input.startTime, game.startTime) ? null : input.startTime,
-    status: input.status === game.status ? null : input.status,
+    ...(game.editorialOverride?.resultVerifiedAt === null ||
+    game.editorialOverride?.resultVerifiedAt === undefined
+      ? { status: input.status === game.status ? null : input.status }
+      : {}),
     week: input.week === game.week ? null : input.week,
     venueName: input.venueName === game.venueName ? null : input.venueName,
     venueCity: input.venueCity === game.venueCity ? null : input.venueCity,
@@ -581,6 +658,7 @@ async function createAudit(
   entityId: string | null,
   before: unknown,
   after: unknown,
+  reason?: string,
 ): Promise<void> {
   await transaction.adminAuditEvent.create({
     data: {
@@ -592,6 +670,7 @@ async function createAudit(
       ...(before === null ? {} : { beforeSnapshot: sanitizeAuditSnapshot(before) }),
       ...(after === null ? {} : { afterSnapshot: sanitizeAuditSnapshot(after) }),
       requestId: actor.requestId,
+      ...(reason === undefined ? {} : { reason }),
     },
   });
 }

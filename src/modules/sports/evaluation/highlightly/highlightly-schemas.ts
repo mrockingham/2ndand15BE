@@ -157,6 +157,24 @@ const highlightlyEventPositionSchema = z.object({
   sideOfField: nullableString,
 });
 
+const highlightlyPlayDetailPositionSchema = z.object({
+  down: nullableNumber,
+  distance: nullableNumber,
+  yardLine: nullableNumber,
+  possessionText: nullableString,
+  yardsToEndzone: nullableNumber,
+});
+
+export const highlightlyPlayDetailSchema = z.object({
+  start: highlightlyPlayDetailPositionSchema,
+  end: highlightlyPlayDetailPositionSchema,
+  text: z.string().trim().min(1).max(4_000),
+  type: z.string().trim().min(1).max(128),
+  clock: z.string().trim().min(1).max(8),
+  period: z.number().int().min(1).max(10),
+  isPenalty: z.boolean(),
+});
+
 export const highlightlyStructuredPlaySchema = z.object({
   id: providerIdSchema.optional(),
   sequence: z.number().int().nonnegative().optional(),
@@ -220,6 +238,7 @@ export const highlightlyEventSchema = z.object({
   end: highlightlyEventPositionSchema.nullable().optional(),
   team: highlightlyTeamSchema.nullable().optional(),
   plays: z.array(z.union([z.string().min(1), highlightlyStructuredPlaySchema])).optional(),
+  playDetails: z.array(highlightlyPlayDetailSchema).optional(),
   start: highlightlyEventPositionSchema.nullable().optional(),
   result: nullableString,
   description: nullableString,
@@ -306,6 +325,7 @@ export type HighlightlyDetailedMatch = z.infer<typeof highlightlyDetailedMatchSc
 export type HighlightlyBoxScoreResponse = z.infer<typeof highlightlyBoxScoreResponseSchema>;
 export type HighlightlyEvent = z.infer<typeof highlightlyEventSchema>;
 export type HighlightlyStructuredPlay = z.infer<typeof highlightlyStructuredPlaySchema>;
+export type HighlightlyPlayDetail = z.infer<typeof highlightlyPlayDetailSchema>;
 export type HighlightlyMatchListResponse = z.infer<typeof highlightlyMatchListResponseSchema>;
 export type HighlightlyStandingResponse = z.infer<typeof highlightlyStandingResponseSchema>;
 export type HighlightlyPlayerProfileResponse = z.infer<

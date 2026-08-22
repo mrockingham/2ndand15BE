@@ -5,6 +5,10 @@ import type {
 } from './current-game-details-provider.js';
 import type { CurrentPlayerIdentityProvider } from './current-player-identity-provider.js';
 import {
+  classifyCurrentGameTeamStats,
+  type CurrentGameTeamStatCoverage,
+} from './current-game-team-stat-coverage.js';
+import {
   toTeamStatWrite,
   type CurrentGameDetailsRepository,
   type CurrentGamePlayerStatPlan,
@@ -134,6 +138,7 @@ export interface CurrentGameDetailsSyncReport {
   readonly internalGameId: string;
   readonly providerGameId: string;
   readonly requestsUsed: number;
+  readonly coverage: CurrentGameTeamStatCoverage;
   readonly teamStats: {
     readonly wouldCreate: number;
     readonly wouldUpdate: number;
@@ -373,6 +378,11 @@ export class CurrentGameDetailsSyncService {
         sourceUpdatedAt,
       }),
     ] as const;
+    const teamStatCoverage = classifyCurrentGameTeamStats({
+      rows: desiredRows,
+      homeTeamId: target.homeTeamId,
+      awayTeamId: target.awayTeamId,
+    });
 
     const comparisonStarted = performance.now();
     const results = desiredRows.map((row) => planRow(row, target.teamStats, options.apply));
@@ -460,6 +470,7 @@ export class CurrentGameDetailsSyncService {
       internalGameId: target.id,
       providerGameId: detail.providerGameId,
       requestsUsed: batch.requestsUsed + profileRequests,
+      coverage: teamStatCoverage,
       teamStats: {
         wouldCreate: results.filter((result) => result.outcome === 'WOULD_CREATE').length,
         wouldUpdate: results.filter((result) => result.outcome === 'WOULD_UPDATE').length,

@@ -11,6 +11,8 @@ Verified: August 21, 2026. The reviewed internal schedule contains 49 preseason 
 - Remaining scheduled: 3
 - Highlightly mappings created: 13
 - `CurrentGameTeamStat` rows created: 26
+- Team-stat completeness for matched finals: 13 COMPLETE, 0 PARTIAL
+- Provider-level team-stat unavailability: 3 omitted games
 - Ambiguous/failed/provider-only: 0/0/0
 
 Matched finals (away at home, away-home score): GB@PIT 9-28; DET@CIN 14-16; IND@NE 13-13; TB@NYJ 24-16; MIA@WAS 7-20; DEN@ATL 27-7; CLE@CHI 10-34; MIN@NYG 13-10; CAR@BUF 14-29; LAR@KC 20-12; JAX@NO 24-20; PHI@BAL 7-24; DAL@SEA 17-7.
@@ -25,6 +27,8 @@ Missing-result fallback report:
 
 No result was inferred and no destructive action occurred for these rows.
 
+Milestone 25.1 update: a fresh bounded Highlightly verification failed without producing a usable provider report or any write. API-Sports again returned no validated 2026 current-season games. Independently reviewed official NFL results were therefore applied through the sourced editorial fallback: LAC 27-HOU 7, ARI 27-LV 14, and TEN 19-SF 13. No Highlightly mapping was created. Week 1 result coverage is now 13 provider-complete plus three editorial-fallback games; see [result-fallback.md](result-fallback.md).
+
 ## Hosted Week 2
 
 - Reviewed internal games/provider matches: 16/16
@@ -32,6 +36,7 @@ No result was inferred and no destructive action occurred for these rows.
 - Final results: LV@HOU 22-20; SF@LAC 41-17
 - Mappings created: 16
 - `CurrentGameTeamStat` rows created: 4
+- Team-stat completeness for current finals: 2 COMPLETE, 0 PARTIAL
 - Ambiguous/failed/provider-only: 0/0/0
 
 The 14 upcoming games retained `SCHEDULED`, null scores, and a null clock. Their only persistence changes were verified provider mappings and provider-update/audit metadata; reviewed schedule fields were preserved.
@@ -56,6 +61,8 @@ Local public HTTP requests backed by the hosted database verified:
 - `GET /api/v1/games/:gameId/stats` returned both normalized team-stat sides.
 - Combined response inspection found no `highlightly` or `providerGameId` value.
 
-Post-apply counts were 2,024 games, 330 games in 2026, 16 reviewed Week 1 games, 16 reviewed Week 2 games, 1,988 provider mappings, and 32 current team-stat rows (the pre-existing Hall of Fame pair plus 30 new rows). Historical `PlayerGameStat` remained 112,316; `PlayerWeekRoster` 276,063; `Player` 25,766; current player stats/coverage both zero. There were no duplicate reviewed preseason schedule identities.
+Post-M25.1 counts remain 2,024 games, 330 games in 2026, 16 reviewed Week 1 games, 16 reviewed Week 2 games, 1,988 provider mappings, and 32 current team-stat rows. Historical `PlayerGameStat` remains 112,316; `PlayerSeasonStat` 27,159; `PlayerWeekRoster` 276,063; `Player` 25,766; current player stats remain zero. Three result overrides and three result-fallback audits were added. There are no duplicate reviewed preseason schedule identities.
 
-Quality gates: 407 tests passed and 39 environment-gated tests skipped; lint, strict TypeScript, formatting, build, Prisma validation, all 15 migration checks, and `git diff --check` passed. The dependency audit reports three high-severity `deepmerge-ts` findings through Prisma tooling; the offered automated fix is a breaking Prisma downgrade to 6.12.0, so no unsafe dependency mutation was made in this milestone.
+Quality gates after M25.1: 421 tests passed and 39 environment-gated tests skipped; lint, strict TypeScript, formatting, build, Prisma validation, all 16 migration checks, and `git diff --check` passed. The dependency audit reports four high-severity findings in `deepmerge-ts` (through Prisma tooling) and `nanoid`; fixing all automatically would include a breaking Prisma downgrade to 6.12.0, so no unsafe dependency mutation was made in this milestone.
+
+Field-level measurements and the API-readiness decision are recorded in [team-stat-coverage.md](team-stat-coverage.md).

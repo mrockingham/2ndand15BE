@@ -56,8 +56,8 @@ export function toGameDto(game: GameWithTeams): GameDto {
     status: override?.status ?? game.status,
     homeTeam: toTeamSummary(game.homeTeam),
     awayTeam: toTeamSummary(game.awayTeam),
-    homeScore: game.homeScore,
-    awayScore: game.awayScore,
+    homeScore: override?.homeScore ?? game.homeScore,
+    awayScore: override?.awayScore ?? game.awayScore,
     quarter: game.quarter,
     clock: game.clock,
     venue: {

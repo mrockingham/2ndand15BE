@@ -28,6 +28,11 @@ export interface CurrentGameRecord {
     readonly providerTeamId: string | null;
   };
   readonly providerMapping: { readonly providerGameId: string } | null;
+  readonly editorialResultOverride: {
+    readonly status: GameStatus | null;
+    readonly homeScore: number | null;
+    readonly awayScore: number | null;
+  } | null;
 }
 
 export interface CurrentGameStateWrite {
@@ -117,6 +122,9 @@ export class PrismaCurrentGameSyncRepository implements CurrentGameSyncRepositor
           where: { provider },
           take: 1,
           select: { providerGameId: true },
+        },
+        editorialOverride: {
+          select: { status: true, homeScore: true, awayScore: true },
         },
       },
     });
@@ -231,6 +239,7 @@ function currentGameSelect(provider: string) {
       },
     },
     providerMaps: { where: { provider }, take: 1, select: { providerGameId: true } },
+    editorialOverride: { select: { status: true, homeScore: true, awayScore: true } },
   } as const;
 }
 
@@ -248,6 +257,7 @@ function toCurrentGameRecord(game: SelectedCurrentGame): CurrentGameRecord {
       providerTeamId: game.awayTeam.providerMaps[0]?.providerTeamId ?? null,
     },
     providerMapping: game.providerMaps[0] ?? null,
+    editorialResultOverride: game.editorialOverride,
   };
 }
 

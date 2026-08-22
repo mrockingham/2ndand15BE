@@ -22,6 +22,7 @@ const input: ApplyCurrentGameInput = {
     homeTeam: { abbreviation: 'ARI', providerTeamId: null },
     awayTeam: { abbreviation: 'CAR', providerTeamId: null },
     providerMapping: null,
+    editorialResultOverride: null,
   },
   provider: 'highlightly',
   providerGameId: '565788',

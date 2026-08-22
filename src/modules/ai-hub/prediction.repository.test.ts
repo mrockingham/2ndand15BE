@@ -74,3 +74,51 @@ describe('PrismaPredictionRepository weekly selection', () => {
     });
   });
 });
+
+describe('PrismaPredictionRepository evaluation', () => {
+  it('evaluates against the resolved reviewed fallback result', async () => {
+    const update = vi.fn().mockResolvedValue({});
+    const createAudit = vi.fn().mockResolvedValue({});
+    const prisma = {
+      gamePrediction: {
+        findMany: vi.fn().mockResolvedValue([
+          {
+            id: 'prediction-1',
+            predictedWinnerTeamId: 'away',
+            homeWinProbability: 0.4,
+            game: {
+              status: 'SCHEDULED',
+              homeScore: null,
+              awayScore: null,
+              homeTeamId: 'home',
+              awayTeamId: 'away',
+              editorialOverride: { status: 'FINAL', homeScore: 7, awayScore: 27 },
+            },
+          },
+        ]),
+        update,
+      },
+      adminAuditEvent: { create: createAudit },
+      $transaction: vi.fn((operations: readonly Promise<unknown>[]) => Promise.all(operations)),
+    } as unknown as PrismaClient;
+    const repository = new PrismaPredictionRepository(prisma);
+
+    await expect(
+      repository.evaluate(new Date('2026-08-21T12:00:00Z'), {
+        userId: null,
+        emailSnapshot: 'prediction-cli',
+        requestId: null,
+      }),
+    ).resolves.toBe(1);
+    const updateInput: unknown = update.mock.calls[0]?.[0];
+    expect(updateInput).toMatchObject({
+      data: {
+        actualHomeScore: 7,
+        actualAwayScore: 27,
+        actualWinnerTeamId: 'away',
+        wasCorrect: true,
+      },
+    });
+    expect(createAudit).toHaveBeenCalledOnce();
+  });
+});

@@ -21,6 +21,8 @@ import {
 import { GameService } from './modules/games/game.service.js';
 import { PrismaGameStatsRepository } from './modules/game-stats/game-stats.repository.js';
 import { GameStatsService } from './modules/game-stats/game-stats.service.js';
+import { PrismaGamePlayRepository } from './modules/game-plays/game-plays.repository.js';
+import { GamePlayService } from './modules/game-plays/game-plays.service.js';
 import { PrismaTeamRepository } from './modules/teams/team.repository.js';
 import { TeamService } from './modules/teams/team.service.js';
 import { PrismaUserRepository } from './modules/users/user.repository.js';
@@ -131,7 +133,12 @@ const gameReader = new GameService(
     allowHistoricalDefaultGameResults: config.sports.allowHistoricalDefaultGameResults,
   },
 );
-const gameStatsReader = new GameStatsService(new PrismaGameStatsRepository(prisma), gameReader);
+const gameStatsReader = new GameStatsService(
+  new PrismaGameStatsRepository(prisma, publicGameSource),
+  gameReader,
+  config.sports.currentNflSeason,
+);
+const gamePlayReader = new GamePlayService(new PrismaGamePlayRepository(prisma), gameReader);
 const teamHubReader = new TeamHubService({
   repository: new PrismaTeamHubRepository(prisma),
   teams: teamReader,
@@ -165,6 +172,7 @@ const app = createApp({
   teamReader,
   gameReader,
   gameStatsReader,
+  gamePlayReader,
   authService,
   userService,
   accessTokens,

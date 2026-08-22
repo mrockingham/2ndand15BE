@@ -62,6 +62,8 @@ function createRepository(overrides: Partial<AdminRepository> = {}) {
     createImportedGame: vi.fn().mockResolvedValue(createAdminGame()),
     updateImportedGame: vi.fn().mockResolvedValue(createAdminGame()),
     createImportAudit: vi.fn().mockResolvedValue(undefined),
+    findCurrentTeamStats: vi.fn().mockResolvedValue([]),
+    upsertResultFallback: vi.fn().mockResolvedValue(createAdminGame()),
     ...overrides,
   } as unknown as AdminRepository;
   return repository;
@@ -184,6 +186,106 @@ describe('audit event scope', () => {
   });
 });
 
+describe('reviewed result fallback', () => {
+  const input = {
+    status: 'FINAL' as const,
+    homeScore: 7,
+    awayScore: 27,
+    sourceName: 'NFL.com',
+    sourceUrl: 'https://www.nfl.com/games/chargers-at-texans-2026-pre-1',
+    reason: 'Primary provider omitted the reviewed game.',
+    internalNote: 'Independently reviewed.',
+    dryRun: true,
+  };
+
+  it('dry-runs an existing reviewed game and keeps team-stat unavailability independent', async () => {
+    const game = createAdminGame();
+    markReviewed(game);
+    const repository = createRepository({ findGame: vi.fn().mockResolvedValue(game) });
+
+    await expect(
+      new AdminService(repository).upsertResultFallback(game.id, input, editor, null),
+    ).resolves.toMatchObject({
+      dryRun: true,
+      outcome: 'WOULD_CREATE',
+      resultCoverage: 'EDITORIAL_RESULT_FALLBACK',
+      teamStatCoverage: 'TEAM_STATS_UNAVAILABLE',
+      game: { resolved: { status: 'FINAL', homeScore: 7, awayScore: 27 } },
+    });
+    expect(vi.mocked(repository.upsertResultFallback)).not.toHaveBeenCalled();
+  });
+
+  it('rejects games without reviewed schedule provenance', async () => {
+    const repository = createRepository({ findGame: vi.fn().mockResolvedValue(createAdminGame()) });
+    await expect(
+      new AdminService(repository).upsertResultFallback('game', input, editor, null),
+    ).rejects.toMatchObject({ code: 'REVIEWED_GAME_REQUIRED' });
+  });
+
+  it('cannot create a missing game through result fallback', async () => {
+    const repository = createRepository({ findGame: vi.fn().mockResolvedValue(null) });
+    await expect(
+      new AdminService(repository).upsertResultFallback('missing', input, editor, null),
+    ).rejects.toMatchObject({ code: 'GAME_NOT_FOUND' });
+    expect(vi.mocked(repository.upsertResultFallback)).not.toHaveBeenCalled();
+  });
+
+  it('applies once with actor provenance and treats an identical repeat as a no-op', async () => {
+    const game = createAdminGame();
+    markReviewed(game);
+    const applied = {
+      ...game,
+      editorialOverride: createEditorialOverride({
+        status: 'FINAL',
+        homeScore: 7,
+        awayScore: 27,
+        resultSourceName: input.sourceName,
+        resultSourceUrl: input.sourceUrl,
+        resultVerifiedAt: new Date('2026-08-21T12:00:00Z'),
+        resultReason: input.reason,
+        internalNote: input.internalNote,
+        publicCorrectionNote: null,
+      }),
+    } satisfies AdminGameRecord;
+    const findGame = vi.fn().mockResolvedValueOnce(game).mockResolvedValue(applied);
+    const repository = createRepository({
+      findGame,
+      upsertResultFallback: vi.fn().mockResolvedValue(applied),
+    });
+    const service = new AdminService(repository, () => new Date('2026-08-21T12:00:00Z'));
+
+    await expect(
+      service.upsertResultFallback(game.id, { ...input, dryRun: false }, editor, 'req-1'),
+    ).resolves.toMatchObject({ outcome: 'CREATED' });
+    await expect(
+      service.upsertResultFallback(game.id, { ...input, dryRun: false }, editor, 'req-2'),
+    ).resolves.toMatchObject({ outcome: 'UNCHANGED' });
+    expect(vi.mocked(repository.upsertResultFallback)).toHaveBeenCalledOnce();
+    expect(vi.mocked(repository.upsertResultFallback)).toHaveBeenCalledWith(
+      game.id,
+      expect.objectContaining({ sourceName: 'NFL.com', reason: input.reason }),
+      expect.objectContaining({ userId: editor.userId, requestId: 'req-1' }),
+      new Date('2026-08-21T12:00:00Z'),
+    );
+  });
+
+  it('prevents the generic override path from contradicting an active result fallback', async () => {
+    const game = createAdminGame();
+    game.editorialOverride = createEditorialOverride({
+      status: 'FINAL',
+      homeScore: 7,
+      awayScore: 27,
+      resultVerifiedAt: new Date('2026-08-21T12:00:00Z'),
+      resultSourceName: 'NFL.com',
+      resultReason: 'Reviewed fallback.',
+    });
+    const repository = createRepository({ findGame: vi.fn().mockResolvedValue(game) });
+    await expect(
+      new AdminService(repository).upsertOverride(game.id, { status: 'SCHEDULED' }, editor, null),
+    ).rejects.toMatchObject({ code: 'RESULT_FALLBACK_STATUS_PROTECTED' });
+  });
+});
+
 function createAdminGame(): AdminGameRecord {
   return {
     ...createGameRecord({
@@ -210,12 +312,21 @@ function createAdminGame(): AdminGameRecord {
   };
 }
 
-function createEditorialOverride(): NonNullable<AdminGameRecord['editorialOverride']> {
+function markReviewed(game: AdminGameRecord): void {
+  if (game.provenance === null) throw new Error('Test game provenance is required.');
+  game.provenance = { ...game.provenance, sourceType: 'OFFICIAL_WEB' };
+}
+
+function createEditorialOverride(
+  overrides: Partial<NonNullable<AdminGameRecord['editorialOverride']>> = {},
+): NonNullable<AdminGameRecord['editorialOverride']> {
   return {
     id: '00000000-0000-4000-8000-000000000301',
     gameId: '00000000-0000-4000-8000-000000000101',
     startTime: new Date('2026-09-11T00:20:00Z'),
     status: null,
+    homeScore: null,
+    awayScore: null,
     week: null,
     venueName: null,
     venueCity: null,
@@ -223,11 +334,16 @@ function createEditorialOverride(): NonNullable<AdminGameRecord['editorialOverri
     isNeutralSite: null,
     publicCorrectionNote: 'Public kickoff correction',
     internalNote: null,
+    resultSourceName: null,
+    resultSourceUrl: null,
+    resultVerifiedAt: null,
+    resultReason: null,
     createdById: editor.userId,
     updatedById: editor.userId,
     createdBySnapshot: editor.email,
     updatedBySnapshot: editor.email,
     createdAt: new Date('2026-08-02T00:00:00Z'),
     updatedAt: new Date('2026-08-02T00:00:00Z'),
+    ...overrides,
   };
 }

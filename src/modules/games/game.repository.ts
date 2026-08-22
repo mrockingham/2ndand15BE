@@ -50,7 +50,7 @@ export class PrismaGameRepository implements GameRepository {
         ...(filters.season === undefined ? {} : { season: filters.season }),
         ...(filters.seasonType === undefined ? {} : { seasonType: filters.seasonType }),
         AND: [
-          toSourceWhere(this.sourceProvider),
+          publicGameSourceWhere(this.sourceProvider),
           ...(filters.teamId === undefined
             ? []
             : [{ OR: [{ homeTeamId: filters.teamId }, { awayTeamId: filters.teamId }] }]),
@@ -82,7 +82,7 @@ export class PrismaGameRepository implements GameRepository {
     return this.prisma.game.findFirst({
       where: {
         id: gameId,
-        ...toSourceWhere(this.sourceProvider),
+        ...publicGameSourceWhere(this.sourceProvider),
       },
       include: publicGameInclude,
     });
@@ -94,7 +94,7 @@ export class PrismaGameRepository implements GameRepository {
   }
 }
 
-function toSourceWhere(source: GameDataSource | undefined): Prisma.GameWhereInput {
+export function publicGameSourceWhere(source: GameDataSource | undefined): Prisma.GameWhereInput {
   if (source === undefined) return {};
   const manuallyMaintained: Prisma.GameWhereInput = {
     provenance: {

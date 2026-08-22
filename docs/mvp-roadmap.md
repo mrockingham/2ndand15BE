@@ -352,7 +352,7 @@ Boundaries:
 
 Goal: treat the reviewed schedule as authoritative while safely enriching bounded current-game windows from incomplete, week-null Highlightly data.
 
-**Status:** Complete on August 21, 2026. Dry-run-first hosted Week 1 and Week 2 backfills applied 15 verified finals, preserved 14 upcoming games with null scores, reported three provider omissions without destructive action, synced 30 team-stat rows, and passed identical no-write replays.
+**Status:** Complete on August 21, 2026. Dry-run-first hosted Week 1 and Week 2 backfills applied 15 verified finals, preserved 14 upcoming games with null scores, reported three provider omissions without destructive action, synced 30 team-stat rows, and passed identical no-write replays. All 15 stored final-game pairs were core-complete and correctly oriented, but Week 1 provider coverage was only 13/16; current-season team-stat API readiness is therefore `PARTIALLY_READY`, with provider coverage/fallback hardening selected as the next gate.
 
 Deliverables:
 
@@ -361,10 +361,29 @@ Deliverables:
 - Game/week/date bounded update-only CLI with reviewed-provenance selection, provider-missing/provider-only coverage, sanitized internal identity, and batch mapping ownership checks
 - Independent completed-game team-stat-only enrichment with no player requests or player/historical mutations
 - Hosted coverage, fallback, rights, performance, preservation, public API, and idempotency verification
+- Reusable COMPLETE/PARTIAL/UNAVAILABLE team-stat classifier with per-field coverage reporting and a documented API-readiness decision
 
 Boundaries:
 
 - No new games, schedule reconciliation/deletion, inferred missing scores, player reconciliation/stats, play-by-play, polling, cron, scheduler, queue, WebSocket, SSE, new provider, or frontend work
+
+## Milestone 25.1 — Reviewed result fallback and provider reconciliation
+
+Goal: prevent provider-omitted reviewed games from remaining result-stale while preserving schedule authority and keeping score coverage separate from statistical coverage.
+
+**Status:** Complete on August 21, 2026. Three official NFL Week 1 finals passed dry-run, were applied through sourced editorial overrides, and returned unchanged on exact replay. Week 1 result coverage is 16/16; team-stat coverage remains 13/16, so only per-game available statistics are safe and aggregate rankings remain incomplete.
+
+Deliverables:
+
+- Final-only admin/editor result fallback on existing reviewed games with source, reason, actor, server verification time, private/public notes, and append-only audit
+- Editorial result precedence in public Games and Team Hub APIs without exposing fallback internals
+- Provider agreement/disagreement/still-missing reconciliation with conflict-safe mapping behavior
+- Independent result/stat coverage reporting and a bounded hosted coverage command
+- Prediction evaluation against resolved editorial final results
+
+Boundaries:
+
+- No game creation, fabricated team stats, Current Season Stats API, play-by-play, provider scraping/activation, prediction-model change, player reconciliation, polling, cron, queue, WebSocket, SSE, or frontend work
 
 ## Milestone 23 — AI editorial assistant and media candidates
 

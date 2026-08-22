@@ -22,6 +22,8 @@ import { createGameRouter, createTeamGameRouter } from '../modules/games/game.ro
 import type { GameReader } from '../modules/games/game.service.js';
 import { createGameStatsRouter } from '../modules/game-stats/game-stats.routes.js';
 import type { GameStatsReader } from '../modules/game-stats/game-stats.service.js';
+import { createGamePlayRouter } from '../modules/game-plays/game-plays.routes.js';
+import type { GamePlayReader } from '../modules/game-plays/game-plays.service.js';
 import { createHealthRouter } from '../modules/health/health.routes.js';
 import { createAuthRouter } from '../modules/auth/auth.routes.js';
 import type { AuthenticationService } from '../modules/auth/auth.service.js';
@@ -49,6 +51,7 @@ export interface ApiRouterOptions {
   readonly teamReader: TeamReader;
   readonly gameReader: GameReader;
   readonly gameStatsReader?: GameStatsReader;
+  readonly gamePlayReader?: GamePlayReader;
   readonly authService: AuthenticationService;
   readonly userService: UserPersonalizationService;
   readonly authenticate: RequestHandler;
@@ -157,6 +160,8 @@ export function createApiRouter(options: ApiRouterOptions): Router {
     router.use('/stats', createStatsHubRouter(options.statsHubReader));
   if (options.gameStatsReader !== undefined)
     router.use('/games', createGameStatsRouter(options.gameStatsReader));
+  if (options.gamePlayReader !== undefined)
+    router.use('/games', createGamePlayRouter(options.gamePlayReader));
   router.use('/games', createGameRouter(options.gameReader));
   router.use('/teams/:teamId/games', createTeamGameRouter(options.gameReader));
   if (options.teamHubReader !== undefined)
