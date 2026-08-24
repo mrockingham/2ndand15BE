@@ -6,10 +6,16 @@ import { createLogger } from './common/logging/logger.js';
 import { JwtAccessTokenService } from './common/security/access-token.js';
 import { CryptoOpaqueTokenService } from './common/security/opaque-token.js';
 import { Argon2idPasswordHasher } from './common/security/password-hasher.js';
-import { loadConfig } from './config/env.js';
+import { loadConfig, loadCurrentGameSyncConfig } from './config/env.js';
 import { PrismaAuthRepository } from './modules/auth/auth.repository.js';
 import { PrismaAdminRepository } from './modules/admin/admin.repository.js';
 import { AdminService } from './modules/admin/admin.service.js';
+import { PrismaCurrentGamePlayRepository } from './modules/sports/current-game-play.repository.js';
+import { PrismaCurrentGamePollStateRepository } from './modules/sports/current-game-poll-state.repository.js';
+import { ReconciliationDiagnosticService } from './modules/sports/current-game-play-reconciliation-diagnostic.js';
+import { PlayReconciliationRepairService } from './modules/sports/current-game-play-repair.js';
+import { HighlightlyEvaluationHttpClient } from './modules/sports/evaluation/highlightly/highlightly-http-client.js';
+import { HighlightlyCurrentGamePlayProvider } from './modules/sports/providers/highlightly/highlightly-current-game-play-provider.js';
 import { PrismaArticleRepository } from './modules/articles/article.repository.js';
 import { ArticleService } from './modules/articles/article.service.js';
 import { AuthService } from './modules/auth/auth.service.js';
@@ -59,7 +65,46 @@ const config = loadConfig();
 const logger = createLogger(config);
 const prisma = createPrismaClient(config.databaseUrl);
 const adminRepository = new PrismaAdminRepository(prisma);
-const adminService = new AdminService(adminRepository);
+// The plays-reconciliation review/repair admin endpoints require Highlightly current-game
+// configuration, which is loaded separately (see loadCurrentGameSyncConfig) and is not otherwise
+// required to run this server. Missing/invalid config here must never prevent the HTTP server
+// from starting — those endpoints simply report themselves as unconfigured (500
+// GAME_PLAYS_REVIEW_UNCONFIGURED) until the relevant env vars are set.
+let playsDiagnosticService: ReconciliationDiagnosticService | undefined;
+let playsRepairService: PlayReconciliationRepairService | undefined;
+try {
+  const currentGameConfig = loadCurrentGameSyncConfig();
+  const highlightlyClient = new HighlightlyEvaluationHttpClient({
+    baseUrl: currentGameConfig.currentGame.highlightly.baseUrl,
+    apiKey: currentGameConfig.currentGame.highlightly.apiKey,
+    requestTimeoutMs: currentGameConfig.currentGame.highlightly.requestTimeoutMs,
+    maxRetries: currentGameConfig.currentGame.highlightly.maxRetries,
+    logger,
+  });
+  const currentGamePlayProvider = new HighlightlyCurrentGamePlayProvider(highlightlyClient);
+  const currentGamePlayRepository = new PrismaCurrentGamePlayRepository(prisma);
+  const currentGamePollStateRepository = new PrismaCurrentGamePollStateRepository(prisma);
+  playsDiagnosticService = new ReconciliationDiagnosticService(
+    currentGamePlayProvider,
+    currentGamePlayRepository,
+  );
+  playsRepairService = new PlayReconciliationRepairService(
+    currentGamePlayProvider,
+    currentGamePlayRepository,
+    currentGamePollStateRepository,
+  );
+} catch (error: unknown) {
+  logger.warn(
+    { err: error },
+    'Current-game configuration is unavailable; plays reconciliation review/repair admin endpoints will report unconfigured.',
+  );
+}
+const adminService = new AdminService(
+  adminRepository,
+  () => new Date(),
+  playsDiagnosticService,
+  playsRepairService,
+);
 const articleService = new ArticleService(new PrismaArticleRepository(prisma));
 const newsInboxService = new NewsInboxService(
   new PrismaNewsInboxRepository(prisma),

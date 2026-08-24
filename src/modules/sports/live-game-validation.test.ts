@@ -1,11 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import type { GamePlay } from '../../generated/prisma/client.js';
 import type { CurrentGameProvider } from './current-game-provider.js';
 import type {
   CurrentGamePlayProvider,
   CurrentGamePlayBatch,
 } from './current-game-play-provider.js';
 import type {
+  CurrentGamePlayApplyInput,
   CurrentGamePlayRepository,
   CurrentGamePlayTarget,
 } from './current-game-play.repository.js';
@@ -168,6 +170,7 @@ function harness(options: {
   readonly identityMismatch?: boolean;
   readonly gameSyncThrows?: boolean;
   readonly detailFetchFails?: boolean;
+  readonly initiallyStoredPlays?: readonly GamePlay[];
 }) {
   const gameRecord: CurrentGameRecord = {
     id: gameId,
@@ -332,19 +335,46 @@ function harness(options: {
     getGameDetails,
   };
 
-  const playTarget: CurrentGamePlayTarget = {
-    id: gameId,
-    status: 'IN_PROGRESS',
-    homeTeamId,
-    awayTeamId,
-    homeAbbreviation: 'NE',
-    awayAbbreviation: 'PHI',
-    providerMapping: { providerGameId },
-    plays: [],
-  };
+  let storedPlays: GamePlay[] = [...(options.initiallyStoredPlays ?? [])];
+  const applySnapshot = vi.fn((input: CurrentGamePlayApplyInput) => {
+    const byId = new Map(storedPlays.map((play) => [play.id, play]));
+    for (const row of input.rows) {
+      if (row.id === null) {
+        const created: GamePlay = { ...row, id: `generated-${String(byId.size + 1)}` } as GamePlay;
+        storedPlays = [...storedPlays, created];
+      } else {
+        storedPlays = storedPlays.map((play) =>
+          play.id === row.id ? ({ ...row, id: row.id } as GamePlay) : play,
+        );
+      }
+    }
+    return Promise.resolve({ auditEventId: 'audit-event-1' });
+  });
+  const applyRepair = vi.fn(() =>
+    Promise.reject(new Error('applyRepair is not exercised by live-validation tests.')),
+  );
+  const findTarget = vi.fn(() =>
+    Promise.resolve<CurrentGamePlayTarget>({
+      id: gameId,
+      status: 'IN_PROGRESS',
+      homeTeamId,
+      awayTeamId,
+      homeAbbreviation: 'NE',
+      awayAbbreviation: 'PHI',
+      providerMapping: { providerGameId },
+      plays: storedPlays,
+    }),
+  );
+  const replaceWithAuthoritativeFinalSnapshot = vi.fn(() =>
+    Promise.reject(
+      new Error('replaceWithAuthoritativeFinalSnapshot is not exercised by live-validation tests.'),
+    ),
+  );
   const playRepository: CurrentGamePlayRepository = {
-    findTarget: vi.fn(() => Promise.resolve(playTarget)),
-    applySnapshot: vi.fn(() => Promise.resolve()),
+    findTarget,
+    applySnapshot,
+    applyRepair,
+    replaceWithAuthoritativeFinalSnapshot,
   };
   const getGamePlays = vi.fn((): Promise<CurrentGamePlayBatch> => {
     countRequest();
@@ -398,7 +428,14 @@ function harness(options: {
     rateLimitObservation: () => ({ limit: 100, remaining: 96 }),
     now: () => new Date('2026-08-22T23:05:00.000Z'),
   };
-  return { deps, fetchMatchDetail, getGameDetails, getGamePlays };
+  return {
+    deps,
+    fetchMatchDetail,
+    getGameDetails,
+    getGamePlays,
+    applySnapshot,
+    getStoredPlays: () => storedPlays,
+  };
 }
 
 describe('runLiveValidationTick', () => {
@@ -407,6 +444,7 @@ describe('runLiveValidationTick', () => {
     const result = await runLiveValidationTick(deps, {
       gameId,
       apply: false,
+      applyPlays: false,
       policy,
       tickIndex: 1,
       previousPlays: [],
@@ -432,6 +470,7 @@ describe('runLiveValidationTick', () => {
     const result = await runLiveValidationTick(deps, {
       gameId,
       apply: false,
+      applyPlays: false,
       policy,
       tickIndex: 1,
       previousPlays: [],
@@ -450,6 +489,7 @@ describe('runLiveValidationTick', () => {
     const first = await runLiveValidationTick(deps, {
       gameId,
       apply: false,
+      applyPlays: false,
       policy,
       tickIndex: 1,
       previousPlays: [],
@@ -464,6 +504,7 @@ describe('runLiveValidationTick', () => {
     const second = await runLiveValidationTick(nextDeps, {
       gameId,
       apply: false,
+      applyPlays: false,
       policy,
       tickIndex: 2,
       previousPlays: first.syntheticPlays,
@@ -488,6 +529,7 @@ describe('runLiveValidationTick', () => {
       runLiveValidationTick(deps, {
         gameId,
         apply: false,
+        applyPlays: false,
         policy,
         tickIndex: 1,
         previousPlays: [],
@@ -506,6 +548,7 @@ describe('runLiveValidationTick', () => {
       runLiveValidationTick(deps, {
         gameId,
         apply: false,
+        applyPlays: false,
         policy,
         tickIndex: 1,
         previousPlays: [],
@@ -519,6 +562,7 @@ describe('runLiveValidationTick', () => {
     const result = await runLiveValidationTick(deps, {
       gameId,
       apply: false,
+      applyPlays: false,
       policy,
       tickIndex: 1,
       previousPlays: [],
@@ -534,6 +578,7 @@ describe('runLiveValidationTick', () => {
     const result = await runLiveValidationTick(deps, {
       gameId,
       apply: false,
+      applyPlays: false,
       policy,
       tickIndex: 1,
       previousPlays: [],
@@ -549,6 +594,7 @@ describe('runLiveValidationTick', () => {
     const result = await runLiveValidationTick(deps, {
       gameId,
       apply: false,
+      applyPlays: false,
       policy,
       tickIndex: 1,
       previousPlays: [],
@@ -567,6 +613,7 @@ describe('runLiveValidationTick', () => {
     const result = await runLiveValidationTick(deps, {
       gameId,
       apply: true,
+      applyPlays: false,
       policy: { ...policy, publicationApproved: true },
       tickIndex: 1,
       previousPlays: [],
@@ -577,5 +624,175 @@ describe('runLiveValidationTick', () => {
     expect(fetchMatchDetail).not.toHaveBeenCalled();
     // Unoptimized fallback: game-state + team-stats + plays = 3 requests, unchanged.
     expect(result.record.requestUsageDelta).toBe(3);
+  });
+
+  describe('--applyPlays live GamePlay persistence', () => {
+    it('does not write GamePlay rows unless --applyPlays is explicitly requested', async () => {
+      const { deps, applySnapshot } = harness({ plays: [rawPlayDetail('original')] });
+      const result = await runLiveValidationTick(deps, {
+        gameId,
+        apply: false,
+        applyPlays: false,
+        policy: { ...policy, publicationApproved: true },
+        tickIndex: 1,
+        previousPlays: [],
+        firstObservedAt: new Map(),
+      });
+      expect(result.record.plays.write).toEqual({
+        requested: false,
+        applied: false,
+        skippedReason: null,
+        storedTotal: 0,
+      });
+      expect(applySnapshot).not.toHaveBeenCalled();
+    });
+
+    it('refuses to write without HIGHLIGHTLY_PUBLICATION_APPROVED even when --applyPlays is requested', async () => {
+      const { deps, applySnapshot } = harness({ plays: [rawPlayDetail('original')] });
+      const result = await runLiveValidationTick(deps, {
+        gameId,
+        apply: false,
+        applyPlays: true,
+        policy, // publicationApproved: false
+        tickIndex: 1,
+        previousPlays: [],
+        firstObservedAt: new Map(),
+      });
+      expect(result.record.plays.write).toEqual({
+        requested: true,
+        applied: false,
+        skippedReason: 'PUBLICATION_NOT_APPROVED',
+        storedTotal: 0,
+      });
+      expect(applySnapshot).not.toHaveBeenCalled();
+    });
+
+    it('inserts newly observed live plays through the real M26 persistence path when approved', async () => {
+      const { deps, applySnapshot, getStoredPlays } = harness({
+        plays: [rawPlayDetail('first play'), rawPlayDetail('second play', { clock: '8:30' })],
+      });
+      const result = await runLiveValidationTick(deps, {
+        gameId,
+        apply: false,
+        applyPlays: true,
+        policy: { ...policy, publicationApproved: true },
+        tickIndex: 1,
+        previousPlays: [],
+        firstObservedAt: new Map(),
+      });
+      expect(result.record.plays.write).toEqual({
+        requested: true,
+        applied: true,
+        skippedReason: null,
+        storedTotal: 2,
+      });
+      expect(applySnapshot).toHaveBeenCalledTimes(1);
+      expect(getStoredPlays()).toHaveLength(2);
+      // Backend IDs come from the repository, not the diagnostic layer.
+      expect(getStoredPlays().every((play) => play.id.length > 0)).toBe(true);
+    });
+
+    it('safely updates a deterministically matched corrected play on the next tick', async () => {
+      const { deps, applySnapshot, getStoredPlays } = harness({
+        plays: [rawPlayDetail('original text')],
+      });
+      const first = await runLiveValidationTick(deps, {
+        gameId,
+        apply: false,
+        applyPlays: true,
+        policy: { ...policy, publicationApproved: true },
+        tickIndex: 1,
+        previousPlays: [],
+        firstObservedAt: new Map(),
+      });
+      expect(first.record.plays.write.applied).toBe(true);
+      expect(applySnapshot).toHaveBeenCalledTimes(1);
+      const storedId = getStoredPlays()[0]?.id;
+
+      const {
+        deps: nextDeps,
+        applySnapshot: nextApplySnapshot,
+        getStoredPlays: getNextStoredPlays,
+      } = harness({
+        plays: [rawPlayDetail('corrected text')],
+        initiallyStoredPlays: getStoredPlays(),
+      });
+      const second = await runLiveValidationTick(nextDeps, {
+        gameId,
+        apply: false,
+        applyPlays: true,
+        policy: { ...policy, publicationApproved: true },
+        tickIndex: 2,
+        previousPlays: first.syntheticPlays,
+        firstObservedAt: new Map(),
+      });
+      expect(second.record.plays.vsStoredDb).toEqual(
+        expect.objectContaining({ inserted: 0, updated: 1, unchanged: 0 }),
+      );
+      expect(second.record.plays.write).toEqual({
+        requested: true,
+        applied: true,
+        skippedReason: null,
+        storedTotal: 1,
+      });
+      expect(nextApplySnapshot).toHaveBeenCalledTimes(1);
+      const correctedPlays = getNextStoredPlays();
+      expect(correctedPlays).toHaveLength(1);
+      // The stable backend ID is preserved across the correction, not regenerated.
+      expect(correctedPlays[0]?.id).toBe(storedId);
+      expect(correctedPlays[0]?.description).toBe('corrected text');
+    });
+
+    it('never deletes stored plays when the live snapshot shrinks: blocks the whole write instead', async () => {
+      const survivingStoredPlay: GamePlay = {
+        id: 'stored-play-1',
+        gameId,
+        playKey: 'stored-play-key-not-in-new-snapshot',
+        reconciliationKey: 'stored-reconciliation-key-not-in-new-snapshot',
+        sequence: 1,
+        period: 1,
+        clock: '10:00',
+        possessionTeamId: null,
+        playType: 'RUSH',
+        description: 'A previously observed live play',
+        startDown: null,
+        startDistance: null,
+        startYardLine: null,
+        endDown: null,
+        endDistance: null,
+        endYardLine: null,
+        isScoringPlay: false,
+        isPenalty: false,
+        isTurnover: false,
+        sourceProvider: 'highlightly',
+        sourcePlayType: 'Rush',
+        sourceUpdatedAt: new Date('2026-08-22T23:00:00.000Z'),
+        supersededAt: null,
+        supersededByRunId: null,
+        createdAt: new Date('2026-08-22T23:00:00.000Z'),
+        updatedAt: new Date('2026-08-22T23:00:00.000Z'),
+      };
+      const { deps, applySnapshot, getStoredPlays } = harness({
+        plays: [rawPlayDetail('a different play the provider now shows')],
+        initiallyStoredPlays: [survivingStoredPlay],
+      });
+      const result = await runLiveValidationTick(deps, {
+        gameId,
+        apply: false,
+        applyPlays: true,
+        policy: { ...policy, publicationApproved: true },
+        tickIndex: 1,
+        previousPlays: [],
+        firstObservedAt: new Map(),
+      });
+      expect(result.record.plays.write).toEqual({
+        requested: true,
+        applied: false,
+        skippedReason: 'BLOCKED_COLLISION_OR_UNMATCHED',
+        storedTotal: 1,
+      });
+      expect(applySnapshot).not.toHaveBeenCalled();
+      expect(getStoredPlays()).toEqual([survivingStoredPlay]);
+    });
   });
 });

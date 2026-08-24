@@ -28,7 +28,7 @@ export class PrismaGamePlayRepository implements GamePlayRepository {
 
   findPlays(gameId: string): Promise<readonly PublicGamePlayRow[]> {
     return this.prisma.gamePlay.findMany({
-      where: { gameId },
+      where: { gameId, supersededAt: null },
       select: {
         id: true,
         sequence: true,

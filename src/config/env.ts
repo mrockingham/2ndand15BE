@@ -120,8 +120,33 @@ const currentGameEnvironmentSchema = databaseEnvironmentSchema
       .default('https://american-football.highlightly.net'),
     HIGHLIGHTLY_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(100).max(60_000).default(10_000),
     HIGHLIGHTLY_MAX_RETRIES: z.coerce.number().int().min(0).max(3).default(1),
+    CURRENT_GAME_POLLER_ENABLED: booleanSchema(false),
+    CURRENT_GAME_POLLER_HEARTBEAT_SECONDS: z.coerce.number().int().min(15).max(60).default(20),
+    CURRENT_GAME_POLLER_BATCH_SIZE: z.coerce.number().int().min(1).max(50).default(10),
+    CURRENT_GAME_POLLER_LOCK_LEASE_SECONDS: z.coerce.number().int().min(30).max(600).default(120),
+    CURRENT_GAME_PREGAME_POLL_SECONDS: z.coerce.number().int().min(60).max(3_600).default(300),
+    CURRENT_GAME_LIVE_POLL_SECONDS: z.coerce.number().int().min(30).max(1_800).default(120),
+    CURRENT_GAME_FEATURED_POLL_SECONDS: z.coerce.number().int().min(15).max(1_800).default(60),
+    CURRENT_GAME_HALFTIME_POLL_SECONDS: z.coerce.number().int().min(30).max(1_800).default(180),
+    CURRENT_GAME_FINAL_RECONCILE_10_MINUTES: z.coerce.number().int().min(1).max(120).default(10),
+    CURRENT_GAME_FINAL_RECONCILE_60_MINUTES: z.coerce.number().int().min(1).max(360).default(60),
+    CURRENT_GAME_RATE_LIMIT_DEGRADE_THRESHOLD: z.coerce
+      .number()
+      .int()
+      .min(0)
+      .max(100_000)
+      .default(500),
   })
   .superRefine((value, context) => {
+    if (
+      value.CURRENT_GAME_FINAL_RECONCILE_60_MINUTES <= value.CURRENT_GAME_FINAL_RECONCILE_10_MINUTES
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['CURRENT_GAME_FINAL_RECONCILE_60_MINUTES'],
+        message: 'Must be greater than CURRENT_GAME_FINAL_RECONCILE_10_MINUTES',
+      });
+    }
     if (!value.HIGHLIGHTLY_EVALUATION_MODE && !value.HIGHLIGHTLY_PUBLICATION_APPROVED) {
       context.addIssue({
         code: 'custom',
@@ -309,6 +334,20 @@ export interface HighlightlyEvaluationConfig {
   readonly evaluationSeason: number;
 }
 
+export interface CurrentGamePollerConfig {
+  readonly enabled: boolean;
+  readonly heartbeatSeconds: number;
+  readonly batchSize: number;
+  readonly lockLeaseSeconds: number;
+  readonly pregamePollSeconds: number;
+  readonly livePollSeconds: number;
+  readonly featuredPollSeconds: number;
+  readonly halftimePollSeconds: number;
+  readonly finalReconcile10Minutes: number;
+  readonly finalReconcile60Minutes: number;
+  readonly rateLimitDegradeThreshold: number;
+}
+
 export interface CurrentGameSyncConfig extends DatabaseConfig {
   readonly currentGame: {
     readonly provider: 'highlightly';
@@ -320,6 +359,7 @@ export interface CurrentGameSyncConfig extends DatabaseConfig {
       readonly requestTimeoutMs: number;
       readonly maxRetries: number;
     };
+    readonly poller: CurrentGamePollerConfig;
   };
 }
 
@@ -397,6 +437,19 @@ export function loadCurrentGameSyncConfig(
         baseUrl: data.HIGHLIGHTLY_BASE_URL,
         requestTimeoutMs: data.HIGHLIGHTLY_REQUEST_TIMEOUT_MS,
         maxRetries: data.HIGHLIGHTLY_MAX_RETRIES,
+      },
+      poller: {
+        enabled: data.CURRENT_GAME_POLLER_ENABLED,
+        heartbeatSeconds: data.CURRENT_GAME_POLLER_HEARTBEAT_SECONDS,
+        batchSize: data.CURRENT_GAME_POLLER_BATCH_SIZE,
+        lockLeaseSeconds: data.CURRENT_GAME_POLLER_LOCK_LEASE_SECONDS,
+        pregamePollSeconds: data.CURRENT_GAME_PREGAME_POLL_SECONDS,
+        livePollSeconds: data.CURRENT_GAME_LIVE_POLL_SECONDS,
+        featuredPollSeconds: data.CURRENT_GAME_FEATURED_POLL_SECONDS,
+        halftimePollSeconds: data.CURRENT_GAME_HALFTIME_POLL_SECONDS,
+        finalReconcile10Minutes: data.CURRENT_GAME_FINAL_RECONCILE_10_MINUTES,
+        finalReconcile60Minutes: data.CURRENT_GAME_FINAL_RECONCILE_60_MINUTES,
+        rateLimitDegradeThreshold: data.CURRENT_GAME_RATE_LIMIT_DEGRADE_THRESHOLD,
       },
     },
   };

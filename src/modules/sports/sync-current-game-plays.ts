@@ -67,12 +67,45 @@ export interface CurrentGamePlaySyncReport {
   };
 }
 
-interface IdentifiedPlay extends Omit<CurrentGamePlayWrite, 'id' | 'sourceUpdatedAt'> {
+export interface IdentifiedPlay extends Omit<CurrentGamePlayWrite, 'id' | 'sourceUpdatedAt'> {
   readonly fullSignature: string;
   readonly structuralSignature: string;
 }
 
-interface ReconciliationPlan {
+/** An operator-supplied pre-resolution for one structural-match collision, produced after a
+ * human reviews `ReconciliationPlan.collisionDetails` and decides which existing row a desired
+ * play (identified by the sequence `identifyPlays` assigned within its own snapshot fetch)
+ * actually corresponds to. See `current-game-play-repair.ts`. */
+export interface ManualPlayLink {
+  readonly existingPlayId: string;
+  readonly desiredSequence: number;
+}
+
+export interface CollisionCandidateDetail {
+  readonly existingPlayId: string;
+  readonly sequence: number;
+  readonly description: string;
+}
+
+export interface CollisionGroupDetail {
+  readonly desiredSequence: number;
+  readonly desiredDescription: string;
+  readonly candidates: readonly CollisionCandidateDetail[];
+}
+
+export interface ReconcilePlaysOptions {
+  /** Pre-resolved existing-row/desired-sequence pairs, applied before the automatic pass so a
+   * structural-match collision the algorithm refuses to guess at can be disambiguated by an
+   * operator using context (description similarity, sequence proximity) the algorithm
+   * intentionally ignores. Absent by default — every existing call site is unaffected. */
+  readonly manualLinks?: readonly ManualPlayLink[];
+  /** When true, additionally populate `collisionDetails`/`unmatchedExistingRows` on the
+   * returned plan from data already computed internally but normally discarded — purely
+   * additive, zero cost/behavior change for callers that omit it. */
+  readonly includeDiagnosticDetail?: boolean;
+}
+
+export interface ReconciliationPlan {
   readonly rows: readonly CurrentGamePlayWrite[];
   readonly inserted: number;
   readonly updated: number;
@@ -81,6 +114,8 @@ interface ReconciliationPlan {
   readonly collisions: number;
   readonly unresolved: number;
   readonly unmatchedExisting: number;
+  readonly collisionDetails?: readonly CollisionGroupDetail[];
+  readonly unmatchedExistingRows?: readonly GamePlay[];
 }
 
 export class CurrentGamePlaySyncService {
@@ -272,9 +307,11 @@ export function reconcilePlays(
   desired: readonly IdentifiedPlay[],
   existing: readonly GamePlay[],
   sourceUpdatedAt: Date,
+  options: ReconcilePlaysOptions = {},
 ): ReconciliationPlan {
   const exact = groupBy(existing, (play) => play.playKey);
   const structural = groupBy(existing, (play) => play.reconciliationKey);
+  const existingById = new Map(existing.map((play) => [play.id, play]));
   const used = new Set<string>();
   let inserted = 0;
   let updated = 0;
@@ -283,24 +320,9 @@ export function reconcilePlays(
   let collisions = 0;
   let unresolved = 0;
   const rows: CurrentGamePlayWrite[] = [];
-  for (const desiredPlay of desired) {
-    let match = uniqueUnused(exact.get(desiredPlay.playKey), used);
-    if (match === undefined) {
-      const candidates = (structural.get(desiredPlay.reconciliationKey) ?? []).filter(
-        (candidate) => !used.has(candidate.id),
-      );
-      if (candidates.length > 1) {
-        collisions += 1;
-        unresolved += 1;
-        continue;
-      }
-      match = candidates[0];
-    }
-    if (match === undefined) {
-      inserted += 1;
-      rows.push({ ...stripSignatures(desiredPlay), id: null, sourceUpdatedAt });
-      continue;
-    }
+  const collisionDetails: CollisionGroupDetail[] = [];
+
+  const applyMatch = (desiredPlay: IdentifiedPlay, match: GamePlay): void => {
     used.add(match.id);
     const changed = !sameStoredPlay(match, desiredPlay);
     const sequenceChanged = match.sequence !== desiredPlay.sequence;
@@ -312,7 +334,60 @@ export function reconcilePlays(
       id: match.id,
       sourceUpdatedAt: changed ? sourceUpdatedAt : match.sourceUpdatedAt,
     });
+  };
+
+  // Manual links are resolved first, before automatic matching, so an operator's explicit
+  // disambiguation always wins and the linked existing row is reserved (`used`) before the
+  // automatic pass could otherwise treat it as an unresolved collision candidate. An invalid
+  // link (unknown id, or an id already claimed by an earlier link) is silently ignored here —
+  // it simply falls through to automatic matching/collision detection below, so an incomplete
+  // or wrong set of links fails closed (the game stays blocked) rather than partially applying.
+  const manualLinkBySequence = new Map<number, string>();
+  for (const link of options.manualLinks ?? [])
+    manualLinkBySequence.set(link.desiredSequence, link.existingPlayId);
+  const resolvedByManualLink = new Set<number>();
+  for (const desiredPlay of desired) {
+    const linkedId = manualLinkBySequence.get(desiredPlay.sequence);
+    if (linkedId === undefined) continue;
+    const match = existingById.get(linkedId);
+    if (match === undefined || used.has(match.id)) continue;
+    applyMatch(desiredPlay, match);
+    resolvedByManualLink.add(desiredPlay.sequence);
   }
+
+  for (const desiredPlay of desired) {
+    if (resolvedByManualLink.has(desiredPlay.sequence)) continue;
+    let match = uniqueUnused(exact.get(desiredPlay.playKey), used);
+    if (match === undefined) {
+      const candidates = (structural.get(desiredPlay.reconciliationKey) ?? []).filter(
+        (candidate) => !used.has(candidate.id),
+      );
+      if (candidates.length > 1) {
+        collisions += 1;
+        unresolved += 1;
+        if (options.includeDiagnosticDetail === true) {
+          collisionDetails.push({
+            desiredSequence: desiredPlay.sequence,
+            desiredDescription: truncateDescription(desiredPlay.description),
+            candidates: candidates.map((candidate) => ({
+              existingPlayId: candidate.id,
+              sequence: candidate.sequence,
+              description: truncateDescription(candidate.description),
+            })),
+          });
+        }
+        continue;
+      }
+      match = candidates[0];
+    }
+    if (match === undefined) {
+      inserted += 1;
+      rows.push({ ...stripSignatures(desiredPlay), id: null, sourceUpdatedAt });
+      continue;
+    }
+    applyMatch(desiredPlay, match);
+  }
+  const unmatchedExistingRows = existing.filter((play) => !used.has(play.id));
   return {
     rows,
     inserted,
@@ -321,8 +396,15 @@ export function reconcilePlays(
     reordered,
     collisions,
     unresolved,
-    unmatchedExisting: existing.filter((play) => !used.has(play.id)).length,
+    unmatchedExisting: unmatchedExistingRows.length,
+    ...(options.includeDiagnosticDetail === true
+      ? { collisionDetails, unmatchedExistingRows }
+      : {}),
   };
+}
+
+function truncateDescription(value: string): string {
+  return value.length > 200 ? `${value.slice(0, 200)}…` : value;
 }
 
 function stripSignatures(

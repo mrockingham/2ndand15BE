@@ -3,6 +3,8 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { createGameRecord } from '../games/game.test-fixtures.js';
+import type { ReconciliationDiagnosticService } from '../sports/current-game-play-reconciliation-diagnostic.js';
+import type { PlayReconciliationRepairService } from '../sports/current-game-play-repair.js';
 import type { AdministrativePrincipal } from './admin-authorization.js';
 import type { AdminGameRecord } from './admin.dto.js';
 import type { AdminRepository } from './admin.repository.js';
@@ -269,6 +271,47 @@ describe('reviewed result fallback', () => {
     );
   });
 
+  it('sets a manual featured override and threads the actor/reason through to the repository', async () => {
+    const game = createAdminGame();
+    const repository = createRepository({
+      findGame: vi.fn().mockResolvedValue(game),
+      setFeatured: vi.fn().mockResolvedValue(game),
+    });
+    const service = new AdminService(repository, () => new Date('2026-08-23T12:00:00Z'));
+
+    await service.setFeatured(
+      game.id,
+      { featured: true, reason: 'Close divisional game' },
+      editor,
+      'req-1',
+    );
+
+    expect(vi.mocked(repository.setFeatured)).toHaveBeenCalledWith(
+      game.id,
+      { featured: true, reason: 'Close divisional game' },
+      expect.objectContaining({ userId: editor.userId, requestId: 'req-1' }),
+      new Date('2026-08-23T12:00:00Z'),
+    );
+  });
+
+  it('clears a manual featured override by passing featured: null', async () => {
+    const game = createAdminGame();
+    const repository = createRepository({
+      findGame: vi.fn().mockResolvedValue(game),
+      setFeatured: vi.fn().mockResolvedValue(game),
+    });
+    const service = new AdminService(repository);
+
+    await service.setFeatured(game.id, { featured: null }, editor, null);
+
+    expect(vi.mocked(repository.setFeatured)).toHaveBeenCalledWith(
+      game.id,
+      { featured: null },
+      expect.objectContaining({ userId: editor.userId }),
+      expect.any(Date),
+    );
+  });
+
   it('prevents the generic override path from contradicting an active result fallback', async () => {
     const game = createAdminGame();
     game.editorialOverride = createEditorialOverride({
@@ -347,3 +390,102 @@ function createEditorialOverride(
     ...overrides,
   };
 }
+
+describe('plays reconciliation review and repair delegation', () => {
+  const gameId = '00000000-0000-4000-8000-000000000200';
+
+  it('delegates diagnostics to the injected diagnostic service', async () => {
+    const diagnose = vi.fn().mockResolvedValue({ gameId, safeRepairCandidate: 'APPEND_ONLY' });
+    const diagnosticService = { diagnose } as unknown as ReconciliationDiagnosticService;
+    const service = new AdminService(createRepository(), () => new Date(), diagnosticService);
+    const result = await service.getPlaysDiagnostic(gameId, editor);
+    expect(diagnose).toHaveBeenCalledWith(gameId);
+    expect(result).toMatchObject({ safeRepairCandidate: 'APPEND_ONLY' });
+  });
+
+  it('reports unconfigured when no diagnostic service was wired', async () => {
+    const service = new AdminService(createRepository());
+    await expect(service.getPlaysDiagnostic(gameId, editor)).rejects.toMatchObject({
+      code: 'GAME_PLAYS_REVIEW_UNCONFIGURED',
+    });
+  });
+
+  it('converts the principal into a real audit actor before delegating a repair', async () => {
+    const repair = vi.fn().mockResolvedValue({ mode: 'APPEND_ONLY', applied: true });
+    const repairService = { repair } as unknown as PlayReconciliationRepairService;
+    const service = new AdminService(
+      createRepository(),
+      () => new Date(),
+      undefined,
+      repairService,
+    );
+    await service.repairGamePlays(
+      gameId,
+      { mode: 'append-only', reason: 'confirmed safe' },
+      admin,
+      'req-1',
+    );
+    expect(repair).toHaveBeenCalledWith({
+      gameId,
+      mode: 'APPEND_ONLY',
+      actor: { userId: admin.userId, emailSnapshot: admin.email, requestId: 'req-1' },
+      reason: 'confirmed safe',
+    });
+  });
+
+  it('passes manual links through for a structural-relink repair', async () => {
+    const repair = vi.fn().mockResolvedValue({ mode: 'STRUCTURAL_RELINK', applied: true });
+    const repairService = { repair } as unknown as PlayReconciliationRepairService;
+    const service = new AdminService(
+      createRepository(),
+      () => new Date(),
+      undefined,
+      repairService,
+    );
+    const manualLinks = [
+      { existingPlayId: '00000000-0000-4000-8000-000000000201', desiredSequence: 5 },
+    ];
+    await service.repairGamePlays(
+      gameId,
+      { mode: 'structural-relink', reason: 'disambiguated by operator', manualLinks },
+      admin,
+      null,
+    );
+    expect(repair).toHaveBeenCalledWith(
+      expect.objectContaining({ mode: 'STRUCTURAL_RELINK', manualLinks }),
+    );
+  });
+
+  it('passes the cutoff sequence through for a rebuild-after-cutoff repair', async () => {
+    const repair = vi.fn().mockResolvedValue({ mode: 'REBUILD_AFTER_CUTOFF', applied: true });
+    const repairService = { repair } as unknown as PlayReconciliationRepairService;
+    const service = new AdminService(
+      createRepository(),
+      () => new Date(),
+      undefined,
+      repairService,
+    );
+    await service.repairGamePlays(
+      gameId,
+      { mode: 'rebuild-after-cutoff', reason: 'clean cutoff', cutoffSequence: 82 },
+      admin,
+      null,
+    );
+    expect(repair).toHaveBeenCalledWith(
+      expect.objectContaining({ mode: 'REBUILD_AFTER_CUTOFF', cutoffSequence: 82 }),
+    );
+  });
+
+  it('lists the plays review queue from the repository', async () => {
+    const listPlaysReviewRequired = vi
+      .fn()
+      .mockResolvedValue([
+        { gameId, playsBlockedAt: null, playsBlockReason: 'UNMATCHED_EXISTING' },
+      ]);
+    const repository = createRepository({ listPlaysReviewRequired });
+    const service = new AdminService(repository);
+    const result = await service.listPlaysReviewQueue({ limit: 50 }, editor);
+    expect(listPlaysReviewRequired).toHaveBeenCalledWith(50);
+    expect(result.games).toHaveLength(1);
+  });
+});

@@ -15,15 +15,8 @@ import {
   HighlightlyEvaluationError,
   HighlightlyEvaluationHttpClient,
 } from '../modules/sports/evaluation/highlightly/highlightly-http-client.js';
-import {
-  highlightlyDetailedMatchSchema,
-  highlightlyRawMatchDetailResponseSchema,
-} from '../modules/sports/evaluation/highlightly/highlightly-schemas.js';
-import {
-  runLiveValidationTick,
-  type MatchDetailFetcher,
-  type TickRecord,
-} from '../modules/sports/live-game-validation.js';
+import { createHighlightlyMatchDetailFetcher } from '../modules/sports/highlightly-match-detail-fetcher.js';
+import { runLiveValidationTick, type TickRecord } from '../modules/sports/live-game-validation.js';
 import { HighlightlyCurrentGameDetailsProvider } from '../modules/sports/providers/highlightly/highlightly-current-game-details-provider.js';
 import { HighlightlyCurrentGamePlayProvider } from '../modules/sports/providers/highlightly/highlightly-current-game-play-provider.js';
 import { HighlightlyCurrentGameProvider } from '../modules/sports/providers/highlightly/highlightly-current-game-provider.js';
@@ -40,6 +33,7 @@ interface Args {
   readonly intervalSeconds: number;
   readonly durationMinutes: number | null;
   readonly apply: boolean;
+  readonly applyPlays: boolean;
   readonly marker: string | undefined;
 }
 
@@ -72,6 +66,11 @@ try {
       '--apply requires HIGHLIGHTLY_PUBLICATION_APPROVED=true. Refusing to write to core Game/CurrentGameTeamStat tables from a diagnostic run.',
     );
   }
+  if (args.applyPlays && !policy.publicationApproved) {
+    throw new Error(
+      '--applyPlays requires HIGHLIGHTLY_PUBLICATION_APPROVED=true. Refusing to write live GamePlay rows for a non-FINAL game without explicit publication approval.',
+    );
+  }
 
   const logger = createLogger(config);
   prisma = createPrismaClient(config.databaseUrl);
@@ -83,20 +82,7 @@ try {
     logger,
   });
 
-  const matchDetailFetcher: MatchDetailFetcher = {
-    async fetch(providerGameId) {
-      const payload = await client.get(
-        `/matches/${providerGameId}`,
-        {},
-        highlightlyRawMatchDetailResponseSchema,
-      );
-      const parsed = highlightlyDetailedMatchSchema.safeParse(payload[0]);
-      if (!parsed.success || String(parsed.data.id) !== providerGameId) {
-        return { detail: null, failureReason: 'Detailed match failed validation.' };
-      }
-      return { detail: parsed.data, failureReason: null };
-    },
-  };
+  const matchDetailFetcher = createHighlightlyMatchDetailFetcher(client);
 
   const deps = {
     gameSyncService: new CurrentGameSyncService(
@@ -122,6 +108,7 @@ try {
     intervalSeconds: args.intervalSeconds,
     durationMinutes: args.durationMinutes,
     apply: args.apply,
+    applyPlays: args.applyPlays,
   });
 
   let previousPlays: readonly GamePlay[] = [];
@@ -134,6 +121,11 @@ try {
   let rateLimited = 0;
   let timedOut = 0;
   let providerHttpRequestsTotal = 0;
+  let playsWriteTicksApplied = 0;
+  let playsWriteTicksSkipped = 0;
+  let playsTotalInserted = 0;
+  let playsTotalUpdated = 0;
+  let lastStoredTotal: number | null = null;
 
   let interrupted = false;
   process.on('SIGINT', () => {
@@ -151,6 +143,7 @@ try {
       const result = await runLiveValidationTick(deps, {
         gameId: args.gameId,
         apply: args.apply,
+        applyPlays: args.applyPlays,
         policy,
         tickIndex,
         previousPlays,
@@ -190,6 +183,16 @@ try {
 
     appendLine(args.output, record);
     providerHttpRequestsTotal += record.requestUsageDelta;
+    if (record.plays.write.requested) {
+      if (record.plays.write.applied) {
+        playsWriteTicksApplied += 1;
+        playsTotalInserted += record.plays.vsStoredDb?.inserted ?? 0;
+        playsTotalUpdated += record.plays.vsStoredDb?.updated ?? 0;
+      } else if (record.plays.write.skippedReason !== null) {
+        playsWriteTicksSkipped += 1;
+      }
+      lastStoredTotal = record.plays.write.storedTotal;
+    }
     for (const step of [record.gameState.outcome, record.teamStats.outcome, record.plays.outcome]) {
       if (!step.attempted) continue;
       operationsAttempted += 1;
@@ -233,6 +236,14 @@ try {
     operationsFailed,
     rateLimited,
     timedOut,
+    playsWrite: {
+      requested: args.applyPlays,
+      ticksApplied: playsWriteTicksApplied,
+      ticksSkipped: playsWriteTicksSkipped,
+      totalInserted: playsTotalInserted,
+      totalUpdated: playsTotalUpdated,
+      lastStoredTotal,
+    },
     durationMs:
       requestDurations.length === 0
         ? null
@@ -280,10 +291,13 @@ async function sleepUntilNextTick(endAt: number | null, intervalSeconds: number)
 function printProgress(record: TickRecord): void {
   const g = record.gameState;
   const p = record.plays;
+  const write = p.write.requested
+    ? ` write=${p.write.applied ? 'applied' : (p.write.skippedReason ?? 'noop')} stored=${String(p.write.storedTotal)}`
+    : '';
   process.stdout.write(
     `[tick ${String(record.tickIndex)}] ${record.localRequestTimestamp} status=${g.providerStatus ?? 'unknown'} ` +
       `score=${String(g.homeScore)}-${String(g.awayScore)} q=${String(g.period)} clock=${g.clock ?? ''} ` +
-      `plays=${String(p.normalizedPlayCount)} new=${String(p.newlyObservedThisTick.length)} ` +
+      `plays=${String(p.normalizedPlayCount)} new=${String(p.newlyObservedThisTick.length)}${write} ` +
       `gameStateOk=${String(g.outcome.ok)} teamStatsOk=${String(record.teamStats.outcome.ok)} playsOk=${String(p.outcome.ok)}\n`,
   );
 }
@@ -344,6 +358,7 @@ function parseArgs(argv: readonly string[]): Args {
     intervalSeconds: interval.data,
     durationMinutes,
     apply: hasFlag('apply'),
+    applyPlays: hasFlag('applyPlays'),
     marker: value('marker'),
   };
 }

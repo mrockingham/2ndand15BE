@@ -1,4 +1,5 @@
 import { AppError } from '../../common/errors/app-error.js';
+import type { GameDto } from '../games/game.dto.js';
 import type { GameReader } from '../games/game.service.js';
 import type { GamePlaysResponse } from './game-plays.dto.js';
 import type { GamePlayRepository } from './game-plays.repository.js';
@@ -57,11 +58,14 @@ export class GamePlayService implements GamePlayReader {
         })),
       },
       meta: {
-        limitations:
-          rows.length === 0
-            ? ['Structured play-by-play has not been imported for this completed game.']
-            : [],
+        limitations: rows.length === 0 ? [emptyPlaysLimitation(game.status)] : [],
       },
     };
   }
+}
+
+function emptyPlaysLimitation(status: GameDto['status']): string {
+  return status === 'FINAL'
+    ? 'Structured play-by-play has not been imported for this completed game.'
+    : 'Structured play-by-play is not available yet for this game.';
 }

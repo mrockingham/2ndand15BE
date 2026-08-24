@@ -24,6 +24,10 @@ Milestone 25 semantics and hosted results are in [sync-hardening.md](sync-harden
 
 Completed-game structured play ingestion, deterministic identity, reconciliation safeguards, and the provider-neutral public feed are documented in [play-by-play.md](play-by-play.md).
 
+The bounded, operator-run live-validation diagnostic harness (M26.2) is documented in [live-validation.md](live-validation.md). The production active-game poller (M27) — centralized scheduling, featured-game rules, durable poll state, multi-instance locking, and live `GamePlay` persistence before `FINAL` — is documented in [active-game-poller.md](active-game-poller.md); it is disabled by default via `CURRENT_GAME_POLLER_ENABLED=false`.
+
+The operator review and repair path for a blocked play reconciliation (M27.1) — diagnostics, conservative non-destructive repair modes, durable block visibility, and the admin API/CLI — is documented in [play-reconciliation-review.md](play-reconciliation-review.md).
+
 The batched public Current Season Stats contract, availability semantics, and coverage classifications are documented in [current-season-stats-api.md](current-season-stats-api.md).
 
 See [provider-verification.md](provider-verification.md) for evidence and rights posture, [sync-semantics.md](sync-semantics.md) for matching and update rules, and [performance-report.md](performance-report.md) for hosted timings. Box-score evidence and operations are documented in [box-score-capabilities.md](box-score-capabilities.md), [game-stats-sync.md](game-stats-sync.md), and [player-identity-reconciliation.md](player-identity-reconciliation.md).

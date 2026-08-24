@@ -44,6 +44,8 @@ function stored(row: ReturnType<typeof identifyPlays>['plays'][number], id: stri
     ...row,
     id,
     sourceUpdatedAt: new Date('2026-08-16T03:00:00Z'),
+    supersededAt: null,
+    supersededByRunId: null,
     createdAt: new Date('2026-08-16T03:00:00Z'),
     updatedAt: new Date('2026-08-16T03:00:00Z'),
   };
@@ -114,5 +116,88 @@ describe('current game play identity and reconciliation', () => {
       new Date(),
     );
     expect(plan.unmatchedExisting).toBe(1);
+  });
+
+  describe('manual links and diagnostic detail (M27.1)', () => {
+    const desired = requiredPlay(
+      identifyPlays(target.id, 'highlightly', [play('corrected')], snapshot, target).plays[0],
+    );
+    const candidateBase = requiredPlay(
+      identifyPlays(target.id, 'highlightly', [play('original')], snapshot, target).plays[0],
+    );
+    // Two existing rows sharing a structural (reconciliation) key but distinct play keys, so the
+    // corrected desired play falls through to structural matching and finds an ambiguous pair.
+    function collisionCandidates(): readonly [
+      ReturnType<typeof stored>,
+      ReturnType<typeof stored>,
+    ] {
+      const candidateA = stored(candidateBase, 'candidate-a');
+      const candidateB = {
+        ...stored(candidateBase, 'candidate-b'),
+        playKey: 'a-distinct-play-key',
+      };
+      return [candidateA, candidateB];
+    }
+
+    it('omits collisionDetails/unmatchedExistingRows by default (byte-identical to pre-M27.1 behavior)', () => {
+      const plan = reconcilePlays([desired], collisionCandidates(), new Date());
+      expect(plan.collisions).toBe(1);
+      expect(plan.collisionDetails).toBeUndefined();
+      expect(plan.unmatchedExistingRows).toBeUndefined();
+      expect(Object.keys(plan)).toEqual([
+        'rows',
+        'inserted',
+        'updated',
+        'unchanged',
+        'reordered',
+        'collisions',
+        'unresolved',
+        'unmatchedExisting',
+      ]);
+    });
+
+    it('populates collisionDetails and unmatchedExistingRows when includeDiagnosticDetail is requested', () => {
+      const candidates = collisionCandidates();
+      const plan = reconcilePlays([desired], candidates, new Date(), {
+        includeDiagnosticDetail: true,
+      });
+      expect(plan.collisions).toBe(1);
+      expect(plan.collisionDetails).toHaveLength(1);
+      expect(plan.collisionDetails?.[0]?.candidates).toHaveLength(2);
+      expect(plan.collisionDetails?.[0]?.desiredSequence).toBe(desired.sequence);
+      expect(plan.unmatchedExistingRows).toEqual(expect.arrayContaining([...candidates]));
+    });
+
+    it('resolves a collision via an operator-supplied manual link', () => {
+      const [candidateA, candidateB] = collisionCandidates();
+      const plan = reconcilePlays([desired], [candidateA, candidateB], new Date(), {
+        manualLinks: [{ existingPlayId: candidateA.id, desiredSequence: desired.sequence }],
+      });
+      expect(plan.collisions).toBe(0);
+      expect(plan.unmatchedExisting).toBe(1);
+      expect(plan.rows[0]).toMatchObject({ id: candidateA.id, description: 'corrected' });
+    });
+
+    it('ignores an invalid manual link (unknown existing id) and falls through to collision detection', () => {
+      const [candidateA, candidateB] = collisionCandidates();
+      const plan = reconcilePlays([desired], [candidateA, candidateB], new Date(), {
+        manualLinks: [{ existingPlayId: 'does-not-exist', desiredSequence: desired.sequence }],
+      });
+      expect(plan.collisions).toBe(1);
+    });
+
+    it('ignores a manual link pointing at an already-used existing row', () => {
+      const [candidateA, candidateB] = collisionCandidates();
+      const plan = reconcilePlays([desired], [candidateA, candidateB], new Date(), {
+        manualLinks: [
+          { existingPlayId: candidateA.id, desiredSequence: desired.sequence },
+          { existingPlayId: candidateA.id, desiredSequence: desired.sequence + 1 },
+        ],
+      });
+      // The second link targets a sequence that doesn't exist in `desired`, so it never applies;
+      // the first link still resolves the only real desired play cleanly.
+      expect(plan.collisions).toBe(0);
+      expect(plan.rows).toHaveLength(1);
+    });
   });
 });

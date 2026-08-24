@@ -55,6 +55,15 @@ export interface LiveValidationDependencies {
 export interface LiveValidationTickInput {
   readonly gameId: string;
   readonly apply: boolean;
+  /**
+   * Diagnostic-only, explicit opt-in: persists reconciled GamePlay rows for the
+   * supplied gameId regardless of FINAL status. Never touches
+   * CurrentGamePlaySyncService or its FINAL-only production gate — it calls
+   * CurrentGamePlayRepository.applySnapshot directly, reusing the same
+   * identify/reconcile/write logic. Requires policy.publicationApproved; a
+   * blocked (collision/unmatched-existing) or unapproved plan is never applied.
+   */
+  readonly applyPlays: boolean;
   readonly policy: CurrentGameExecutionPolicy;
   readonly tickIndex: number;
   readonly previousPlays: readonly GamePlay[];
@@ -77,6 +86,16 @@ export interface PlayDiff {
   readonly collisions: number;
   readonly unresolved: number;
   readonly snapshotShorter: boolean;
+}
+
+export type PlayWriteSkippedReason =
+  'PUBLICATION_NOT_APPROVED' | 'BLOCKED_COLLISION_OR_UNMATCHED' | null;
+
+export interface PlayWriteResult {
+  readonly requested: boolean;
+  readonly applied: boolean;
+  readonly skippedReason: PlayWriteSkippedReason;
+  readonly storedTotal: number | null;
 }
 
 export interface TickRecord {
@@ -114,6 +133,7 @@ export interface TickRecord {
     readonly fieldPositionFailures: number | null;
     readonly vsStoredDb: PlayDiff | null;
     readonly vsPreviousTick: PlayDiff | null;
+    readonly write: PlayWriteResult;
     readonly newlyObservedThisTick: readonly {
       readonly playKey: string;
       readonly sequence: number;
@@ -326,6 +346,12 @@ export async function runLiveValidationTick(
   let vsPreviousTick: PlayDiff | null = null;
   const newlyObservedThisTick: TickRecord['plays']['newlyObservedThisTick'][number][] = [];
   let syntheticPlays: readonly GamePlay[] = input.previousPlays;
+  let playWrite: PlayWriteResult = {
+    requested: input.applyPlays,
+    applied: false,
+    skippedReason: null,
+    storedTotal: target.plays.length,
+  };
 
   if (snapshot !== null) {
     providerPlayDetailsCount = snapshot.plays.length;
@@ -349,6 +375,30 @@ export async function runLiveValidationTick(
       unresolved: dbPlan.unresolved + dbPlan.unmatchedExisting,
       snapshotShorter: snapshot.plays.length < target.plays.length,
     };
+
+    if (input.applyPlays) {
+      const blocked = dbPlan.collisions > 0 || dbPlan.unmatchedExisting > 0;
+      if (!input.policy.publicationApproved) {
+        playWrite = { ...playWrite, skippedReason: 'PUBLICATION_NOT_APPROVED' };
+      } else if (blocked) {
+        playWrite = { ...playWrite, skippedReason: 'BLOCKED_COLLISION_OR_UNMATCHED' };
+      } else if (dbPlan.inserted > 0 || dbPlan.updated > 0) {
+        await deps.playRepository.applySnapshot({
+          target,
+          rows: dbPlan.rows,
+          provider: 'highlightly',
+          usageMode: 'approved',
+          inserted: dbPlan.inserted,
+          updated: dbPlan.updated,
+        });
+        playWrite = {
+          requested: true,
+          applied: true,
+          skippedReason: null,
+          storedTotal: target.plays.length + dbPlan.inserted,
+        };
+      }
+    }
 
     const tickPlan = reconcilePlays(identified.plays, input.previousPlays, sourceUpdatedAt);
     vsPreviousTick = {
@@ -426,6 +476,7 @@ export async function runLiveValidationTick(
       fieldPositionFailures,
       vsStoredDb,
       vsPreviousTick,
+      write: playWrite,
       newlyObservedThisTick,
     },
   };
@@ -484,6 +535,8 @@ function toSyntheticGamePlay(play: IdentifiedPlay, gameId: string, timestamp: Da
     id: `synthetic:${play.reconciliationKey}`,
     gameId,
     sourceUpdatedAt: timestamp,
+    supersededAt: null,
+    supersededByRunId: null,
     createdAt: timestamp,
     updatedAt: timestamp,
   };

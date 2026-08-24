@@ -79,6 +79,13 @@ export const gameOverrideInputSchema = z
   .strict()
   .refine((value) => Object.keys(value).length > 0, 'At least one override field is required.');
 
+export const gameFeaturedInputSchema = z
+  .object({
+    featured: z.boolean().nullable(),
+    reason: nullableTrimmed(500).optional(),
+  })
+  .strict();
+
 export const gameResultFallbackInputSchema = z
   .object({
     status: z.literal('FINAL'),
@@ -133,6 +140,40 @@ export const scheduleImportRequestSchema = z
   })
   .strict();
 
+const manualPlayLinkSchema = z
+  .object({
+    existingPlayId: z.uuid(),
+    desiredSequence: z.number().int().min(1),
+  })
+  .strict();
+
+export const repairGamePlaysInputSchema = z.discriminatedUnion('mode', [
+  z
+    .object({
+      mode: z.literal('append-only'),
+      reason: z.string().trim().min(1).max(500),
+    })
+    .strict(),
+  z
+    .object({
+      mode: z.literal('structural-relink'),
+      reason: z.string().trim().min(1).max(500),
+      manualLinks: z.array(manualPlayLinkSchema).min(1).max(50),
+    })
+    .strict(),
+  z
+    .object({
+      mode: z.literal('rebuild-after-cutoff'),
+      reason: z.string().trim().min(1).max(500),
+      cutoffSequence: z.number().int().min(1),
+    })
+    .strict(),
+]);
+
+export const playsReviewQueueQuerySchema = z
+  .object({ limit: z.coerce.number().int().min(1).max(100).default(50) })
+  .strict();
+
 export const auditListQuerySchema = z
   .object({
     limit: z.coerce.number().int().min(1).max(100).default(50),
@@ -147,8 +188,11 @@ export type AdminGameListQuery = z.infer<typeof adminGameListQuerySchema>;
 export type ManualGameCreateInput = z.infer<typeof manualGameCreateSchema>;
 export type ManualGameUpdateInput = z.infer<typeof manualGameUpdateSchema>;
 export type GameOverrideInput = z.infer<typeof gameOverrideInputSchema>;
+export type GameFeaturedInput = z.infer<typeof gameFeaturedInputSchema>;
 export type GameResultFallbackInput = z.infer<typeof gameResultFallbackInputSchema>;
 export type VerificationInput = z.infer<typeof verificationInputSchema>;
 export type ScheduleImportRow = z.infer<typeof scheduleImportRowSchema>;
 export type ScheduleImportRequest = z.infer<typeof scheduleImportRequestSchema>;
 export type AuditListQuery = z.infer<typeof auditListQuerySchema>;
+export type RepairGamePlaysInput = z.infer<typeof repairGamePlaysInputSchema>;
+export type PlaysReviewQueueQuery = z.infer<typeof playsReviewQueueQuerySchema>;

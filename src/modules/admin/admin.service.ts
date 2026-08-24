@@ -3,6 +3,15 @@ import { AppError } from '../../common/errors/app-error.js';
 import { normalizeEmail } from '../auth/auth.service.js';
 import { roleHasCapability, type AdministrativePrincipal } from './admin-authorization.js';
 import { classifyCurrentGameTeamStats } from '../sports/current-game-team-stat-coverage.js';
+import type {
+  ReconciliationDiagnostic,
+  ReconciliationDiagnosticService,
+} from '../sports/current-game-play-reconciliation-diagnostic.js';
+import type {
+  PlayReconciliationRepairService,
+  RepairResult,
+} from '../sports/current-game-play-repair.js';
+import type { PlaysReviewQueueEntry } from '../sports/current-game-poll-state.repository.js';
 import {
   toAdminGameDto,
   toAuditEventDto,
@@ -18,10 +27,13 @@ import {
 import type {
   AdminGameListQuery,
   AuditListQuery,
+  GameFeaturedInput,
   GameOverrideInput,
   GameResultFallbackInput,
   ManualGameCreateInput,
   ManualGameUpdateInput,
+  PlaysReviewQueueQuery,
+  RepairGamePlaysInput,
   ScheduleImportRequest,
   ScheduleImportRow,
   VerificationInput,
@@ -88,6 +100,12 @@ export interface AdministrativeScheduleService {
     principal: AdministrativePrincipal,
     requestId: string | null,
   ): Promise<AdminGameDto>;
+  setFeatured(
+    gameId: string,
+    input: GameFeaturedInput,
+    principal: AdministrativePrincipal,
+    requestId: string | null,
+  ): Promise<AdminGameDto>;
   verifyGame(
     gameId: string,
     input: VerificationInput,
@@ -106,12 +124,28 @@ export interface AdministrativeScheduleService {
     readonly events: readonly ReturnType<typeof toAuditEventDto>[];
     readonly nextCursor: string | null;
   }>;
+  getPlaysDiagnostic(
+    gameId: string,
+    principal: AdministrativePrincipal,
+  ): Promise<ReconciliationDiagnostic>;
+  repairGamePlays(
+    gameId: string,
+    input: RepairGamePlaysInput,
+    principal: AdministrativePrincipal,
+    requestId: string | null,
+  ): Promise<RepairResult>;
+  listPlaysReviewQueue(
+    query: PlaysReviewQueueQuery,
+    principal: AdministrativePrincipal,
+  ): Promise<{ readonly games: readonly PlaysReviewQueueEntry[] }>;
 }
 
 export class AdminService implements AdministrativeScheduleService {
   constructor(
     private readonly repository: AdminRepository,
     private readonly now: () => Date = () => new Date(),
+    private readonly playsDiagnostic?: ReconciliationDiagnosticService,
+    private readonly playsRepair?: PlayReconciliationRepairService,
   ) {}
 
   async listGames(query: AdminGameListQuery) {
@@ -271,6 +305,18 @@ export class AdminService implements AdministrativeScheduleService {
     );
   }
 
+  async setFeatured(
+    gameId: string,
+    input: GameFeaturedInput,
+    principal: AdministrativePrincipal,
+    requestId: string | null,
+  ): Promise<AdminGameDto> {
+    await this.requireGame(gameId);
+    return toAdminGameDto(
+      await this.repository.setFeatured(gameId, input, toActor(principal, requestId), this.now()),
+    );
+  }
+
   async verifyGame(
     gameId: string,
     input: VerificationInput,
@@ -403,6 +449,74 @@ export class AdminService implements AdministrativeScheduleService {
     }
     const page = await this.repository.listAuditEvents(query);
     return { events: page.events.map(toAuditEventDto), nextCursor: page.nextCursor };
+  }
+
+  async getPlaysDiagnostic(
+    gameId: string,
+    principal: AdministrativePrincipal,
+  ): Promise<ReconciliationDiagnostic> {
+    void principal;
+    return this.requirePlaysDiagnostic().diagnose(gameId);
+  }
+
+  async repairGamePlays(
+    gameId: string,
+    input: RepairGamePlaysInput,
+    principal: AdministrativePrincipal,
+    requestId: string | null,
+  ): Promise<RepairResult> {
+    const actor = toActor(principal, requestId);
+    const repair = this.requirePlaysRepair();
+    if (input.mode === 'append-only') {
+      return repair.repair({ gameId, mode: 'APPEND_ONLY', actor, reason: input.reason });
+    }
+    if (input.mode === 'structural-relink') {
+      return repair.repair({
+        gameId,
+        mode: 'STRUCTURAL_RELINK',
+        actor,
+        reason: input.reason,
+        manualLinks: input.manualLinks,
+      });
+    }
+    return repair.repair({
+      gameId,
+      mode: 'REBUILD_AFTER_CUTOFF',
+      actor,
+      reason: input.reason,
+      cutoffSequence: input.cutoffSequence,
+    });
+  }
+
+  async listPlaysReviewQueue(
+    query: PlaysReviewQueueQuery,
+    principal: AdministrativePrincipal,
+  ): Promise<{ readonly games: readonly PlaysReviewQueueEntry[] }> {
+    void principal;
+    const games = await this.repository.listPlaysReviewRequired(query.limit);
+    return { games };
+  }
+
+  private requirePlaysDiagnostic(): ReconciliationDiagnosticService {
+    if (this.playsDiagnostic === undefined) {
+      throw new AppError({
+        code: 'GAME_PLAYS_REVIEW_UNCONFIGURED',
+        message: 'Game plays reconciliation review is not configured on this server.',
+        statusCode: 500,
+      });
+    }
+    return this.playsDiagnostic;
+  }
+
+  private requirePlaysRepair(): PlayReconciliationRepairService {
+    if (this.playsRepair === undefined) {
+      throw new AppError({
+        code: 'GAME_PLAYS_REVIEW_UNCONFIGURED',
+        message: 'Game plays reconciliation repair is not configured on this server.',
+        statusCode: 500,
+      });
+    }
+    return this.playsRepair;
   }
 
   async setRole(

@@ -47,6 +47,12 @@ export interface AdminGameDto {
     readonly createdAt: string;
     readonly updatedAt: string;
   } | null;
+  readonly manualFeatured: {
+    readonly featured: boolean | null;
+    readonly reason: string | null;
+    readonly setById: string | null;
+    readonly setAt: string | null;
+  };
 }
 
 export function toAdminGameDto(game: AdminGameRecord): AdminGameDto {
@@ -97,6 +103,12 @@ export function toAdminGameDto(game: AdminGameRecord): AdminGameDto {
             createdAt: game.editorialOverride.createdAt.toISOString(),
             updatedAt: game.editorialOverride.updatedAt.toISOString(),
           },
+    manualFeatured: {
+      featured: game.manualFeatured,
+      reason: game.manualFeaturedReason,
+      setById: game.manualFeaturedById,
+      setAt: game.manualFeaturedAt?.toISOString() ?? null,
+    },
   };
 }
 

@@ -38,7 +38,9 @@ The initial bounded inspection found 188 structured plays for SF-LAC and 180 for
 
 This layer supports structured text, period/clock, available down/distance, conservative possession, normalized field progress, and safely derived scoring/penalty/turnover flags. It can support a future basic field-progress view. It does not support exact player movement, ball trajectory, snap reconstruction, official tracking replay, guaranteed correction detection, drive identity, or guaranteed real-time latency.
 
-Future live validation may reuse normalization and reconciliation, but it requires a separate milestone and operational rights decision.
+Future live validation may reuse normalization and reconciliation, but it requires a separate milestone and operational rights decision. That milestone now exists: see [live-validation.md](live-validation.md) for the bounded diagnostic harness (M26.2) and [active-game-poller.md](active-game-poller.md) for the production active-game poller (M27), which persists live `GamePlay` rows before `FINAL` through this same `identifyPlays`/`reconcilePlays`/`applySnapshot` path. The FINAL-only gate documented above remains unchanged for this manual command.
+
+When a live-polled snapshot and a later FINAL snapshot diverge enough to block (the "ambiguous matches" and "shorter snapshot" rules above), see [play-reconciliation-review.md](play-reconciliation-review.md) (M27.1) for the operator diagnostic and non-destructive repair path that resolves it — the blocking rule itself is unchanged.
 
 ## Hosted baseline (2026-08-21)
 

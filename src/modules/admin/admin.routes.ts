@@ -26,6 +26,12 @@ export function createAdminRouter(options: AdminRouterOptions): Router {
 
   router.use(options.authenticate);
   router.get('/games', require('VIEW_SCHEDULE'), controller.listGames);
+  // Registered before the '/games/:gameId' wildcard below so it is never shadowed by it.
+  router.get(
+    '/games/plays-review-queue',
+    require('VIEW_GAME_PLAYS_DIAGNOSTIC'),
+    controller.listPlaysReviewQueue,
+  );
   router.get('/games/:gameId', require('VIEW_SCHEDULE'), controller.getGame);
   router.post('/games', require('EDIT_SCHEDULE'), controller.createGame);
   router.patch('/games/:gameId', require('EDIT_SCHEDULE'), controller.updateGame);
@@ -36,6 +42,7 @@ export function createAdminRouter(options: AdminRouterOptions): Router {
     controller.upsertResultFallback,
   );
   router.delete('/games/:gameId/override', require('REMOVE_OVERRIDE'), controller.deleteOverride);
+  router.put('/games/:gameId/featured', require('EDIT_SCHEDULE'), controller.setFeatured);
   router.put('/games/:gameId/verification', require('VERIFY_SCHEDULE'), controller.verifyGame);
   router.post(
     '/schedule-imports/validate',
@@ -50,5 +57,15 @@ export function createAdminRouter(options: AdminRouterOptions): Router {
     controller.importSchedule,
   );
   router.get('/audit-events', require('VIEW_SCHEDULE_AUDIT'), controller.listAuditEvents);
+  router.get(
+    '/games/:gameId/plays/diagnostic',
+    require('VIEW_GAME_PLAYS_DIAGNOSTIC'),
+    controller.getPlaysDiagnostic,
+  );
+  router.post(
+    '/games/:gameId/plays/repair',
+    require('REPAIR_GAME_PLAYS'),
+    controller.repairGamePlays,
+  );
   return router;
 }

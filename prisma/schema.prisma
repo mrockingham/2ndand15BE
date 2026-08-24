@@ -40,6 +40,18 @@ enum GameStatus {
   SUSPENDED
 }
 
+enum GameSchedulingClass {
+  NOT_DUE
+  PREGAME
+  LIVE_NORMAL
+  LIVE_FEATURED
+  HALFTIME
+  FINAL_IMMEDIATE
+  FINAL_RECONCILE_10
+  FINAL_RECONCILE_60
+  COMPLETE
+}
+
 enum GamePlayType {
   PASS
   RUSH
@@ -269,6 +281,7 @@ model User {
   verifiedProvenances         GameProvenance[]             @relation("GameProvenanceVerifier")
   createdOverrides            GameEditorialOverride[]      @relation("GameOverrideCreator")
   updatedOverrides            GameEditorialOverride[]      @relation("GameOverrideUpdater")
+  manualFeaturedGames         Game[]                       @relation("GameManualFeaturedBy")
   auditEvents                 AdminAuditEvent[]            @relation("AdminAuditActor")
   createdArticles             Article[]                    @relation("ArticleCreator")
   updatedArticles             Article[]                    @relation("ArticleUpdater")
@@ -381,13 +394,19 @@ model Game {
   broadcastNetwork      String?                        @map("broadcast_network") @db.VarChar(64)
   isNeutralSite         Boolean                        @default(false) @map("is_neutral_site")
   providerLastUpdatedAt DateTime?                      @map("provider_last_updated_at") @db.Timestamptz(3)
+  manualFeatured        Boolean?                       @map("manual_featured")
+  manualFeaturedReason  String?                        @map("manual_featured_reason") @db.VarChar(500)
+  manualFeaturedById    String?                        @map("manual_featured_by_id") @db.Uuid
+  manualFeaturedAt      DateTime?                      @map("manual_featured_at") @db.Timestamptz(3)
   createdAt             DateTime                       @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt             DateTime                       @updatedAt @map("updated_at") @db.Timestamptz(3)
   homeTeam              Team                           @relation("HomeTeamGames", fields: [homeTeamId], references: [id], onDelete: Restrict)
   awayTeam              Team                           @relation("AwayTeamGames", fields: [awayTeamId], references: [id], onDelete: Restrict)
+  manualFeaturedBy      User?                          @relation("GameManualFeaturedBy", fields: [manualFeaturedById], references: [id], onDelete: SetNull)
   providerMaps          GameProviderMapping[]
   provenance            GameProvenance?
   editorialOverride     GameEditorialOverride?
+  pollState             CurrentGamePollState?
   playerStats           PlayerGameStat[]
   currentTeamStats      CurrentGameTeamStat[]
   currentPlayerStats    CurrentGamePlayerStat[]
@@ -425,15 +444,30 @@ model GamePlay {
   sourceProvider    String       @map("source_provider") @db.VarChar(64)
   sourcePlayType    String       @map("source_play_type") @db.VarChar(128)
   sourceUpdatedAt   DateTime     @map("source_updated_at") @db.Timestamptz(3)
+  /// M27.1: non-destructive supersede marker. A superseded row is never deleted; it is simply
+  /// excluded from every reconciliation/public read via `supersededAt: null` filters. Null means
+  /// the row is the currently-active one for its (gameId, playKey)/(gameId, sequence) identity.
+  supersededAt      DateTime?    @map("superseded_at") @db.Timestamptz(3)
+  /// M27.1: the AdminAuditEvent id of the repair run that superseded this row, for lineage.
+  supersededByRunId String?      @map("superseded_by_run_id") @db.Uuid
   createdAt         DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt         DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
   game              Game         @relation(fields: [gameId], references: [id], onDelete: Cascade)
   possessionTeam    Team?        @relation("GamePlayPossessionTeam", fields: [possessionTeamId], references: [id], onDelete: Restrict)
 
-  @@unique([gameId, playKey], map: "game_plays_game_play_key")
-  @@unique([gameId, sequence], map: "game_plays_game_sequence_key")
+  // M27.1: real uniqueness on (gameId, playKey) and (gameId, sequence) is enforced by
+  // hand-authored PARTIAL unique indexes in the migration SQL, scoped to `WHERE superseded_at
+  // IS NULL` (Prisma's schema DSL cannot express a partial predicate). The two @@index lines
+  // below exist only for query-planning; they are NOT the uniqueness guarantee.
+  // DO NOT convert these back into `@@unique([gameId, playKey])` / `@@unique([gameId,
+  // sequence])` — doing so would reject every legitimate non-destructive repair write, since an
+  // active row and its superseded predecessor are expected to share a playKey/sequence. See
+  // docs/current-season-games/play-reconciliation-review.md.
+  @@index([gameId, playKey], map: "game_plays_game_play_key_idx")
+  @@index([gameId, sequence], map: "game_plays_game_sequence_idx")
   @@index([gameId, period, sequence], map: "game_plays_game_period_sequence_idx")
   @@index([gameId, reconciliationKey], map: "game_plays_game_reconciliation_idx")
+  @@index([supersededByRunId], map: "game_plays_superseded_by_run_id_idx")
   @@map("game_plays")
 }
 
@@ -490,6 +524,44 @@ model GamePrediction {
   @@index([gameId, status, revision], map: "game_predictions_game_status_revision_idx")
   @@index([homeTeamId, awayTeamId, status], map: "game_predictions_teams_status_idx")
   @@map("game_predictions")
+}
+
+/// M27: durable active-game poller scheduling state. One row per Game, provider-neutral.
+/// Survives process restarts; `lockedAt`/`lockedBy` implement a short transactional claim
+/// so multiple poller instances never ingest the same due game concurrently.
+model CurrentGamePollState {
+  id                        String              @id @default(uuid()) @db.Uuid
+  gameId                    String              @unique(map: "current_game_poll_states_game_id_key") @map("game_id") @db.Uuid
+  schedulingClass           GameSchedulingClass @default(NOT_DUE) @map("scheduling_class")
+  featuredReason            String?             @map("featured_reason") @db.VarChar(32)
+  lastAttemptAt             DateTime?           @map("last_attempt_at") @db.Timestamptz(3)
+  lastSuccessAt             DateTime?           @map("last_success_at") @db.Timestamptz(3)
+  nextPollAt                DateTime?           @map("next_poll_at") @db.Timestamptz(3)
+  lastObservedStatus        GameStatus?         @map("last_observed_status")
+  lastError                 String?             @map("last_error") @db.VarChar(500)
+  finalObservedAt           DateTime?           @map("final_observed_at") @db.Timestamptz(3)
+  finalImmediateCompletedAt DateTime?           @map("final_immediate_completed_at") @db.Timestamptz(3)
+  final10CompletedAt        DateTime?           @map("final_10_completed_at") @db.Timestamptz(3)
+  final60CompletedAt        DateTime?           @map("final_60_completed_at") @db.Timestamptz(3)
+  /// M27.1: when the current plays-reconciliation block began. Preserved across repeat blocked
+  /// polls (only cleared or freshly re-stamped by a genuine state transition) so operators can
+  /// see how long a game has been stuck. Admin/operator-only — never exposed publicly.
+  playsBlockedAt             DateTime?           @map("plays_blocked_at") @db.Timestamptz(3)
+  /// M27.1: capped application-level reason code ('COLLISION' | 'UNMATCHED_EXISTING' |
+  /// 'COLLISION_AND_UNMATCHED'), never free text derived from provider content — this is what
+  /// guarantees no provider leakage through this field.
+  playsBlockReason           String?             @map("plays_block_reason") @db.VarChar(64)
+  playsReviewRequired        Boolean             @default(false) @map("plays_review_required")
+  lockedAt                  DateTime?           @map("locked_at") @db.Timestamptz(3)
+  lockedBy                  String?             @map("locked_by") @db.VarChar(128)
+  createdAt                 DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt                 DateTime            @updatedAt @map("updated_at") @db.Timestamptz(3)
+  game                      Game                @relation(fields: [gameId], references: [id], onDelete: Cascade)
+
+  @@index([nextPollAt], map: "current_game_poll_states_next_poll_idx")
+  @@index([schedulingClass, nextPollAt], map: "current_game_poll_states_class_next_poll_idx")
+  @@index([playsReviewRequired], map: "current_game_poll_states_plays_review_idx")
+  @@map("current_game_poll_states")
 }
 
 model CurrentGameTeamStat {
