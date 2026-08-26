@@ -314,6 +314,8 @@ export class NewsInboxService implements NewsInboxServiceContract {
       ...(input.slug === undefined ? {} : { slug: input.slug }),
       summary: input.originalSummary,
       body: input.originalCommentary,
+      contentType: candidate.contentType,
+      mediaThumbnailUrl: candidate.mediaThumbnailUrl,
       sourceName: candidate.sourceNameSnapshot,
       sourceUrl: candidate.canonicalUrl,
       sourcePublishedAt: candidate.sourcePublishedAt?.toISOString() ?? null,

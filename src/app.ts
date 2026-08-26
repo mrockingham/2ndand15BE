@@ -13,6 +13,7 @@ import type { AccessTokenService } from './common/security/access-token.js';
 import type { AuthenticationService } from './modules/auth/auth.service.js';
 import type { AdministrativeIdentityReader } from './modules/admin/admin-authorization.js';
 import type { AdministrativeScheduleService } from './modules/admin/admin.service.js';
+import type { DataHealthServiceContract } from './modules/data-health/data-health.service.js';
 import type {
   EditorialArticleService,
   PublicArticleReader,
@@ -45,6 +46,7 @@ export interface CreateAppOptions {
   readonly accessTokens: AccessTokenService;
   readonly adminService?: AdministrativeScheduleService;
   readonly adminIdentities?: AdministrativeIdentityReader;
+  readonly dataHealthService?: DataHealthServiceContract;
   readonly articleReader?: PublicArticleReader;
   readonly editorialArticleService?: EditorialArticleService;
   readonly newsInboxService?: NewsInboxServiceContract;
@@ -89,6 +91,9 @@ export function createApp(options: CreateAppOptions): Express {
       ...(options.adminIdentities === undefined
         ? {}
         : { adminIdentities: options.adminIdentities }),
+      ...(options.dataHealthService === undefined
+        ? {}
+        : { dataHealthService: options.dataHealthService }),
       ...(options.articleReader === undefined ? {} : { articleReader: options.articleReader }),
       ...(options.editorialArticleService === undefined
         ? {}

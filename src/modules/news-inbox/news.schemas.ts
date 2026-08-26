@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { normalizeMarkdown } from '../articles/article.schemas.js';
 
 export const newsSourceKindSchema = z.enum(['RSS', 'ATOM', 'MANUAL_ONLY']);
+export const newsContentTypeSchema = z.enum(['ARTICLE', 'VIDEO', 'HIGHLIGHT']);
 export const newsSourceStatusSchema = z.enum(['ACTIVE', 'PAUSED', 'DISABLED', 'ERROR']);
 export const newsCandidateStatusSchema = z.enum([
   'NEW',
@@ -49,6 +50,7 @@ export const newsSourceCreateSchema = z
       .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
       .max(96),
     kind: newsSourceKindSchema,
+    contentType: newsContentTypeSchema.default('ARTICLE'),
     status: newsSourceStatusSchema.exclude(['ERROR']).default('PAUSED'),
     feedUrl: nullableHttpUrl,
     siteUrl: httpUrl,
@@ -77,6 +79,7 @@ export const newsSourceUpdateSchema = z
       .max(96)
       .optional(),
     kind: newsSourceKindSchema.optional(),
+    contentType: newsContentTypeSchema.optional(),
     status: newsSourceStatusSchema.exclude(['ERROR']).optional(),
     feedUrl: nullableHttpUrl.optional(),
     siteUrl: httpUrl.optional(),
@@ -100,6 +103,7 @@ export const newsSourceListQuerySchema = z
     cursor: z.uuid().optional(),
     status: newsSourceStatusSchema.optional(),
     kind: newsSourceKindSchema.optional(),
+    contentType: newsContentTypeSchema.optional(),
   })
   .strict();
 

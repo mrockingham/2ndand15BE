@@ -157,7 +157,7 @@ function parseWeek(round: string | null | undefined): number | null {
   return week >= 1 && week <= 22 ? week : null;
 }
 
-function parseHighlightlyScore(value: string | null): { home: number; away: number } | null {
+export function parseHighlightlyScore(value: string | null): { home: number; away: number } | null {
   if (value === null) return null;
   const match = /^\s*(\d+)\s*[-:]\s*(\d+)\s*$/.exec(value);
   if (match?.[1] === undefined || match[2] === undefined) return null;

@@ -7,6 +7,8 @@ import type { AppConfig } from '../config/env.js';
 import { createAdminRouter } from '../modules/admin/admin.routes.js';
 import type { AdministrativeIdentityReader } from '../modules/admin/admin-authorization.js';
 import type { AdministrativeScheduleService } from '../modules/admin/admin.service.js';
+import { createDataHealthRouter } from '../modules/data-health/data-health.routes.js';
+import type { DataHealthServiceContract } from '../modules/data-health/data-health.service.js';
 import {
   createAdminArticleRouter,
   createPublicArticleRouter,
@@ -59,6 +61,7 @@ export interface ApiRouterOptions {
   readonly passwordResetConfig: AppConfig['passwordReset'];
   readonly adminService?: AdministrativeScheduleService;
   readonly adminIdentities?: AdministrativeIdentityReader;
+  readonly dataHealthService?: DataHealthServiceContract;
   readonly articleReader?: PublicArticleReader;
   readonly editorialArticleService?: EditorialArticleService;
   readonly newsInboxService?: NewsInboxServiceContract;
@@ -147,6 +150,16 @@ export function createApiRouter(options: ApiRouterOptions): Router {
         identities: options.adminIdentities,
         service: options.adminService,
         importRateLimit: options.authConfig.rateLimit,
+      }),
+    );
+  }
+  if (options.dataHealthService !== undefined && options.adminIdentities !== undefined) {
+    router.use(
+      '/admin/data-health',
+      createDataHealthRouter({
+        authenticate: options.authenticate,
+        identities: options.adminIdentities,
+        service: options.dataHealthService,
       }),
     );
   }

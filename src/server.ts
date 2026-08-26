@@ -16,6 +16,11 @@ import { ReconciliationDiagnosticService } from './modules/sports/current-game-p
 import { PlayReconciliationRepairService } from './modules/sports/current-game-play-repair.js';
 import { HighlightlyEvaluationHttpClient } from './modules/sports/evaluation/highlightly/highlightly-http-client.js';
 import { HighlightlyCurrentGamePlayProvider } from './modules/sports/providers/highlightly/highlightly-current-game-play-provider.js';
+import { PrismaCurrentGameDetailsRepository } from './modules/sports/current-game-details.repository.js';
+import { createHighlightlyMatchDetailFetcher } from './modules/sports/highlightly-match-detail-fetcher.js';
+import { PrismaDataHealthRepository } from './modules/data-health/data-health.repository.js';
+import { DataHealthService } from './modules/data-health/data-health.service.js';
+import { GameDataHealthProbeService } from './modules/data-health/data-health-probe.service.js';
 import { PrismaArticleRepository } from './modules/articles/article.repository.js';
 import { ArticleService } from './modules/articles/article.service.js';
 import { AuthService } from './modules/auth/auth.service.js';
@@ -72,6 +77,15 @@ const adminRepository = new PrismaAdminRepository(prisma);
 // GAME_PLAYS_REVIEW_UNCONFIGURED) until the relevant env vars are set.
 let playsDiagnosticService: ReconciliationDiagnosticService | undefined;
 let playsRepairService: PlayReconciliationRepairService | undefined;
+// The Data Health provider probe (M29A) requires the same Highlightly current-game
+// configuration as the plays-reconciliation review/repair endpoints above, so it is built
+// inside the same try block and reuses the same HighlightlyEvaluationHttpClient instance --
+// a second client would silently split rate-limit/request-count observation across two
+// untracked counters. Missing/invalid config must never prevent the HTTP server from
+// starting: the DB-only Data Health overview/detail endpoints always work regardless, and
+// only the probe endpoint reports itself unconfigured (500 GAME_DATA_HEALTH_PROBE_UNCONFIGURED).
+const dataHealthRepository = new PrismaDataHealthRepository(prisma);
+let dataHealthProbeService: GameDataHealthProbeService | undefined;
 try {
   const currentGameConfig = loadCurrentGameSyncConfig();
   const highlightlyClient = new HighlightlyEvaluationHttpClient({
@@ -93,10 +107,16 @@ try {
     currentGamePlayRepository,
     currentGamePollStateRepository,
   );
+  dataHealthProbeService = new GameDataHealthProbeService(
+    new PrismaCurrentGameDetailsRepository(prisma),
+    dataHealthRepository,
+    createHighlightlyMatchDetailFetcher(highlightlyClient),
+    highlightlyClient,
+  );
 } catch (error: unknown) {
   logger.warn(
     { err: error },
-    'Current-game configuration is unavailable; plays reconciliation review/repair admin endpoints will report unconfigured.',
+    'Current-game configuration is unavailable; plays reconciliation review/repair and data-health probe admin endpoints will report unconfigured.',
   );
 }
 const adminService = new AdminService(
@@ -105,6 +125,7 @@ const adminService = new AdminService(
   playsDiagnosticService,
   playsRepairService,
 );
+const dataHealthService = new DataHealthService(dataHealthRepository, dataHealthProbeService);
 const articleService = new ArticleService(new PrismaArticleRepository(prisma));
 const newsInboxService = new NewsInboxService(
   new PrismaNewsInboxRepository(prisma),
@@ -223,6 +244,7 @@ const app = createApp({
   accessTokens,
   adminService,
   adminIdentities: adminRepository,
+  dataHealthService,
   articleReader: articleService,
   editorialArticleService: articleService,
   newsInboxService,

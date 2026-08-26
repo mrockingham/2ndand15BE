@@ -28,7 +28,9 @@ export type AdministrativeCapability =
   | 'CONVERT_NEWS_CANDIDATE'
   | 'MANAGE_PREDICTIONS'
   | 'VIEW_GAME_PLAYS_DIAGNOSTIC'
-  | 'REPAIR_GAME_PLAYS';
+  | 'REPAIR_GAME_PLAYS'
+  | 'VIEW_DATA_HEALTH'
+  | 'PROBE_GAME_DATA';
 
 export interface AdministrativePrincipal {
   readonly userId: string;
@@ -61,6 +63,7 @@ const capabilitiesByRole: Readonly<Record<UserRole, ReadonlySet<AdministrativeCa
     'CONVERT_NEWS_CANDIDATE',
     'MANAGE_PREDICTIONS',
     'VIEW_GAME_PLAYS_DIAGNOSTIC',
+    'VIEW_DATA_HEALTH',
   ]),
   ADMIN: new Set([
     'VIEW_SCHEDULE',
@@ -87,6 +90,8 @@ const capabilitiesByRole: Readonly<Record<UserRole, ReadonlySet<AdministrativeCa
     'MANAGE_PREDICTIONS',
     'VIEW_GAME_PLAYS_DIAGNOSTIC',
     'REPAIR_GAME_PLAYS',
+    'VIEW_DATA_HEALTH',
+    'PROBE_GAME_DATA',
   ]),
 };
 

@@ -129,6 +129,30 @@ describe('deterministic candidate relevance', () => {
       }),
       'UNCERTAIN',
     ],
+    [
+      // M30A: an official team source is strong NFL evidence on its own -- this is what
+      // lets an official-team feed skip the AI relevance classifier, even for a headline
+      // with no NFL keywords and no team-name text match.
+      'official team source with a generic headline and no team-name match',
+      candidate({
+        canonicalUrl: 'https://example.com/story',
+        headline: 'Veteran returns after long absence',
+        suggestedTeams: [],
+        source: {
+          kind: 'RSS',
+          status: 'ACTIVE',
+          isOfficialLeague: false,
+          isOfficialTeam: true,
+          allowsDescriptionUse: false,
+          reliabilityWeight: 50,
+          metadataRichnessWeight: 50,
+          teamSpecificityWeight: 50,
+          editorialUsefulnessWeight: 50,
+          rightsProfile: null,
+        },
+      }),
+      'NFL',
+    ],
   ])('%s is classified as %s', (_label, value, expected) => {
     expect(deterministicRelevance(value).relevance).toBe(expected);
   });

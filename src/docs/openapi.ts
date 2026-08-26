@@ -953,6 +953,11 @@ export const openApiDocument = {
             schema: { $ref: '#/components/schemas/NewsSourceStatus' },
           },
           { name: 'kind', in: 'query', schema: { $ref: '#/components/schemas/NewsSourceKind' } },
+          {
+            name: 'contentType',
+            in: 'query',
+            schema: { $ref: '#/components/schemas/NewsContentType' },
+          },
         ],
         responses: {
           '200': {
@@ -1335,6 +1340,128 @@ export const openApiDocument = {
           },
           '401': { $ref: '#/components/responses/UnauthorizedError' },
           '403': { $ref: '#/components/responses/ForbiddenError' },
+        },
+      },
+    },
+    '/admin/data-health/games': {
+      get: {
+        operationId: 'listDataHealthGames',
+        summary: 'DB-only coverage overview across current-season games (never calls Highlightly)',
+        tags: ['Data Health'],
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          { name: 'season', in: 'query', schema: { type: 'integer' } },
+          {
+            name: 'seasonType',
+            in: 'query',
+            schema: { type: 'string', enum: ['PRE', 'REG', 'POST'] },
+          },
+          { name: 'week', in: 'query', schema: { type: 'integer' } },
+          { name: 'teamId', in: 'query', schema: { type: 'string', format: 'uuid' } },
+          { name: 'gameStatus', in: 'query', schema: { type: 'string' } },
+          { name: 'issuesOnly', in: 'query', schema: { type: 'boolean' } },
+          {
+            name: 'limit',
+            in: 'query',
+            schema: { type: 'integer', minimum: 1, maximum: 100, default: 50 },
+          },
+          { name: 'cursor', in: 'query', schema: { type: 'string', format: 'uuid' } },
+        ],
+        responses: {
+          '200': {
+            description:
+              'Per-game coverage rows plus aggregate summary counts for the active filter.',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/DataHealthGameListResponse' },
+              },
+            },
+          },
+          '401': { $ref: '#/components/responses/UnauthorizedError' },
+          '403': { $ref: '#/components/responses/ForbiddenError' },
+        },
+      },
+    },
+    '/admin/data-health/games/{gameId}': {
+      get: {
+        operationId: 'getDataHealthGame',
+        summary: 'DB-only deep coverage diagnostics for one game (never calls Highlightly)',
+        tags: ['Data Health'],
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: 'gameId',
+            in: 'path',
+            required: true,
+            schema: { type: 'string', format: 'uuid' },
+          },
+        ],
+        responses: {
+          '200': {
+            description: 'Result, team-stat, player-stat, play, poller, and last-probe detail.',
+          },
+          '401': { $ref: '#/components/responses/UnauthorizedError' },
+          '403': { $ref: '#/components/responses/ForbiddenError' },
+          '404': { $ref: '#/components/responses/NotFoundError' },
+        },
+      },
+    },
+    '/admin/data-health/games/{gameId}/probes': {
+      get: {
+        operationId: 'listDataHealthProbes',
+        summary:
+          'Recent saved provider-probe diagnostics for one game (DB-only, does not run a new probe)',
+        tags: ['Data Health'],
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: 'gameId',
+            in: 'path',
+            required: true,
+            schema: { type: 'string', format: 'uuid' },
+          },
+          {
+            name: 'limit',
+            in: 'query',
+            schema: { type: 'integer', minimum: 1, maximum: 20, default: 20 },
+          },
+        ],
+        responses: {
+          '200': { description: 'Most recent probes for this game, newest first.' },
+          '401': { $ref: '#/components/responses/UnauthorizedError' },
+          '403': { $ref: '#/components/responses/ForbiddenError' },
+        },
+      },
+    },
+    '/admin/data-health/games/{gameId}/probe': {
+      post: {
+        operationId: 'runDataHealthProbe',
+        summary:
+          'Run one explicit, bounded Highlightly probe for a game (ADMIN only; never mutates production data)',
+        tags: ['Data Health'],
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: 'gameId',
+            in: 'path',
+            required: true,
+            schema: { type: 'string', format: 'uuid' },
+          },
+        ],
+        responses: {
+          '200': {
+            description:
+              'Provider-vs-database comparison with deterministic diagnosis codes. Uses at most 2 Highlightly requests.',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/DataHealthProbeResponse' },
+              },
+            },
+          },
+          '401': { $ref: '#/components/responses/UnauthorizedError' },
+          '403': { $ref: '#/components/responses/ForbiddenError' },
+          '404': { $ref: '#/components/responses/NotFoundError' },
+          '500': { description: 'The Highlightly probe is not configured on this server.' },
         },
       },
     },
@@ -3110,6 +3237,12 @@ export const openApiDocument = {
         },
       },
       NewsSourceKind: { type: 'string', enum: ['RSS', 'ATOM', 'MANUAL_ONLY'] },
+      NewsContentType: {
+        type: 'string',
+        enum: ['ARTICLE', 'VIDEO', 'HIGHLIGHT'],
+        description:
+          'Set once per source at creation, not classified per-item or by AI. Copied onto every candidate the source produces.',
+      },
       NewsSourceStatus: {
         type: 'string',
         enum: ['ACTIVE', 'PAUSED', 'DISABLED', 'ERROR'],
@@ -3125,6 +3258,7 @@ export const openApiDocument = {
           'name',
           'slug',
           'kind',
+          'contentType',
           'status',
           'feedUrl',
           'siteUrl',
@@ -3146,6 +3280,7 @@ export const openApiDocument = {
           name: { type: 'string', maxLength: 160 },
           slug: { type: 'string', maxLength: 96 },
           kind: { $ref: '#/components/schemas/NewsSourceKind' },
+          contentType: { $ref: '#/components/schemas/NewsContentType' },
           status: { $ref: '#/components/schemas/NewsSourceStatus' },
           feedUrl: { type: ['string', 'null'], format: 'uri' },
           siteUrl: { type: 'string', format: 'uri' },
@@ -3203,6 +3338,10 @@ export const openApiDocument = {
           name: { type: 'string', minLength: 1, maxLength: 160 },
           slug: { type: 'string', pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$', maxLength: 96 },
           kind: { $ref: '#/components/schemas/NewsSourceKind' },
+          contentType: {
+            allOf: [{ $ref: '#/components/schemas/NewsContentType' }],
+            default: 'ARTICLE',
+          },
           status: { type: 'string', enum: ['ACTIVE', 'PAUSED', 'DISABLED'], default: 'PAUSED' },
           feedUrl: { type: ['string', 'null'], format: 'uri' },
           siteUrl: { type: 'string', format: 'uri' },
@@ -3228,6 +3367,7 @@ export const openApiDocument = {
           name: { type: 'string', minLength: 1, maxLength: 160 },
           slug: { type: 'string', pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$', maxLength: 96 },
           kind: { $ref: '#/components/schemas/NewsSourceKind' },
+          contentType: { $ref: '#/components/schemas/NewsContentType' },
           status: { type: 'string', enum: ['ACTIVE', 'PAUSED', 'DISABLED'] },
           feedUrl: { type: ['string', 'null'], format: 'uri' },
           siteUrl: { type: 'string', format: 'uri' },
@@ -3322,6 +3462,8 @@ export const openApiDocument = {
           'canonicalUrl',
           'headline',
           'sourceAuthor',
+          'contentType',
+          'thumbnailUrl',
           'sourcePublishedAt',
           'discoveredAt',
           'status',
@@ -3337,6 +3479,13 @@ export const openApiDocument = {
           canonicalUrl: { type: 'string', format: 'uri' },
           headline: { type: 'string', maxLength: 300 },
           sourceAuthor: { type: ['string', 'null'], maxLength: 160 },
+          contentType: { $ref: '#/components/schemas/NewsContentType' },
+          thumbnailUrl: {
+            type: ['string', 'null'],
+            format: 'uri',
+            description:
+              'Feed-provided thumbnail image only, never a direct video/audio file. Use canonicalUrl for the video/highlight page.',
+          },
           sourcePublishedAt: { type: ['string', 'null'], format: 'date-time' },
           discoveredAt: { type: 'string', format: 'date-time' },
           status: { $ref: '#/components/schemas/NewsCandidateStatus' },
@@ -3583,6 +3732,108 @@ export const openApiDocument = {
               teams: { type: 'array', minItems: 32, maxItems: 32, items: { type: 'object' } },
               totals: { type: 'object' },
               durationMs: { type: 'integer' },
+            },
+          },
+        },
+      },
+      DataHealthGameListResponse: {
+        type: 'object',
+        required: ['data', 'summary', 'meta'],
+        properties: {
+          data: { type: 'array', items: { $ref: '#/components/schemas/DataHealthGameRow' } },
+          summary: { $ref: '#/components/schemas/DataHealthSummary' },
+          meta: {
+            type: 'object',
+            required: ['nextCursor'],
+            properties: { nextCursor: { type: ['string', 'null'] } },
+          },
+        },
+      },
+      DataHealthGameRow: {
+        type: 'object',
+        description:
+          'DB-only coverage for one game. Never includes a provider record ID -- providerMapping is presence-only.',
+        properties: {
+          gameId: { type: 'string', format: 'uuid' },
+          season: { type: 'integer' },
+          seasonType: { type: 'string', enum: ['PRE', 'REG', 'POST'] },
+          week: { type: ['integer', 'null'] },
+          kickoff: { type: ['string', 'null'], format: 'date-time' },
+          status: { type: 'string' },
+          awayTeam: { type: 'object' },
+          homeTeam: { type: 'object' },
+          result: {
+            type: 'object',
+            description: 'state, homeScore, awayScore, source, reasonCode.',
+          },
+          providerMapping: {
+            type: 'object',
+            properties: { available: { type: 'boolean' } },
+          },
+          teamStats: {
+            type: 'object',
+            description: 'state, rowCount, expectedRowCount, reasonCode.',
+          },
+          playerStats: { type: 'object', description: 'state, rowCount, playerCount, reasonCode.' },
+          plays: { type: 'object', description: 'state, activeCount, reviewRequired.' },
+          lastProbe: {
+            type: ['object', 'null'],
+            description:
+              'Cached findings from the most recent explicit probe, if any. Never triggers a new one.',
+          },
+          needsInvestigation: { type: 'boolean' },
+        },
+      },
+      DataHealthSummary: {
+        type: 'object',
+        properties: {
+          games: { type: 'integer' },
+          resultsComplete: { type: 'integer' },
+          resultsMissing: { type: 'integer' },
+          teamStatsComplete: { type: 'integer' },
+          teamStatsMissing: { type: 'integer' },
+          playerStatsComplete: { type: 'integer' },
+          playerStatsMissing: { type: 'integer' },
+          playsAvailable: { type: 'integer' },
+          needsInvestigation: { type: 'integer' },
+        },
+      },
+      DataHealthProbeResponse: {
+        type: 'object',
+        required: ['data'],
+        description:
+          'Result of one bounded, explicit Highlightly probe. Persists a sanitized GameDataHealthProbe row; never writes production game/stat/play data.',
+        properties: {
+          data: {
+            type: 'object',
+            properties: {
+              gameId: { type: 'string', format: 'uuid' },
+              checkedAt: { type: 'string', format: 'date-time' },
+              provider: {
+                type: 'object',
+                description:
+                  'reachable, matchFound, requestCount (always <= 2), durationMs, quotaLimit, quotaRemaining.',
+              },
+              result: {
+                type: 'object',
+                description:
+                  'providerAvailable, providerStatus, scoreAvailable, diagnosis, explanation.',
+              },
+              teamStats: {
+                type: 'object',
+                description:
+                  'providerAvailable, rawRows, normalizedRows, databaseRows, diagnosis, explanation.',
+              },
+              playerStats: {
+                type: 'object',
+                description:
+                  'providerAvailable, rawRows, normalizedRows, resolvedPlayers, unresolvedPlayers (upper bound -- see docs/administration/data-health.md), databaseRows, diagnosis, explanation.',
+              },
+              plays: {
+                type: 'object',
+                description:
+                  'providerAvailable, rawCount, normalizedCount, databaseActiveCount, diagnosis, explanation.',
+              },
             },
           },
         },
@@ -4799,6 +5050,8 @@ export const openApiDocument = {
           'type',
           'title',
           'summary',
+          'contentType',
+          'mediaThumbnailUrl',
           'sourceName',
           'sourceUrl',
           'sourcePublishedAt',
@@ -4814,6 +5067,13 @@ export const openApiDocument = {
           type: { $ref: '#/components/schemas/ArticleType' },
           title: { type: 'string' },
           summary: { type: ['string', 'null'] },
+          contentType: { $ref: '#/components/schemas/NewsContentType' },
+          mediaThumbnailUrl: {
+            type: ['string', 'null'],
+            format: 'uri',
+            description:
+              'Feed-provided thumbnail for VIDEO/HIGHLIGHT content; never a direct video file.',
+          },
           sourceName: { type: ['string', 'null'] },
           sourceUrl: { type: ['string', 'null'], format: 'uri' },
           sourcePublishedAt: { type: ['string', 'null'], format: 'date-time' },
@@ -4861,6 +5121,8 @@ export const openApiDocument = {
           'version',
           'title',
           'summary',
+          'contentType',
+          'mediaThumbnailUrl',
           'isFeatured',
           'featuredPriority',
           'publishedAt',
@@ -4877,6 +5139,8 @@ export const openApiDocument = {
           version: { type: 'integer', minimum: 1 },
           title: { type: 'string' },
           summary: { type: ['string', 'null'] },
+          contentType: { $ref: '#/components/schemas/NewsContentType' },
+          mediaThumbnailUrl: { type: ['string', 'null'], format: 'uri' },
           isFeatured: { type: 'boolean' },
           featuredPriority: { type: ['integer', 'null'], minimum: 1, maximum: 1000 },
           publishedAt: { type: ['string', 'null'], format: 'date-time' },

@@ -15,6 +15,7 @@ import { PrismaAdminRepository } from '../../src/modules/admin/admin.repository.
 import { PrismaArticleRepository } from '../../src/modules/articles/article.repository.js';
 import { ArticleService } from '../../src/modules/articles/article.service.js';
 import { SafeFeedClient, type FeedFetch } from '../../src/modules/news-inbox/feed-client.js';
+import { normalizeNewsUrl } from '../../src/modules/news-inbox/news-url.js';
 import { PrismaNewsInboxRepository } from '../../src/modules/news-inbox/news.repository.js';
 import { NewsInboxService } from '../../src/modules/news-inbox/news.service.js';
 import { PrismaGameRepository } from '../../src/modules/games/game.repository.js';
@@ -166,6 +167,13 @@ describe.skipIf(!databaseTestsEnabled)('news inbox database and HTTP integration
       expect.objectContaining({ teamId: buffalo.id, rule: 'EXACT_FULL_NAME' }),
     ]);
     expect(cityOnlyCandidate?.suggestedTeams).toHaveLength(0);
+    // M30A: contentType is copied from the source configuration (never per-item
+    // classified), and a feed-provided media:content thumbnail is persisted verbatim.
+    expect(billsCandidate).toMatchObject({
+      contentType: 'VIDEO',
+      mediaThumbnailUrl: 'https://static.example.com/thumb-one.jpg',
+    });
+    expect(cityOnlyCandidate).toMatchObject({ contentType: 'VIDEO', mediaThumbnailUrl: null });
 
     await request(app)
       .post(`/api/v1/admin/news-candidates/${requireId(billsCandidate?.id)}/dismiss`)
@@ -276,11 +284,37 @@ describe.skipIf(!databaseTestsEnabled)('news inbox database and HTTP integration
       status: 'DRAFT',
       sourceName: 'Fictional Publisher',
       sourceUrl: 'https://manual.example.com/story?id=42',
+      // A manual candidate never sets contentType, so the converted article keeps
+      // the Article model's ARTICLE default rather than inheriting anything.
+      contentType: 'ARTICLE',
+      mediaThumbnailUrl: null,
     });
     expect(article.revisions).toHaveLength(1);
     expect(article.teams.map(({ teamId }) => teamId)).toEqual([buffalo.id]);
     expect(JSON.stringify(article)).not.toContain('full source body');
     expect(article.heroImageUrl).toBeNull();
+
+    // M30C: converting a VIDEO/HIGHLIGHT candidate must carry its contentType and
+    // mediaThumbnailUrl onto the resulting article, not silently drop them.
+    const videoConversion = await request(app)
+      .post(`/api/v1/admin/news-candidates/${requireId(cityOnlyCandidate?.id)}/convert`)
+      .set(bearer(editorToken))
+      .set('x-request-id', `${auditPrefix}-convert-video`)
+      .send({
+        ...conversionBody(buffalo.id),
+        slug: `${conversionSlug()}-video`,
+        confirmedTeamIds: [],
+      })
+      .expect(201);
+    const videoConverted = (videoConversion.body as { data: { article: { id: string } } }).data;
+    articleIds.add(videoConverted.article.id);
+    const videoArticle = await client.article.findUniqueOrThrow({
+      where: { id: videoConverted.article.id },
+    });
+    expect(videoArticle).toMatchObject({
+      contentType: cityOnlyCandidate?.contentType,
+      mediaThumbnailUrl: cityOnlyCandidate?.mediaThumbnailUrl ?? null,
+    });
 
     await request(app)
       .post(`/api/v1/admin/news-sources/${sourceId}/test`)
@@ -348,6 +382,83 @@ describe.skipIf(!databaseTestsEnabled)('news inbox database and HTTP integration
     expect(auditJson).not.toContain('Manual source metadata only.');
     expect(auditJson).not.toContain('Original 2nd & 15 commentary.');
   }, 30_000);
+
+  it('deduplicates a candidate across two different sources via the canonical URL fallback (M30A)', async () => {
+    const client = requirePrisma(prisma);
+    const admin = await createUser(client, 'ADMIN', userIds);
+    const repository = new PrismaNewsInboxRepository(client);
+    const sharedUrl = 'https://video.example.com/video/fictional-shared-highlight';
+    const normalized = normalizeNewsUrl(sharedUrl);
+
+    const createSourceRow = async (slug: string) => {
+      const created = await client.newsSource.create({
+        data: {
+          name: `Fictional Dedupe Source ${slug}`,
+          slug,
+          kind: 'RSS',
+          contentType: 'HIGHLIGHT',
+          status: 'ACTIVE',
+          feedUrl: `https://${slug}.example.com/feed.xml`,
+          siteUrl: `https://${slug}.example.com/`,
+          publisherName: 'Fictional Dedupe Publisher',
+          createdById: admin.id,
+          updatedById: admin.id,
+          createdBySnapshot: admin.email,
+          updatedBySnapshot: admin.email,
+        },
+      });
+      sourceIds.add(created.id);
+      const record = await repository.findSource(created.id);
+      if (record === null) throw new Error('Expected the created source to be readable.');
+      return record;
+    };
+
+    const sourceA = await createSourceRow(`dedupe-a-${randomUUID()}`);
+    const sourceB = await createSourceRow(`dedupe-b-${randomUUID()}`);
+    const now = new Date('2026-08-24T12:00:00.000Z');
+
+    const first = await repository.upsertFeedCandidate(
+      sourceA,
+      {
+        externalId: 'source-a-guid',
+        canonicalUrl: normalized.url,
+        canonicalUrlHash: normalized.hash,
+        headline: 'A fictional shared highlight, as seen by source A',
+        description: null,
+        author: null,
+        publishedAt: null,
+        thumbnailUrl: 'https://static.example.com/dedupe-thumb.jpg',
+      },
+      [],
+      now,
+    );
+    expect(first.action).toBe('created');
+    candidateIds.add(first.candidate.id);
+
+    const second = await repository.upsertFeedCandidate(
+      sourceB,
+      {
+        externalId: 'source-b-guid',
+        canonicalUrl: normalized.url,
+        canonicalUrlHash: normalized.hash,
+        headline: 'A fictional shared highlight, as seen by source B',
+        description: null,
+        author: null,
+        publishedAt: null,
+        thumbnailUrl: 'https://static.example.com/dedupe-thumb.jpg',
+      },
+      [],
+      now,
+    );
+    // Same canonical URL from a *different* source must update the existing row, never
+    // create a second one -- this is what stops one highlight from appearing 2-4x simply
+    // because it was published into multiple category feeds.
+    expect(second.action).toBe('updated');
+    expect(second.candidate.id).toBe(first.candidate.id);
+    expect(await client.newsCandidate.count({ where: { canonicalUrlHash: normalized.hash } })).toBe(
+      1,
+    );
+  }, 30_000);
 });
 
 function sourceBody(slug: string) {
@@ -355,6 +466,7 @@ function sourceBody(slug: string) {
     name: 'Fictional RSS Source',
     slug,
     kind: 'RSS',
+    contentType: 'VIDEO',
     status: 'ACTIVE',
     feedUrl: 'https://news.example.com/feed.xml',
     siteUrl: 'https://news.example.com/',
@@ -368,7 +480,7 @@ function sourceBody(slug: string) {
 }
 
 function initialRss(): string {
-  return `<?xml version="1.0" encoding="UTF-8"?><rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/"><channel><title>Fixture</title><item><guid>fixture-guid-1</guid><title>Buffalo Bills open the fictional training session</title><link>https://news.example.com/story/one?utm_source=test</link><description>Short metadata one.</description><pubDate>Sat, 01 Aug 2026 12:00:00 GMT</pubDate><content:encoded><![CDATA[full source body]]></content:encoded></item><item><guid>fixture-guid-2</guid><title>New York football operations update</title><link>https://news.example.com/story/two</link><description>Short metadata two.</description></item></channel></rss>`;
+  return `<?xml version="1.0" encoding="UTF-8"?><rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/" xmlns:media="http://search.yahoo.com/mrss/"><channel><title>Fixture</title><item><guid>fixture-guid-1</guid><title>Buffalo Bills open the fictional training session</title><link>https://news.example.com/story/one?utm_source=test</link><description>Short metadata one.</description><pubDate>Sat, 01 Aug 2026 12:00:00 GMT</pubDate><media:content url="https://static.example.com/thumb-one.jpg" /><content:encoded><![CDATA[full source body]]></content:encoded></item><item><guid>fixture-guid-2</guid><title>New York football operations update</title><link>https://news.example.com/story/two</link><description>Short metadata two.</description></item></channel></rss>`;
 }
 
 function updatedRss(): string {

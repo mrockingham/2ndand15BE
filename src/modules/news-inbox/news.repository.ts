@@ -163,6 +163,7 @@ export class PrismaNewsInboxRepository implements NewsInboxRepository {
       where: {
         ...(query.status === undefined ? {} : { status: query.status }),
         ...(query.kind === undefined ? {} : { kind: query.kind }),
+        ...(query.contentType === undefined ? {} : { contentType: query.contentType }),
       },
       orderBy: [{ name: 'asc' }, { id: 'asc' }],
       take: query.limit + 1,
@@ -230,6 +231,7 @@ export class PrismaNewsInboxRepository implements NewsInboxRepository {
           ...(input.name === undefined ? {} : { name: input.name }),
           ...(input.slug === undefined ? {} : { slug: input.slug }),
           ...(input.kind === undefined ? {} : { kind: input.kind }),
+          ...(input.contentType === undefined ? {} : { contentType: input.contentType }),
           ...(input.status === undefined ? {} : { status: input.status }),
           ...(input.feedUrl === undefined ? {} : { feedUrl: input.feedUrl }),
           ...(input.siteUrl === undefined ? {} : { siteUrl: input.siteUrl }),
@@ -484,7 +486,9 @@ export class PrismaNewsInboxRepository implements NewsInboxRepository {
           existing.canonicalUrl !== entry.canonicalUrl ||
           existing.sourceDescription !== entry.description ||
           existing.sourceAuthor !== entry.author ||
-          existing.sourcePublishedAt?.getTime() !== entry.publishedAt?.getTime();
+          existing.sourcePublishedAt?.getTime() !== entry.publishedAt?.getTime() ||
+          existing.contentType !== source.contentType ||
+          existing.mediaThumbnailUrl !== entry.thumbnailUrl;
         if (!changed) return { candidate: existing, action: 'skipped' };
         const candidate = await transaction.newsCandidate.update({
           where: { id: existing.id },
@@ -495,6 +499,8 @@ export class PrismaNewsInboxRepository implements NewsInboxRepository {
             sourceDescription: entry.description,
             sourceAuthor: entry.author,
             sourcePublishedAt: entry.publishedAt,
+            contentType: source.contentType,
+            mediaThumbnailUrl: entry.thumbnailUrl,
             ...(existing.sourceExternalId === null ? { sourceExternalId: entry.externalId } : {}),
             ...(existing.status === 'NEW'
               ? {
@@ -520,6 +526,8 @@ export class PrismaNewsInboxRepository implements NewsInboxRepository {
           sourceDescription: entry.description,
           sourceAuthor: entry.author,
           sourcePublishedAt: entry.publishedAt,
+          contentType: source.contentType,
+          mediaThumbnailUrl: entry.thumbnailUrl,
           discoveredAt,
           suggestedTeams: {
             create: suggestions.map(({ teamId, rule }) => ({ teamId, rule })),

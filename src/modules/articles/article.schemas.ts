@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 export const articleTypeSchema = z.enum(['ORIGINAL', 'CURATED', 'ANNOUNCEMENT']);
+export const articleContentTypeSchema = z.enum(['ARTICLE', 'VIDEO', 'HIGHLIGHT']);
 export const articleStatusSchema = z.enum([
   'DRAFT',
   'SCHEDULED',
@@ -28,6 +29,8 @@ const editorialFields = {
   slug: z.string().transform(normalizeText).pipe(z.string().trim().min(1).max(160)).optional(),
   summary: nullableText(1_000),
   body: nullableMarkdown(100_000),
+  contentType: articleContentTypeSchema,
+  mediaThumbnailUrl: nullableHttpUrl,
   sourceName: nullableText(160),
   sourceUrl: nullableHttpUrl,
   sourcePublishedAt: timestamp.nullable(),
@@ -47,6 +50,8 @@ export const articleCreateSchema = z
   .object({
     ...editorialFields,
     slug: editorialFields.slug,
+    contentType: articleContentTypeSchema.default('ARTICLE'),
+    mediaThumbnailUrl: nullableHttpUrl.default(null),
     teamIds: z.array(z.uuid()).max(32).default([]),
     changeSummary: nullableText(500).optional(),
   })
@@ -99,6 +104,7 @@ export const adminArticleListQuerySchema = z
     cursor: z.uuid().optional(),
     status: articleStatusSchema.optional(),
     type: articleTypeSchema.optional(),
+    contentType: articleContentTypeSchema.optional(),
     teamId: z.uuid().optional(),
     featured: z
       .enum(['true', 'false'])
@@ -114,6 +120,7 @@ export const publicArticleListQuerySchema = z
     limit: z.coerce.number().int().min(1).max(50).default(20),
     cursor: z.uuid().optional(),
     type: articleTypeSchema.optional(),
+    contentType: articleContentTypeSchema.optional(),
     teamId: z.uuid().optional(),
     team: z.string().trim().toUpperCase().min(2).max(8).optional(),
     featured: z

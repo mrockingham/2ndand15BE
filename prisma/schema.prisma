@@ -102,6 +102,16 @@ enum NewsSourceKind {
   MANUAL_ONLY
 }
 
+/// M30A: what a source/candidate fundamentally is, set once per source at creation
+/// (a feed URL is dedicated to one content type) and copied onto every candidate it
+/// produces. Deliberately not classified per-item or by AI -- source configuration is
+/// the reliable, deterministic signal for official single-purpose team feeds.
+enum NewsContentType {
+  ARTICLE
+  VIDEO
+  HIGHLIGHT
+}
+
 enum NewsSourceStatus {
   ACTIVE
   PAUSED
@@ -413,6 +423,7 @@ model Game {
   currentPlayerCoverage CurrentGamePlayerStatCoverage?
   plays                 GamePlay[]
   predictions           GamePrediction[]
+  dataHealthProbes      GameDataHealthProbe[]
 
   @@index([league, season, seasonType, week, startTime], map: "games_schedule_idx")
   @@index([status, startTime], map: "games_status_start_time_idx")
@@ -546,12 +557,12 @@ model CurrentGamePollState {
   /// M27.1: when the current plays-reconciliation block began. Preserved across repeat blocked
   /// polls (only cleared or freshly re-stamped by a genuine state transition) so operators can
   /// see how long a game has been stuck. Admin/operator-only — never exposed publicly.
-  playsBlockedAt             DateTime?           @map("plays_blocked_at") @db.Timestamptz(3)
+  playsBlockedAt            DateTime?           @map("plays_blocked_at") @db.Timestamptz(3)
   /// M27.1: capped application-level reason code ('COLLISION' | 'UNMATCHED_EXISTING' |
   /// 'COLLISION_AND_UNMATCHED'), never free text derived from provider content — this is what
   /// guarantees no provider leakage through this field.
-  playsBlockReason           String?             @map("plays_block_reason") @db.VarChar(64)
-  playsReviewRequired        Boolean             @default(false) @map("plays_review_required")
+  playsBlockReason          String?             @map("plays_block_reason") @db.VarChar(64)
+  playsReviewRequired       Boolean             @default(false) @map("plays_review_required")
   lockedAt                  DateTime?           @map("locked_at") @db.Timestamptz(3)
   lockedBy                  String?             @map("locked_by") @db.VarChar(128)
   createdAt                 DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
@@ -746,6 +757,40 @@ model GameEditorialOverride {
   @@map("game_editorial_overrides")
 }
 
+/// M29A: sanitized, append-only record of one bounded admin-triggered Highlightly
+/// diagnostic probe for a game's data health. Never stores raw provider responses,
+/// provider record IDs, or API credentials -- only counts and capped reason codes.
+model GameDataHealthProbe {
+  id                       String   @id @default(uuid()) @db.Uuid
+  gameId                   String   @map("game_id") @db.Uuid
+  provider                 String   @db.VarChar(64)
+  checkedAt                DateTime @map("checked_at") @db.Timestamptz(3)
+  requestCount             Int      @map("request_count")
+  durationMs               Int      @map("duration_ms")
+  providerReachable        Boolean  @map("provider_reachable")
+  providerMatchFound       Boolean  @map("provider_match_found")
+  quotaLimit               Int?     @map("quota_limit")
+  quotaRemaining           Int?     @map("quota_remaining")
+  resultDiagnosis          String   @map("result_diagnosis") @db.VarChar(64)
+  teamStatsDiagnosis       String   @map("team_stats_diagnosis") @db.VarChar(64)
+  playerStatsDiagnosis     String   @map("player_stats_diagnosis") @db.VarChar(64)
+  playsDiagnosis           String   @map("plays_diagnosis") @db.VarChar(64)
+  providerTeamStatRows     Int?     @map("provider_team_stat_rows")
+  dbTeamStatRows           Int?     @map("db_team_stat_rows")
+  providerPlayerStatRows   Int?     @map("provider_player_stat_rows")
+  normalizedPlayerStatRows Int?     @map("normalized_player_stat_rows")
+  resolvedPlayerCount      Int?     @map("resolved_player_count")
+  unresolvedPlayerCount    Int?     @map("unresolved_player_count")
+  dbPlayerStatRows         Int?     @map("db_player_stat_rows")
+  providerPlayCount        Int?     @map("provider_play_count")
+  dbPlayCount              Int?     @map("db_play_count")
+  errorCode                String?  @map("error_code") @db.VarChar(64)
+  game                     Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+
+  @@index([gameId, checkedAt], map: "game_data_health_probes_game_checked_idx")
+  @@map("game_data_health_probes")
+}
+
 model AdminAuditEvent {
   id                 String   @id @default(uuid()) @db.Uuid
   actorUserId        String?  @map("actor_user_id") @db.Uuid
@@ -775,6 +820,8 @@ model Article {
   title                   String                  @db.VarChar(180)
   summary                 String?                 @db.VarChar(1000)
   body                    String?                 @db.Text
+  contentType             NewsContentType         @default(ARTICLE) @map("content_type")
+  mediaThumbnailUrl       String?                 @map("media_thumbnail_url") @db.Text
   sourceName              String?                 @map("source_name") @db.VarChar(160)
   sourceUrl               String?                 @map("source_url") @db.Text
   sourcePublishedAt       DateTime?               @map("source_published_at") @db.Timestamptz(3)
@@ -808,6 +855,7 @@ model Article {
   @@unique([id, version], map: "articles_id_version_key")
   @@index([status, publishedAt, id], map: "articles_status_published_idx")
   @@index([type, publishedAt, id], map: "articles_type_published_idx")
+  @@index([contentType, publishedAt, id], map: "articles_content_type_published_idx")
   @@index([isFeatured, featuredPriority, publishedAt, id], map: "articles_featured_idx")
   @@index([scheduledFor, id], map: "articles_scheduled_idx")
   @@index([createdById, createdAt, id], map: "articles_creator_created_idx")
@@ -862,6 +910,7 @@ model NewsSource {
   name                      String               @db.VarChar(160)
   slug                      String               @unique(map: "news_sources_slug_key") @db.VarChar(96)
   kind                      NewsSourceKind
+  contentType               NewsContentType      @default(ARTICLE) @map("content_type")
   status                    NewsSourceStatus     @default(PAUSED)
   feedUrl                   String?              @map("feed_url") @db.Text
   siteUrl                   String               @map("site_url") @db.Text
@@ -915,6 +964,12 @@ model NewsCandidate {
   headline           String                      @db.VarChar(300)
   sourceDescription  String?                     @map("source_description") @db.VarChar(2000)
   sourceAuthor       String?                     @map("source_author") @db.VarChar(160)
+  contentType        NewsContentType             @default(ARTICLE) @map("content_type")
+  /// M30A: feed-provided thumbnail (Media RSS `media:content`/`<enclosure>`), never a
+  /// direct video file -- real official-team feeds only ever expose a thumbnail image
+  /// through these tags. The canonical page URL (`canonicalUrl`) is the video/highlight
+  /// link; no video is ever downloaded or rehosted.
+  mediaThumbnailUrl  String?                     @map("media_thumbnail_url") @db.Text
   sourcePublishedAt  DateTime?                   @map("source_published_at") @db.Timestamptz(3)
   discoveredAt       DateTime                    @map("discovered_at") @db.Timestamptz(3)
   status             NewsCandidateStatus         @default(NEW)

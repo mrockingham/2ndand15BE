@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import type {
   ArticleStatus,
   ArticleType,
+  NewsContentType,
   Prisma,
   PrismaClient,
 } from '../../generated/prisma/client.js';
@@ -21,6 +22,8 @@ export interface ArticleWriteFields {
   readonly slug: string;
   readonly summary: string | null;
   readonly body: string | null;
+  readonly contentType: NewsContentType;
+  readonly mediaThumbnailUrl: string | null;
   readonly sourceName: string | null;
   readonly sourceUrl: string | null;
   readonly sourcePublishedAt: Date | null;
@@ -111,6 +114,7 @@ export class PrismaArticleRepository implements ArticleRepository {
           ? { status: { not: 'ARCHIVED' as const } }
           : { status: query.status }),
         ...(query.type === undefined ? {} : { type: query.type }),
+        ...(query.contentType === undefined ? {} : { contentType: query.contentType }),
         ...(query.featured === undefined ? {} : { isFeatured: query.featured }),
         ...(query.authorId === undefined ? {} : { createdById: query.authorId }),
         ...(query.teamId === undefined ? {} : { teams: { some: { teamId: query.teamId } } }),
@@ -142,6 +146,7 @@ export class PrismaArticleRepository implements ArticleRepository {
       where: {
         ...publicVisibilityWhere(now),
         ...(query.type === undefined ? {} : { type: query.type }),
+        ...(query.contentType === undefined ? {} : { contentType: query.contentType }),
         ...(query.featured === undefined ? {} : { isFeatured: query.featured }),
         ...(query.teamId === undefined ? {} : { teams: { some: { teamId: query.teamId } } }),
         ...(query.search === undefined
@@ -327,6 +332,8 @@ export function revisionSnapshot(article: ArticleRecord): Prisma.InputJsonObject
     slug: article.slug,
     summary: article.summary,
     body: article.body,
+    contentType: article.contentType,
+    mediaThumbnailUrl: article.mediaThumbnailUrl,
     sourceName: article.sourceName,
     sourceUrl: article.sourceUrl,
     sourcePublishedAt: article.sourcePublishedAt,

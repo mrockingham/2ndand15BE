@@ -19,6 +19,48 @@ describe('news feed parser', () => {
     expect(JSON.stringify(feed)).not.toContain('full fictional body');
   });
 
+  it('legacy article fixtures are completely unaffected by media parsing (regression)', async () => {
+    const rss = parseNewsFeed(await fixture('sample-rss.xml'));
+    expect(rss.entries.every((entry) => entry.thumbnailUrl === null)).toBe(true);
+    const atom = parseNewsFeed(await fixture('sample-atom.xml'));
+    expect(atom.entries.every((entry) => entry.thumbnailUrl === null)).toBe(true);
+  });
+
+  it('captures a media:content thumbnail and a matching image enclosure as the same field', async () => {
+    const feed = parseNewsFeed(await fixture('sample-media-rss.xml'));
+    expect(feed.entries[0]).toMatchObject({
+      externalId: 'fictional-media-1',
+      canonicalUrl:
+        'https://video.example.com/video/fictional-coach-postgame-press-conference-week-1',
+      thumbnailUrl: 'https://static.example.com/image/fictional-thumb-1.jpg',
+    });
+  });
+
+  it('captures a media:content thumbnail with no enclosure present', async () => {
+    const feed = parseNewsFeed(await fixture('sample-media-rss.xml'));
+    expect(feed.entries[1]).toMatchObject({
+      externalId: 'fictional-media-2',
+      thumbnailUrl: 'https://static.example.com/image/fictional-thumb-2.jpg',
+    });
+  });
+
+  it('never captures a non-image enclosure (e.g. video/mp4) as a thumbnail URL', async () => {
+    const feed = parseNewsFeed(await fixture('sample-media-rss.xml'));
+    expect(feed.entries[2]).toMatchObject({
+      externalId: 'fictional-media-3',
+      thumbnailUrl: null,
+    });
+    expect(JSON.stringify(feed)).not.toContain('fictional-clip.mp4');
+  });
+
+  it('leaves thumbnailUrl null when a video item has no media metadata at all', async () => {
+    const feed = parseNewsFeed(await fixture('sample-media-rss.xml'));
+    expect(feed.entries[3]).toMatchObject({
+      externalId: 'fictional-media-4',
+      thumbnailUrl: null,
+    });
+  });
+
   it('normalizes common Atom fields and alternate links', async () => {
     const feed = parseNewsFeed(await fixture('sample-atom.xml'));
     expect(feed.kind).toBe('ATOM');
