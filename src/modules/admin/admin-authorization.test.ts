@@ -16,4 +16,13 @@ describe('administrative capabilities', () => {
     expect(roleHasCapability('ADMIN', 'MANAGE_ROLES')).toBe(true);
     expect(roleHasCapability('ADMIN', 'ARCHIVE_ARTICLE')).toBe(true);
   });
+
+  it('M32: grants game-media viewing to editors, but write actions to admins only', () => {
+    expect(roleHasCapability('USER', 'VIEW_GAME_MEDIA')).toBe(false);
+    expect(roleHasCapability('USER', 'MANAGE_GAME_MEDIA')).toBe(false);
+    expect(roleHasCapability('EDITOR', 'VIEW_GAME_MEDIA')).toBe(true);
+    expect(roleHasCapability('EDITOR', 'MANAGE_GAME_MEDIA')).toBe(false);
+    expect(roleHasCapability('ADMIN', 'VIEW_GAME_MEDIA')).toBe(true);
+    expect(roleHasCapability('ADMIN', 'MANAGE_GAME_MEDIA')).toBe(true);
+  });
 });

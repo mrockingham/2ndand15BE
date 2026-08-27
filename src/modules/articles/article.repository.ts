@@ -27,6 +27,7 @@ export interface ArticleWriteFields {
   readonly sourceName: string | null;
   readonly sourceUrl: string | null;
   readonly sourcePublishedAt: Date | null;
+  readonly sourceIsOfficialTeam: boolean;
   readonly heroImageUrl: string | null;
   readonly heroImageAlt: string | null;
   readonly heroImageAttribution: string | null;
@@ -337,6 +338,7 @@ export function revisionSnapshot(article: ArticleRecord): Prisma.InputJsonObject
     sourceName: article.sourceName,
     sourceUrl: article.sourceUrl,
     sourcePublishedAt: article.sourcePublishedAt,
+    sourceIsOfficialTeam: article.sourceIsOfficialTeam,
     heroImageUrl: article.heroImageUrl,
     heroImageAlt: article.heroImageAlt,
     heroImageAttribution: article.heroImageAttribution,

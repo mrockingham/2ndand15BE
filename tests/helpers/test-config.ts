@@ -70,6 +70,14 @@ export function createTestConfig(overrides: Partial<AppConfig> = {}): AppConfig 
         storeLogoUrls: false,
       },
     },
+    newsIngestion: {
+      initialLookbackHours: 72,
+      initialMaxItemsPerSource: 25,
+      lateItemToleranceHours: 48,
+    },
+    gameMediaCuration: {
+      embedAllowedHosts: ['youtube.com', 'www.youtube.com', 'youtube-nocookie.com'],
+    },
     ...overrides,
   };
 }

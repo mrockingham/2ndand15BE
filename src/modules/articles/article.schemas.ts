@@ -34,6 +34,7 @@ const editorialFields = {
   sourceName: nullableText(160),
   sourceUrl: nullableHttpUrl,
   sourcePublishedAt: timestamp.nullable(),
+  sourceIsOfficialTeam: z.boolean(),
   heroImageUrl: nullableHttpUrl,
   heroImageAlt: nullableText(300),
   heroImageAttribution: nullableText(500),
@@ -52,6 +53,7 @@ export const articleCreateSchema = z
     slug: editorialFields.slug,
     contentType: articleContentTypeSchema.default('ARTICLE'),
     mediaThumbnailUrl: nullableHttpUrl.default(null),
+    sourceIsOfficialTeam: z.boolean().default(false),
     teamIds: z.array(z.uuid()).max(32).default([]),
     changeSummary: nullableText(500).optional(),
   })

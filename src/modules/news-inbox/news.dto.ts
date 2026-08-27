@@ -6,7 +6,9 @@ export const newsSourceInclude = {
 } satisfies Prisma.NewsSourceInclude;
 
 export const newsCandidateInclude = {
-  source: { select: { id: true, name: true, slug: true, publisherName: true } },
+  source: {
+    select: { id: true, name: true, slug: true, publisherName: true, isOfficialTeam: true },
+  },
   suggestedTeams: {
     include: { team: true },
     orderBy: { team: { abbreviation: 'asc' } },

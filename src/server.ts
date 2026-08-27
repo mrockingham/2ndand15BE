@@ -21,6 +21,16 @@ import { createHighlightlyMatchDetailFetcher } from './modules/sports/highlightl
 import { PrismaDataHealthRepository } from './modules/data-health/data-health.repository.js';
 import { DataHealthService } from './modules/data-health/data-health.service.js';
 import { GameDataHealthProbeService } from './modules/data-health/data-health-probe.service.js';
+import { createHighlightlyHighlightFetcher } from './modules/sports/highlightly-highlight-fetcher.js';
+import { createHighlightlyGeoRestrictionFetcher } from './modules/sports/highlightly-geo-restriction-fetcher.js';
+import { PrismaGameHighlightsRepository } from './modules/game-highlights/game-highlights.repository.js';
+import {
+  GameHighlightsService,
+  type GameHighlightSyncDependencies,
+} from './modules/game-highlights/game-highlights.service.js';
+import { PrismaGameMediaCurationRepository } from './modules/game-media-curation/game-media-curation.repository.js';
+import { GameMediaCurationService } from './modules/game-media-curation/game-media-curation.service.js';
+import { PrismaGlobalGameMediaRepository } from './modules/game-media-curation/global-game-media.repository.js';
 import { PrismaArticleRepository } from './modules/articles/article.repository.js';
 import { ArticleService } from './modules/articles/article.service.js';
 import { AuthService } from './modules/auth/auth.service.js';
@@ -86,8 +96,20 @@ let playsRepairService: PlayReconciliationRepairService | undefined;
 // only the probe endpoint reports itself unconfigured (500 GAME_DATA_HEALTH_PROBE_UNCONFIGURED).
 const dataHealthRepository = new PrismaDataHealthRepository(prisma);
 let dataHealthProbeService: GameDataHealthProbeService | undefined;
+// M31: the game-highlights sync (POST .../highlights/sync) requires the same
+// Highlightly configuration and reuses the same client instance as the Data Health
+// probe above, for the same request-count/rate-limit-tracking reason. The DB-only
+// read endpoints (GET .../highlights, GET .../highlights/diagnostic) never depend
+// on this and always work even when this block fails.
+let gameHighlightSyncDependencies: GameHighlightSyncDependencies | undefined;
+// M31C: defaults to disabled -- see the kill-switch note on
+// `HIGHLIGHTLY_EMBED_PLAYBACK_ENABLED` in config/env.ts. Read independently of
+// `gameHighlightSyncDependencies` so public reads keep refusing to report
+// `canEmbed` even if the try block below fails entirely.
+let gameHighlightEmbedPlaybackEnabled = false;
 try {
   const currentGameConfig = loadCurrentGameSyncConfig();
+  gameHighlightEmbedPlaybackEnabled = currentGameConfig.currentGame.embedPlaybackEnabled;
   const highlightlyClient = new HighlightlyEvaluationHttpClient({
     baseUrl: currentGameConfig.currentGame.highlightly.baseUrl,
     apiKey: currentGameConfig.currentGame.highlightly.apiKey,
@@ -113,10 +135,16 @@ try {
     createHighlightlyMatchDetailFetcher(highlightlyClient),
     highlightlyClient,
   );
+  gameHighlightSyncDependencies = {
+    fetcher: createHighlightlyHighlightFetcher(highlightlyClient),
+    client: highlightlyClient,
+    geoFetcher: createHighlightlyGeoRestrictionFetcher(highlightlyClient),
+    embedAllowedHosts: currentGameConfig.currentGame.embedAllowedHosts,
+  };
 } catch (error: unknown) {
   logger.warn(
     { err: error },
-    'Current-game configuration is unavailable; plays reconciliation review/repair and data-health probe admin endpoints will report unconfigured.',
+    'Current-game configuration is unavailable; plays reconciliation review/repair, data-health probe, and game-highlight sync admin endpoints will report unconfigured.',
   );
 }
 const adminService = new AdminService(
@@ -126,10 +154,23 @@ const adminService = new AdminService(
   playsRepairService,
 );
 const dataHealthService = new DataHealthService(dataHealthRepository, dataHealthProbeService);
+const gameHighlightsService = new GameHighlightsService(
+  new PrismaGameHighlightsRepository(prisma),
+  gameHighlightSyncDependencies,
+  () => new Date(),
+  gameHighlightEmbedPlaybackEnabled,
+);
+const gameMediaCurationService = new GameMediaCurationService(
+  new PrismaGameMediaCurationRepository(prisma),
+  gameHighlightsService,
+  config.gameMediaCuration.embedAllowedHosts,
+  new PrismaGlobalGameMediaRepository(prisma),
+);
 const articleService = new ArticleService(new PrismaArticleRepository(prisma));
 const newsInboxService = new NewsInboxService(
   new PrismaNewsInboxRepository(prisma),
   new SafeFeedClient(),
+  config.newsIngestion,
 );
 const editorialAiProvider =
   config.editorialAi.provider === 'openai' &&
@@ -245,6 +286,8 @@ const app = createApp({
   adminService,
   adminIdentities: adminRepository,
   dataHealthService,
+  gameHighlightsService,
+  gameMediaCurationService,
   articleReader: articleService,
   editorialArticleService: articleService,
   newsInboxService,

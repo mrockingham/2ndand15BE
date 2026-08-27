@@ -116,6 +116,23 @@ export interface NewsInboxRepository {
     completedAt: Date,
   ): Promise<NewsIngestionRunRecord>;
   listSuggestionTeams(): Promise<readonly { id: string; fullName: string; abbreviation: string }[]>;
+  /** M30D: the newest `sourcePublishedAt` ever persisted for this source, used as the
+   * steady-state late/out-of-order watermark. Derives from existing candidate rows --
+   * no new schema state. */
+  getMaxCandidatePublishedAt(sourceId: string): Promise<Date | null>;
+  /** M30D: whether this source has ever written a real candidate. Deliberately not
+   * based on `lastSuccessfulAt` -- that field is also set by a no-write `testSource`
+   * dry run (pre-existing behavior), so a source that was only ever tested, never
+   * really ingested, must still count as never-initialized. */
+  hasAnyCandidates(sourceId: string): Promise<boolean>;
+  /** M30D: read-only existence check by the same identity priority `upsertFeedCandidate`
+   * uses (external ID, then canonical URL hash), so the late/out-of-order guard can tell
+   * an already-known item from a genuinely new one without writing anything. */
+  candidateExists(
+    sourceId: string,
+    externalId: string | null,
+    canonicalUrlHash: string,
+  ): Promise<boolean>;
   upsertFeedCandidate(
     source: NewsSourceRecord,
     entry: NormalizedFeedEntry,
@@ -458,6 +475,41 @@ export class PrismaNewsInboxRepository implements NewsInboxRepository {
       where: { league: 'NFL', isActive: true },
       select: { id: true, fullName: true, abbreviation: true },
     });
+  }
+
+  async getMaxCandidatePublishedAt(sourceId: string): Promise<Date | null> {
+    const result = await this.prisma.newsCandidate.aggregate({
+      where: { sourceId },
+      _max: { sourcePublishedAt: true },
+    });
+    return result._max.sourcePublishedAt;
+  }
+
+  async hasAnyCandidates(sourceId: string): Promise<boolean> {
+    const existing = await this.prisma.newsCandidate.findFirst({
+      where: { sourceId },
+      select: { id: true },
+    });
+    return existing !== null;
+  }
+
+  async candidateExists(
+    sourceId: string,
+    externalId: string | null,
+    canonicalUrlHash: string,
+  ): Promise<boolean> {
+    if (externalId !== null) {
+      const byExternalId = await this.prisma.newsCandidate.findFirst({
+        where: { sourceId, sourceExternalId: externalId },
+        select: { id: true },
+      });
+      if (byExternalId !== null) return true;
+    }
+    const byHash = await this.prisma.newsCandidate.findUnique({
+      where: { canonicalUrlHash },
+      select: { id: true },
+    });
+    return byHash !== null;
   }
 
   upsertFeedCandidate(

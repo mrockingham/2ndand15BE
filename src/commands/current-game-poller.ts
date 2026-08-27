@@ -16,8 +16,12 @@ import { HighlightlyCurrentGamePlayProvider } from '../modules/sports/providers/
 import { PrismaCurrentGameSyncRepository } from '../modules/sports/current-game-sync.repository.js';
 import { HighlightlyEvaluationHttpClient } from '../modules/sports/evaluation/highlightly/highlightly-http-client.js';
 import { createHighlightlyMatchDetailFetcher } from '../modules/sports/highlightly-match-detail-fetcher.js';
+import { createHighlightlyHighlightFetcher } from '../modules/sports/highlightly-highlight-fetcher.js';
+import { createHighlightlyGeoRestrictionFetcher } from '../modules/sports/highlightly-geo-restriction-fetcher.js';
 import { HighlightlyCurrentGameProvider } from '../modules/sports/providers/highlightly/highlightly-current-game-provider.js';
 import { CurrentGameSyncService } from '../modules/sports/sync-current-games.js';
+import { PrismaGameHighlightsRepository } from '../modules/game-highlights/game-highlights.repository.js';
+import { GameHighlightsService } from '../modules/game-highlights/game-highlights.service.js';
 
 interface Args {
   readonly once: boolean;
@@ -66,6 +70,12 @@ try {
       playRepository,
     ),
     matchDetailFetcher: createHighlightlyMatchDetailFetcher(client),
+    highlightsService: new GameHighlightsService(new PrismaGameHighlightsRepository(prisma), {
+      fetcher: createHighlightlyHighlightFetcher(client),
+      client,
+      geoFetcher: createHighlightlyGeoRestrictionFetcher(client),
+      embedAllowedHosts: config.currentGame.embedAllowedHosts,
+    }),
     pollStateRepository: new PrismaCurrentGamePollStateRepository(prisma),
     requestCounter: client,
     rateLimitObservation: () => client.getRateLimitObservation(),
@@ -128,6 +138,9 @@ try {
           playsStoredTotal: tick.plays.storedTotal,
           playsBlocked: tick.plays.blocked,
           playsFinalReplacementStatus: tick.plays.finalReplacementStatus,
+          highlightsAttempted: tick.highlights.attempted,
+          highlightsOk: tick.highlights.ok,
+          highlightsCoverage: tick.highlights.coverage,
         })),
       })}\n`,
     );

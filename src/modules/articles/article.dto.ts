@@ -27,6 +27,7 @@ export interface PublicArticleListDto {
   readonly sourceName: string | null;
   readonly sourceUrl: string | null;
   readonly sourcePublishedAt: string | null;
+  readonly sourceIsOfficialTeam: boolean;
   readonly heroImageUrl: string | null;
   readonly heroImageAlt: string | null;
   readonly isFeatured: boolean;
@@ -66,6 +67,7 @@ export interface AdminArticleDetailDto extends AdminArticleListDto {
   readonly sourceName: string | null;
   readonly sourceUrl: string | null;
   readonly sourcePublishedAt: string | null;
+  readonly sourceIsOfficialTeam: boolean;
   readonly heroImageUrl: string | null;
   readonly heroImageAlt: string | null;
   readonly heroImageAttribution: string | null;
@@ -91,6 +93,7 @@ export function toPublicArticleListDto(
     sourceName: article.sourceName,
     sourceUrl: article.sourceUrl,
     sourcePublishedAt: article.sourcePublishedAt?.toISOString() ?? null,
+    sourceIsOfficialTeam: article.sourceIsOfficialTeam,
     heroImageUrl: article.heroImageUrl,
     heroImageAlt: article.heroImageAlt,
     isFeatured: article.isFeatured,
@@ -141,6 +144,7 @@ export function toAdminArticleDetailDto(article: ArticleRecord): AdminArticleDet
     sourceName: article.sourceName,
     sourceUrl: article.sourceUrl,
     sourcePublishedAt: article.sourcePublishedAt?.toISOString() ?? null,
+    sourceIsOfficialTeam: article.sourceIsOfficialTeam,
     heroImageUrl: article.heroImageUrl,
     heroImageAlt: article.heroImageAlt,
     heroImageAttribution: article.heroImageAttribution,

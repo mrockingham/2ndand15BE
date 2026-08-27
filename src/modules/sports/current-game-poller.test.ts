@@ -34,6 +34,7 @@ import {
   CurrentGamePoller,
   shouldPollWhileDegraded,
   type CurrentGamePollerOptions,
+  type HighlightSyncPort,
 } from './current-game-poller.js';
 import { CurrentGameSyncService } from './sync-current-games.js';
 
@@ -291,6 +292,8 @@ function harness(options: {
   readonly manualFeatured?: boolean | null;
   readonly broadcastNetwork?: string | null;
   readonly rateLimitRemaining?: number | null;
+  readonly highlightResults?: readonly { readonly coverage: string; readonly errorCode: string | null }[];
+  readonly highlightSyncThrows?: boolean;
 }) {
   const gameRecord: CurrentGameRecord = {
     id: gameId,
@@ -446,12 +449,36 @@ function harness(options: {
 
   let rateLimitRemaining = options.rateLimitRemaining ?? 7_000;
   let now = new Date('2026-08-23T00:00:00.000Z');
+
+  let highlightCallIndex = 0;
+  const highlightSyncCalls: {
+    readonly gameId: string;
+    readonly exhaustiveCheck: boolean | undefined;
+  }[] = [];
+  const syncGame = vi.fn(
+    (syncGameId: string, syncOptions?: { readonly exhaustiveCheck?: boolean }) => {
+      highlightSyncCalls.push({ gameId: syncGameId, exhaustiveCheck: syncOptions?.exhaustiveCheck });
+      if (options.highlightSyncThrows) {
+        return Promise.reject(new Error('Highlight provider unavailable.'));
+      }
+      const results = options.highlightResults ?? [{ coverage: 'AVAILABLE', errorCode: null }];
+      const result = results[Math.min(highlightCallIndex, results.length - 1)] ?? {
+        coverage: 'AVAILABLE',
+        errorCode: null,
+      };
+      highlightCallIndex += 1;
+      return Promise.resolve(result);
+    },
+  );
+  const highlightsService: HighlightSyncPort = { syncGame };
+
   const poller = new CurrentGamePoller({
     gameSyncService: new CurrentGameSyncService(gameProvider, gameSyncRepository),
     detailsRepository,
     playRepository,
     finalPlaySnapshotService,
     matchDetailFetcher,
+    highlightsService,
     pollStateRepository,
     requestCounter: { getRequestCount: () => requestCount },
     rateLimitObservation: () => ({ limit: 7_500, remaining: rateLimitRemaining }),
@@ -493,6 +520,8 @@ function harness(options: {
     setRateLimitRemaining,
     fetchMatchDetail,
     setNow,
+    highlightsService,
+    highlightSyncCalls,
   };
 }
 
@@ -679,6 +708,9 @@ describe('CurrentGamePoller', () => {
             }),
             failureReason: null,
           }),
+      },
+      highlightsService: {
+        syncGame: () => Promise.resolve({ coverage: 'AVAILABLE', errorCode: null }),
       },
       pollStateRepository,
       requestCounter: { getRequestCount: () => 0 },
@@ -1038,6 +1070,159 @@ describe('CurrentGamePoller', () => {
     // COMPLETE has no nextPollAt, so a further cycle claims nothing for this game.
     const finalReport = await poller.runCycle(options);
     expect(finalReport.claimed).toBe(0);
+  });
+
+  describe('M31A highlight reconciliation', () => {
+    it('never attempts a highlight sync on a LIVE tick', async () => {
+      const { poller, options, highlightSyncCalls } = harness({
+        plays: [rawPlayDetail('first play')],
+      });
+      const report = await poller.runCycle(options);
+      expect(report.ticks[0]?.highlights).toEqual({
+        attempted: false,
+        ok: true,
+        coverage: null,
+        errorMessage: null,
+      });
+      expect(highlightSyncCalls).toHaveLength(0);
+    });
+
+    it('attempts a highlight sync exactly once per FINAL stage (immediate, +10, +60)', async () => {
+      const { poller, options, setNextPollAt, highlightSyncCalls } = harness({
+        gameStatus: 'FINAL',
+        highlightResults: [
+          { coverage: 'PENDING', errorCode: null },
+          { coverage: 'PENDING', errorCode: null },
+          { coverage: 'UNAVAILABLE', errorCode: null },
+        ],
+      });
+
+      const immediate = await poller.runCycle(options);
+      expect(immediate.ticks[0]?.highlights.attempted).toBe(true);
+      expect(highlightSyncCalls).toEqual([{ gameId, exhaustiveCheck: false }]);
+
+      setNextPollAt(gameId, new Date('2026-08-23T00:00:00.000Z'));
+      const plus10 = await poller.runCycle(options);
+      expect(plus10.ticks[0]?.highlights.attempted).toBe(true);
+      expect(highlightSyncCalls).toHaveLength(2);
+      expect(highlightSyncCalls[1]).toEqual({ gameId, exhaustiveCheck: false });
+
+      setNextPollAt(gameId, new Date('2026-08-23T00:00:00.000Z'));
+      const plus60 = await poller.runCycle(options);
+      expect(plus60.ticks[0]?.highlights.attempted).toBe(true);
+      expect(highlightSyncCalls).toHaveLength(3);
+      // Only the FINAL_60 (exhausted-lifecycle) attempt asks for an authoritative answer.
+      expect(highlightSyncCalls[2]).toEqual({ gameId, exhaustiveCheck: true });
+
+      // COMPLETE has no nextPollAt, so a further cycle claims nothing -- no fourth
+      // highlight call either.
+      const stray = await poller.runCycle(options);
+      expect(stray.claimed).toBe(0);
+      expect(highlightSyncCalls).toHaveLength(3);
+    });
+
+    it('reports AVAILABLE immediately when the provider already has a highlight on FINAL_IMMEDIATE', async () => {
+      const { poller, options } = harness({
+        gameStatus: 'FINAL',
+        highlightResults: [{ coverage: 'AVAILABLE', errorCode: null }],
+      });
+      const report = await poller.runCycle(options);
+      expect(report.ticks[0]?.highlights).toMatchObject({
+        attempted: true,
+        ok: true,
+        coverage: 'AVAILABLE',
+      });
+      // Game state/team stats/plays are entirely unaffected by the highlight outcome.
+      expect(report.ticks[0]?.gameState.ok).toBe(true);
+    });
+
+    it('a highlight that arrives late (at +10) becomes AVAILABLE without disturbing FINAL_IMMEDIATE', async () => {
+      const { poller, options, setNextPollAt } = harness({
+        gameStatus: 'FINAL',
+        highlightResults: [
+          { coverage: 'PENDING', errorCode: null },
+          { coverage: 'AVAILABLE', errorCode: null },
+        ],
+      });
+      const immediate = await poller.runCycle(options);
+      expect(immediate.ticks[0]?.highlights.coverage).toBe('PENDING');
+      // The zero-result immediate check must not stop the FINAL lifecycle from advancing.
+      expect(immediate.ticks[0]?.schedulingClassAfter).toBe('FINAL_RECONCILE_10');
+
+      setNextPollAt(gameId, new Date('2026-08-23T00:00:00.000Z'));
+      const plus10 = await poller.runCycle(options);
+      expect(plus10.ticks[0]?.highlights.coverage).toBe('AVAILABLE');
+    });
+
+    it('stays UNAVAILABLE only once the lifecycle is exhausted at +60, never permanently before then', async () => {
+      const { poller, options, setNextPollAt } = harness({
+        gameStatus: 'FINAL',
+        highlightResults: [
+          { coverage: 'PENDING', errorCode: null },
+          { coverage: 'PENDING', errorCode: null },
+          { coverage: 'UNAVAILABLE', errorCode: null },
+        ],
+      });
+      const immediate = await poller.runCycle(options);
+      expect(immediate.ticks[0]?.highlights.coverage).toBe('PENDING');
+
+      setNextPollAt(gameId, new Date('2026-08-23T00:00:00.000Z'));
+      const plus10 = await poller.runCycle(options);
+      expect(plus10.ticks[0]?.highlights.coverage).toBe('PENDING');
+      // The lifecycle itself must still be free to advance and eventually complete.
+      expect(plus10.ticks[0]?.schedulingClassAfter).toBe('FINAL_RECONCILE_60');
+
+      setNextPollAt(gameId, new Date('2026-08-23T00:00:00.000Z'));
+      const plus60 = await poller.runCycle(options);
+      expect(plus60.ticks[0]?.highlights.coverage).toBe('UNAVAILABLE');
+      expect(plus60.ticks[0]?.schedulingClassAfter).toBe('COMPLETE');
+    });
+
+    it('isolates a highlight provider failure: game state/team stats/plays still succeed and the FINAL stage still completes', async () => {
+      const { poller, options, states } = harness({
+        gameStatus: 'FINAL',
+        highlightSyncThrows: true,
+      });
+      const report = await poller.runCycle(options);
+      const tick = report.ticks[0];
+      expect(tick?.highlights).toMatchObject({ attempted: true, ok: false });
+      expect(tick?.highlights.errorMessage).not.toBeNull();
+      // Everything else on this tick succeeded and was NOT sent through the
+      // retry-with-backoff failure path.
+      expect(tick?.gameState.ok).toBe(true);
+      expect(tick?.plays.ok).toBe(true);
+      const state = [...states.values()][0];
+      expect(state?.lastError).toBeNull();
+      expect(state?.finalImmediateCompletedAt).not.toBeNull();
+      expect(state?.schedulingClass).toBe('FINAL_RECONCILE_10');
+    });
+
+    it('recovers from a FINAL_IMMEDIATE provider error to an AVAILABLE highlight at +10, with no permanent poisoning', async () => {
+      const { poller, options, setNextPollAt } = harness({
+        gameStatus: 'FINAL',
+        highlightSyncThrows: true,
+      });
+      const immediate = await poller.runCycle(options);
+      expect(immediate.ticks[0]?.highlights.ok).toBe(false);
+      expect(immediate.ticks[0]?.gameState.ok).toBe(true);
+
+      // Recreate the harness' highlight fake to stop throwing for the next stage --
+      // in production this is simply the same service succeeding on a later request.
+      const { poller: recoveredPoller, options: recoveredOptions } = harness({
+        gameStatus: 'FINAL',
+        highlightResults: [{ coverage: 'AVAILABLE', errorCode: null }],
+      });
+      setNextPollAt(gameId, new Date('2026-08-23T00:00:00.000Z'));
+      const plus10 = await recoveredPoller.runCycle(recoveredOptions);
+      expect(plus10.ticks[0]?.highlights.coverage).toBe('AVAILABLE');
+      expect(plus10.ticks[0]?.highlights.ok).toBe(true);
+    });
+
+    it('never calls highlight sync for a PREGAME/scheduled candidate', async () => {
+      const { poller, options, highlightSyncCalls } = harness({ gameStatus: 'SCHEDULED' });
+      await poller.runCycle(options);
+      expect(highlightSyncCalls).toHaveLength(0);
+    });
   });
 
   it('degrades gracefully under low rate-limit quota: skips an already-classified normal live game', async () => {

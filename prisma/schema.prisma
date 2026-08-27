@@ -298,6 +298,10 @@ model User {
   articleRevisions            ArticleRevision[]            @relation("ArticleRevisionEditor")
   createdNewsSources          NewsSource[]                 @relation("NewsSourceCreator")
   updatedNewsSources          NewsSource[]                 @relation("NewsSourceUpdater")
+  createdCuratedVideos        GameCuratedVideo[]           @relation("GameCuratedVideoCreator")
+  updatedCuratedVideos        GameCuratedVideo[]           @relation("GameCuratedVideoUpdater")
+  createdGlobalGameVideos     GlobalGameCenterVideo[]      @relation("GlobalGameCenterVideoCreator")
+  updatedGlobalGameVideos     GlobalGameCenterVideo[]      @relation("GlobalGameCenterVideoUpdater")
   reviewedCandidates          NewsCandidate[]              @relation("NewsCandidateReviewer")
   newsIngestionRuns           NewsIngestionRun[]           @relation("NewsIngestionInitiator")
   reviewedSourceRights        SourceRightsProfile[]        @relation("SourceRightsReviewer")
@@ -424,6 +428,9 @@ model Game {
   plays                 GamePlay[]
   predictions           GamePrediction[]
   dataHealthProbes      GameDataHealthProbe[]
+  highlights            GameHighlight[]
+  highlightSyncState    GameHighlightSyncState?
+  curatedVideos         GameCuratedVideo[]
 
   @@index([league, season, seasonType, week, startTime], map: "games_schedule_idx")
   @@index([status, startTime], map: "games_status_start_time_idx")
@@ -791,6 +798,160 @@ model GameDataHealthProbe {
   @@map("game_data_health_probes")
 }
 
+/// M31: what kind of content a highlight is. Every Highlightly highlight observed
+/// during evaluation was a single full-game recap (one per game, title pattern
+/// "Team vs. Team | Week N"), never a play- or player-specific clip and never tied
+/// to a GamePlay by any deterministic field -- so every Highlightly-sourced row is
+/// classified GAME, not inferred from Highlightly's own generic `category` field.
+enum GameHighlightType {
+  GAME
+  PLAY
+  PLAYER
+  OTHER
+}
+
+/// M31: a provider-neutral, metadata-only reference to a game highlight video.
+/// Never stores a raw provider payload, a direct video file, or downloaded media --
+/// only a title/description and reference URLs (canonical page, embed, thumbnail)
+/// the provider itself returned. `directMediaUrl` and a duration field were
+/// deliberately not added: Highlightly's `/highlights` response never supplies
+/// either (see docs/current-season-games/highlightly-highlights-2026-08-25.md).
+model GameHighlight {
+  id                   String                   @id @default(uuid()) @db.Uuid
+  gameId               String                   @map("game_id") @db.Uuid
+  provider             String                   @db.VarChar(64)
+  providerHighlightKey String                   @map("provider_highlight_key") @db.VarChar(128)
+  title                String                   @db.VarChar(500)
+  description          String?                  @db.Text
+  highlightType        GameHighlightType        @default(GAME) @map("highlight_type")
+  thumbnailUrl         String?                  @map("thumbnail_url") @db.Text
+  canonicalUrl         String?                  @map("canonical_url") @db.Text
+  embedUrl             String?                  @map("embed_url") @db.Text
+  /// M31C: provider-neutral embed-eligibility decision, evaluated during sync (never
+  /// on a public request path) -- see docs/current-season-games/highlightly-highlights-2026-08-25.md
+  /// section "Rights / delivery model" and the M31C addendum. `canEmbed` is the only
+  /// field the public API needs to decide inline playback vs. canonical-link
+  /// fallback; `embedStatus`/`embedCheckedAt` are the internal record of why.
+  embedStatus          GameHighlightEmbedStatus @default(UNKNOWN) @map("embed_status")
+  canEmbed             Boolean                  @default(false) @map("can_embed")
+  embedCheckedAt       DateTime?                @map("embed_checked_at") @db.Timestamptz(3)
+  publishedAt          DateTime?                @map("published_at") @db.Timestamptz(3)
+  firstSeenAt          DateTime                 @default(now()) @map("first_seen_at") @db.Timestamptz(3)
+  lastSeenAt           DateTime                 @map("last_seen_at") @db.Timestamptz(3)
+  createdAt            DateTime                 @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt            DateTime                 @updatedAt @map("updated_at") @db.Timestamptz(3)
+  game                 Game                     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerHighlightKey], map: "game_highlights_provider_key_key")
+  @@index([gameId], map: "game_highlights_game_id_idx")
+  @@map("game_highlights")
+}
+
+/// M31C: provider-neutral embed-eligibility state, derived from Highlightly's
+/// `/highlights/geo-restrictions/{id}` response (`embeddable` + allowed/blocked
+/// country lists) plus the local HTTPS/host safety checks. `UNKNOWN` covers both
+/// "never checked yet" and "checked but the provider's own restriction state was
+/// unrecognized/unavailable" -- both are conservative non-embed outcomes.
+/// `GEO_RESTRICTED` means the provider allows embedding in general but scopes it to
+/// specific countries, and this backend does not yet resolve per-viewer country, so
+/// it never claims global embeddability in that case.
+enum GameHighlightEmbedStatus {
+  ALLOWED
+  NOT_ALLOWED
+  GEO_RESTRICTED
+  UNKNOWN
+}
+
+/// M31: provider-neutral coverage classification -- see
+/// docs/current-season-games/highlightly-highlights-2026-08-25.md. PENDING means the
+/// game hasn't reached a point where highlight coverage is expected yet; UNKNOWN
+/// means no sync has ever been attempted. "Not checked" must never be reported as
+/// UNAVAILABLE.
+enum GameHighlightCoverage {
+  PENDING
+  AVAILABLE
+  UNAVAILABLE
+  PROVIDER_ERROR
+  UNKNOWN
+}
+
+/// M31: the single latest highlight-sync outcome per game (not append-only history,
+/// unlike GameDataHealthProbe) -- exists only so a read-only diagnostic can report
+/// `lastCheckedAt`/coverage without triggering a live provider call itself. Never
+/// stores a raw provider payload.
+model GameHighlightSyncState {
+  gameId        String                @id @map("game_id") @db.Uuid
+  provider      String                @db.VarChar(64)
+  coverage      GameHighlightCoverage @default(UNKNOWN)
+  lastCheckedAt DateTime?             @map("last_checked_at") @db.Timestamptz(3)
+  providerCount Int?                  @map("provider_count")
+  requestCount  Int?                  @map("request_count")
+  errorCode     String?               @map("error_code") @db.VarChar(64)
+  game          Game                  @relation(fields: [gameId], references: [id], onDelete: Cascade)
+
+  @@map("game_highlight_sync_state")
+}
+
+/// M32: an operator-curated embedded video for a single Game -- a purely
+/// presentational override, entirely independent of `GameHighlight`. Creating,
+/// reordering, or deleting rows here never touches `GameHighlight` or
+/// `GameHighlightSyncState` in any way. `position` is the sole ordering/primary
+/// signal (0 = primary, contiguous 0..3) -- no separate `isPrimary` column, so
+/// there is nothing for the two concepts to ever disagree about. Only sanitized
+/// reference URLs are stored, never raw iframe markup or a scraped/rehosted
+/// asset.
+model GameCuratedVideo {
+  id                String   @id @default(uuid()) @db.Uuid
+  gameId            String   @map("game_id") @db.Uuid
+  position          Int
+  title             String   @db.VarChar(200)
+  embedUrl          String   @map("embed_url") @db.Text
+  canonicalUrl      String?  @map("canonical_url") @db.Text
+  thumbnailUrl      String?  @map("thumbnail_url") @db.Text
+  sourceLabel       String?  @map("source_label") @db.VarChar(80)
+  createdById       String?  @map("created_by_id") @db.Uuid
+  updatedById       String?  @map("updated_by_id") @db.Uuid
+  createdBySnapshot String   @map("created_by_snapshot") @db.VarChar(254)
+  updatedBySnapshot String   @map("updated_by_snapshot") @db.VarChar(254)
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  game              Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  createdBy         User?    @relation("GameCuratedVideoCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedBy         User?    @relation("GameCuratedVideoUpdater", fields: [updatedById], references: [id], onDelete: SetNull)
+
+  @@unique([gameId, position], map: "game_curated_videos_game_position_key")
+  @@unique([gameId, embedUrl], map: "game_curated_videos_game_embed_url_key")
+  @@index([gameId], map: "game_curated_videos_game_id_idx")
+  @@map("game_curated_videos")
+}
+
+/// M32B: a single video available across every Game Center, composed
+/// dynamically into each game's public media response -- never copied into
+/// per-game rows. V1 supports at most one row (the service enforces this by
+/// always updating the existing row in place rather than inserting a second
+/// one; there is deliberately no per-game foreign key here at all). Does not
+/// consume any of `GameCuratedVideo`'s per-game four-video limit, and its
+/// presence never mutates `GameCuratedVideo`/`GameHighlight` in any way.
+model GlobalGameCenterVideo {
+  id                String   @id @default(uuid()) @db.Uuid
+  title             String   @db.VarChar(200)
+  embedUrl          String   @map("embed_url") @db.Text
+  canonicalUrl      String?  @map("canonical_url") @db.Text
+  thumbnailUrl      String?  @map("thumbnail_url") @db.Text
+  sourceLabel       String?  @map("source_label") @db.VarChar(80)
+  isActive          Boolean  @default(true) @map("is_active")
+  createdById       String?  @map("created_by_id") @db.Uuid
+  updatedById       String?  @map("updated_by_id") @db.Uuid
+  createdBySnapshot String   @map("created_by_snapshot") @db.VarChar(254)
+  updatedBySnapshot String   @map("updated_by_snapshot") @db.VarChar(254)
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  createdBy         User?    @relation("GlobalGameCenterVideoCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedBy         User?    @relation("GlobalGameCenterVideoUpdater", fields: [updatedById], references: [id], onDelete: SetNull)
+
+  @@map("global_game_center_videos")
+}
+
 model AdminAuditEvent {
   id                 String   @id @default(uuid()) @db.Uuid
   actorUserId        String?  @map("actor_user_id") @db.Uuid
@@ -825,6 +986,10 @@ model Article {
   sourceName              String?                 @map("source_name") @db.VarChar(160)
   sourceUrl               String?                 @map("source_url") @db.Text
   sourcePublishedAt       DateTime?               @map("source_published_at") @db.Timestamptz(3)
+  /// Denormalized snapshot of NewsSource.isOfficialTeam at conversion time (provenance
+  /// only, not an editorial quality signal) -- mirrors sourceName/sourceUrl, which are
+  /// also snapshotted rather than live-joined back to the source.
+  sourceIsOfficialTeam    Boolean                 @default(false) @map("source_is_official_team")
   heroImageUrl            String?                 @map("hero_image_url") @db.Text
   heroImageAlt            String?                 @map("hero_image_alt") @db.VarChar(300)
   heroImageAttribution    String?                 @map("hero_image_attribution") @db.VarChar(500)

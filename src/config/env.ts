@@ -108,6 +108,17 @@ const databaseEnvironmentSchema = z.object({
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
 });
 
+const newsIngestionPolicyFields = {
+  // M30D: bounds applied only to a source's first-ever completed ingest -- see
+  // src/modules/news-inbox/initial-ingest-policy.ts and
+  // docs/news/official-team-source-activation.md.
+  NEWS_INITIAL_INGEST_LOOKBACK_HOURS: z.coerce.number().int().min(1).max(720).default(72),
+  NEWS_INITIAL_INGEST_MAX_ITEMS_PER_SOURCE: z.coerce.number().int().min(1).max(200).default(25),
+  NEWS_LATE_ITEM_TOLERANCE_HOURS: z.coerce.number().int().min(1).max(168).default(48),
+} as const;
+
+const newsIngestionEnvironmentSchema = databaseEnvironmentSchema.extend(newsIngestionPolicyFields);
+
 const currentGameEnvironmentSchema = databaseEnvironmentSchema
   .extend({
     CURRENT_GAME_PROVIDER: z.enum(['highlightly']),
@@ -120,6 +131,29 @@ const currentGameEnvironmentSchema = databaseEnvironmentSchema
       .default('https://american-football.highlightly.net'),
     HIGHLIGHTLY_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(100).max(60_000).default(10_000),
     HIGHLIGHTLY_MAX_RETRIES: z.coerce.number().int().min(0).max(3).default(1),
+    // M31C: optional embed-host allowlist (see embed-eligibility.ts). Comma-separated
+    // hostnames; an explicit empty string disables the allowlist entirely (any HTTPS
+    // embed URL that otherwise passes eligibility may embed) -- the default keeps the
+    // known-good YouTube hosts from the real Highlightly samples evaluated so far.
+    HIGHLIGHTLY_EMBED_HOST_ALLOWLIST: z
+      .string()
+      .default('youtube.com,www.youtube.com,youtube-nocookie.com,www.youtube-nocookie.com')
+      .transform((value) =>
+        value
+          .split(',')
+          .map((host) => host.trim().toLowerCase())
+          .filter(Boolean),
+      ),
+    // M31C real-data finding: both real highlights checked so far reported
+    // Highlightly-`embeddable: true` yet failed to actually play in a YouTube
+    // iframe ("blocked it from display on this website or application") -- a
+    // per-video/domain YouTube embedding permission Highlightly's API never
+    // exposes. This global switch lets the eligibility pipeline keep computing
+    // and persisting `canEmbed` (so it's ready to use again once resolved) while
+    // forcing the public API to the canonical-link fallback in the meantime.
+    // Defaults to disabled until real playback is confirmed working for a
+    // meaningful sample of highlights.
+    HIGHLIGHTLY_EMBED_PLAYBACK_ENABLED: booleanSchema(false),
     CURRENT_GAME_POLLER_ENABLED: booleanSchema(false),
     CURRENT_GAME_POLLER_HEARTBEAT_SECONDS: z.coerce.number().int().min(15).max(60).default(20),
     CURRENT_GAME_POLLER_BATCH_SIZE: z.coerce.number().int().min(1).max(50).default(10),
@@ -157,6 +191,7 @@ const currentGameEnvironmentSchema = databaseEnvironmentSchema
   });
 
 const baseEnvironmentSchema = databaseEnvironmentSchema.extend({
+  ...newsIngestionPolicyFields,
   HOST: z.string().min(1).default('0.0.0.0'),
   PORT: z.coerce.number().int().min(1).max(65_535).default(3000),
   CORS_ORIGINS: corsOriginsSchema,
@@ -179,6 +214,18 @@ const baseEnvironmentSchema = databaseEnvironmentSchema.extend({
     .default(new Date().getUTCFullYear()),
   API_SPORTS_SYNC_SEASON_TYPE: z.enum(['ALL', 'PRE', 'REG', 'POST']).default('ALL'),
   API_SPORTS_STORE_LOGO_URLS: booleanSchema(false),
+  // M32: operator-curated Game Center videos. Comma-separated hostnames; an
+  // explicit empty string disables the allowlist entirely. See
+  // game-media-curation module and docs/game-center/admin-media-curation.md.
+  GAME_CURATED_VIDEO_EMBED_HOST_ALLOWLIST: z
+    .string()
+    .default('youtube.com,www.youtube.com,youtube-nocookie.com,www.youtube-nocookie.com')
+    .transform((value) =>
+      value
+        .split(',')
+        .map((host) => host.trim().toLowerCase())
+        .filter(Boolean),
+    ),
 });
 
 const environmentSchema = baseEnvironmentSchema
@@ -303,6 +350,21 @@ export interface AppConfig extends DatabaseConfig {
     readonly baseUrl: string;
     readonly timeoutMs: number;
   };
+  readonly newsIngestion: NewsIngestionPolicy;
+  readonly gameMediaCuration: {
+    /** `null` disables embed-host allowlisting entirely. */
+    readonly embedAllowedHosts: readonly string[] | null;
+  };
+}
+
+export interface NewsIngestionPolicy {
+  readonly initialLookbackHours: number;
+  readonly initialMaxItemsPerSource: number;
+  readonly lateItemToleranceHours: number;
+}
+
+export interface NewsIngestionConfig extends DatabaseConfig {
+  readonly newsIngestion: NewsIngestionPolicy;
 }
 
 export interface SportsConfig {
@@ -359,6 +421,10 @@ export interface CurrentGameSyncConfig extends DatabaseConfig {
       readonly requestTimeoutMs: number;
       readonly maxRetries: number;
     };
+    /** `null` disables embed-host allowlisting entirely. See embed-eligibility.ts. */
+    readonly embedAllowedHosts: readonly string[] | null;
+    /** Global public-API kill-switch for `canEmbed`. See embed-eligibility.ts. */
+    readonly embedPlaybackEnabled: boolean;
     readonly poller: CurrentGamePollerConfig;
   };
 }
@@ -386,6 +452,18 @@ export function loadDatabaseConfig(
     nodeEnv: data.NODE_ENV,
     databaseUrl: data.DATABASE_URL,
     logLevel: data.LOG_LEVEL,
+  };
+}
+
+export function loadNewsIngestionConfig(
+  environment: Record<string, string | undefined> = process.env,
+): NewsIngestionConfig {
+  const data = parseEnvironment(newsIngestionEnvironmentSchema, environment);
+  return {
+    nodeEnv: data.NODE_ENV,
+    databaseUrl: data.DATABASE_URL,
+    logLevel: data.LOG_LEVEL,
+    newsIngestion: toNewsIngestionPolicy(data),
   };
 }
 
@@ -438,6 +516,11 @@ export function loadCurrentGameSyncConfig(
         requestTimeoutMs: data.HIGHLIGHTLY_REQUEST_TIMEOUT_MS,
         maxRetries: data.HIGHLIGHTLY_MAX_RETRIES,
       },
+      embedAllowedHosts:
+        data.HIGHLIGHTLY_EMBED_HOST_ALLOWLIST.length > 0
+          ? data.HIGHLIGHTLY_EMBED_HOST_ALLOWLIST
+          : null,
+      embedPlaybackEnabled: data.HIGHLIGHTLY_EMBED_PLAYBACK_ENABLED,
       poller: {
         enabled: data.CURRENT_GAME_POLLER_ENABLED,
         heartbeatSeconds: data.CURRENT_GAME_POLLER_HEARTBEAT_SECONDS,
@@ -505,6 +588,25 @@ export function loadConfig(
       baseUrl: data.OPENAI_BASE_URL,
       timeoutMs: data.EDITORIAL_AI_TIMEOUT_MS,
     },
+    newsIngestion: toNewsIngestionPolicy(data),
+    gameMediaCuration: {
+      embedAllowedHosts:
+        data.GAME_CURATED_VIDEO_EMBED_HOST_ALLOWLIST.length > 0
+          ? data.GAME_CURATED_VIDEO_EMBED_HOST_ALLOWLIST
+          : null,
+    },
+  };
+}
+
+function toNewsIngestionPolicy(data: {
+  readonly NEWS_INITIAL_INGEST_LOOKBACK_HOURS: number;
+  readonly NEWS_INITIAL_INGEST_MAX_ITEMS_PER_SOURCE: number;
+  readonly NEWS_LATE_ITEM_TOLERANCE_HOURS: number;
+}): NewsIngestionPolicy {
+  return {
+    initialLookbackHours: data.NEWS_INITIAL_INGEST_LOOKBACK_HOURS,
+    initialMaxItemsPerSource: data.NEWS_INITIAL_INGEST_MAX_ITEMS_PER_SOURCE,
+    lateItemToleranceHours: data.NEWS_LATE_ITEM_TOLERANCE_HOURS,
   };
 }
 

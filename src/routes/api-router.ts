@@ -26,6 +26,16 @@ import { createGameStatsRouter } from '../modules/game-stats/game-stats.routes.j
 import type { GameStatsReader } from '../modules/game-stats/game-stats.service.js';
 import { createGamePlayRouter } from '../modules/game-plays/game-plays.routes.js';
 import type { GamePlayReader } from '../modules/game-plays/game-plays.service.js';
+import {
+  createAdminGameHighlightsRouter,
+  createPublicGameHighlightsRouter,
+} from '../modules/game-highlights/game-highlights.routes.js';
+import type { GameHighlightsServiceContract } from '../modules/game-highlights/game-highlights.service.js';
+import {
+  createAdminGameMediaCurationRouter,
+  createPublicGameMediaRouter,
+} from '../modules/game-media-curation/game-media-curation.routes.js';
+import type { GameMediaCurationServiceContract } from '../modules/game-media-curation/game-media-curation.service.js';
 import { createHealthRouter } from '../modules/health/health.routes.js';
 import { createAuthRouter } from '../modules/auth/auth.routes.js';
 import type { AuthenticationService } from '../modules/auth/auth.service.js';
@@ -62,6 +72,8 @@ export interface ApiRouterOptions {
   readonly adminService?: AdministrativeScheduleService;
   readonly adminIdentities?: AdministrativeIdentityReader;
   readonly dataHealthService?: DataHealthServiceContract;
+  readonly gameHighlightsService?: GameHighlightsServiceContract;
+  readonly gameMediaCurationService?: GameMediaCurationServiceContract;
   readonly articleReader?: PublicArticleReader;
   readonly editorialArticleService?: EditorialArticleService;
   readonly newsInboxService?: NewsInboxServiceContract;
@@ -163,6 +175,26 @@ export function createApiRouter(options: ApiRouterOptions): Router {
       }),
     );
   }
+  if (options.gameHighlightsService !== undefined && options.adminIdentities !== undefined) {
+    router.use(
+      '/admin/games',
+      createAdminGameHighlightsRouter({
+        authenticate: options.authenticate,
+        identities: options.adminIdentities,
+        service: options.gameHighlightsService,
+      }),
+    );
+  }
+  if (options.gameMediaCurationService !== undefined && options.adminIdentities !== undefined) {
+    router.use(
+      '/admin/game-media',
+      createAdminGameMediaCurationRouter({
+        authenticate: options.authenticate,
+        identities: options.adminIdentities,
+        service: options.gameMediaCurationService,
+      }),
+    );
+  }
   if (options.articleReader !== undefined) {
     router.use('/articles', createPublicArticleRouter(options.articleReader));
     router.use('/teams/:teamId/articles', createTeamArticleRouter(options.articleReader));
@@ -175,6 +207,10 @@ export function createApiRouter(options: ApiRouterOptions): Router {
     router.use('/games', createGameStatsRouter(options.gameStatsReader));
   if (options.gamePlayReader !== undefined)
     router.use('/games', createGamePlayRouter(options.gamePlayReader));
+  if (options.gameHighlightsService !== undefined)
+    router.use('/games', createPublicGameHighlightsRouter(options.gameHighlightsService));
+  if (options.gameMediaCurationService !== undefined)
+    router.use('/games', createPublicGameMediaRouter(options.gameMediaCurationService));
   router.use('/games', createGameRouter(options.gameReader));
   router.use('/teams/:teamId/games', createTeamGameRouter(options.gameReader));
   if (options.teamHubReader !== undefined)

@@ -41,12 +41,27 @@ import type {
 
 type Mutable<T> = { -readonly [Key in keyof T]: T[Key] };
 
+/**
+ * M31A: the one method the poller needs from `GameHighlightsService`, defined
+ * locally so `sports/` never imports from the `game-highlights/` domain module
+ * (matching every other cross-module boundary here -- `MatchDetailFetcher`,
+ * `CurrentGameSyncService`, etc. are all narrow ports defined at the point of
+ * use). A real `GameHighlightsService` instance satisfies this structurally.
+ */
+export interface HighlightSyncPort {
+  syncGame(
+    gameId: string,
+    options?: { readonly exhaustiveCheck?: boolean },
+  ): Promise<{ readonly coverage: string; readonly errorCode: string | null }>;
+}
+
 export interface CurrentGamePollerDependencies {
   readonly gameSyncService: CurrentGameSyncService;
   readonly detailsRepository: CurrentGameDetailsRepository;
   readonly playRepository: CurrentGamePlayRepository;
   readonly finalPlaySnapshotService: FinalPlaySnapshotService;
   readonly matchDetailFetcher: MatchDetailFetcher;
+  readonly highlightsService: HighlightSyncPort;
   readonly pollStateRepository: CurrentGamePollStateRepository;
   readonly requestCounter: { getRequestCount(): number };
   readonly rateLimitObservation: () => {
@@ -99,6 +114,19 @@ export interface GameTickReport {
     /** M27.2: non-null only on a FINAL tick — which authoritative-replacement outcome occurred. */
     readonly finalReplacementStatus:
       'REPLACED' | 'NOOP_UNCHANGED' | 'VALIDATION_FAILED' | 'FAILED' | null;
+  };
+  /**
+   * M31A: attempted only on a FINAL_IMMEDIATE/FINAL_RECONCILE_10/FINAL_RECONCILE_60
+   * tick. Deliberately excluded from `overallOk`/the retry-with-backoff decision
+   * below -- a highlight failure must never block `finalImmediateCompletedAt`/
+   * `final10CompletedAt`/`final60CompletedAt` from advancing, or the FINAL
+   * lifecycle (and eventually poll completion) would stall on it.
+   */
+  readonly highlights: {
+    readonly attempted: boolean;
+    readonly ok: boolean;
+    readonly coverage: string | null;
+    readonly errorMessage: string | null;
   };
   readonly durationMs: number;
   readonly degraded: boolean;
@@ -300,6 +328,12 @@ export class CurrentGamePoller {
       errorMessage: null,
       finalReplacementStatus: null,
     };
+    const highlights: Mutable<GameTickReport['highlights']> = {
+      attempted: false,
+      ok: true,
+      coverage: null,
+      errorMessage: null,
+    };
 
     if (providerGameId !== null) {
       const detailFetch = await this.deps.matchDetailFetcher.fetch(providerGameId);
@@ -480,6 +514,34 @@ export class CurrentGamePoller {
           }
         }
       }
+
+      // M31A: highlight sync is a fully independent step -- a separate Highlightly
+      // endpoint, unrelated to match-detail success -- attempted exactly once per
+      // FINAL reconciliation stage (never during LIVE/PREGAME/HALFTIME). It is
+      // deliberately excluded from `overallOk` below: a highlight failure must
+      // never block game-state/team-stat/play reconciliation, never trigger the
+      // retry-with-backoff path below, and never prevent `finalImmediateCompletedAt`/
+      // `final10CompletedAt`/`final60CompletedAt` from advancing -- the FINAL
+      // lifecycle itself is what naturally retries a failed or not-yet-available
+      // highlight check at the next stage.
+      if (observedGame.status === 'FINAL' && finalReplacementPhase !== null) {
+        highlights.attempted = true;
+        try {
+          if (options.dryRun !== true) {
+            const result = await this.deps.highlightsService.syncGame(game.gameId, {
+              exhaustiveCheck: finalReplacementPhase === 'FINAL_60',
+            });
+            highlights.coverage = result.coverage;
+            if (result.coverage === 'PROVIDER_ERROR') {
+              highlights.ok = false;
+              highlights.errorMessage = result.errorCode;
+            }
+          }
+        } catch (error: unknown) {
+          highlights.ok = false;
+          highlights.errorMessage = errorMessage(error);
+        }
+      }
     }
 
     const overallOk = gameStateOk && teamStats.ok && plays.ok;
@@ -525,6 +587,7 @@ export class CurrentGamePoller {
       gameState: { ok: gameStateOk, outcome: gameStateOutcome, errorMessage: gameStateError },
       teamStats,
       plays,
+      highlights,
       durationMs: rounded(performance.now() - started),
       degraded: false,
     };

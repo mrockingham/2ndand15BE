@@ -40,6 +40,8 @@
     "current-games:plays:reconcile": "tsx src/commands/current-game-plays-reconcile.ts",
     "games:result-fallback": "tsx src/commands/game-result-fallback.ts",
     "games:current:coverage": "tsx src/commands/current-game-coverage.ts",
+    "games:highlights:sync": "tsx src/commands/game-highlights-sync.ts",
+    "games:highlights:embed-backfill": "tsx src/commands/game-highlight-embed-backfill.ts",
     "schedule:import": "tsx src/commands/schedule-import.ts",
     "schedule:review": "tsx src/commands/schedule-review.ts",
     "admin:set-role": "tsx src/commands/admin-set-role.ts",

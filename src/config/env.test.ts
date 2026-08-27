@@ -77,7 +77,28 @@ describe('loadConfig', () => {
           storeLogoUrls: false,
         },
       },
+      newsIngestion: {
+        initialLookbackHours: 72,
+        initialMaxItemsPerSource: 25,
+        lateItemToleranceHours: 48,
+      },
+      gameMediaCuration: {
+        embedAllowedHosts: [
+          'youtube.com',
+          'www.youtube.com',
+          'youtube-nocookie.com',
+          'www.youtube-nocookie.com',
+        ],
+      },
     });
+  });
+
+  it('disables the game-curated-video embed allowlist when explicitly set empty', () => {
+    const config = loadConfig({
+      ...requiredEnvironment,
+      GAME_CURATED_VIDEO_EMBED_HOST_ALLOWLIST: '',
+    });
+    expect(config.gameMediaCuration.embedAllowedHosts).toBeNull();
   });
 
   it('parses a comma-separated CORS allowlist', () => {
@@ -282,6 +303,45 @@ describe('loadCurrentGameSyncConfig', () => {
         publicationApproved: false,
       },
     });
+  });
+
+  it('defaults the embed-host allowlist to the known YouTube hosts', () => {
+    expect(
+      loadCurrentGameSyncConfig({
+        DATABASE_URL: requiredEnvironment.DATABASE_URL,
+        CURRENT_GAME_PROVIDER: 'highlightly',
+        HIGHLIGHTLY_EVALUATION_MODE: 'true',
+        HIGHLIGHTLY_API_KEY: 'private-test-key',
+      }).currentGame.embedAllowedHosts,
+    ).toEqual([
+      'youtube.com',
+      'www.youtube.com',
+      'youtube-nocookie.com',
+      'www.youtube-nocookie.com',
+    ]);
+  });
+
+  it('defaults embed playback to disabled', () => {
+    expect(
+      loadCurrentGameSyncConfig({
+        DATABASE_URL: requiredEnvironment.DATABASE_URL,
+        CURRENT_GAME_PROVIDER: 'highlightly',
+        HIGHLIGHTLY_EVALUATION_MODE: 'true',
+        HIGHLIGHTLY_API_KEY: 'private-test-key',
+      }).currentGame.embedPlaybackEnabled,
+    ).toBe(false);
+  });
+
+  it('disables the embed-host allowlist when explicitly set empty', () => {
+    expect(
+      loadCurrentGameSyncConfig({
+        DATABASE_URL: requiredEnvironment.DATABASE_URL,
+        CURRENT_GAME_PROVIDER: 'highlightly',
+        HIGHLIGHTLY_EVALUATION_MODE: 'true',
+        HIGHLIGHTLY_API_KEY: 'private-test-key',
+        HIGHLIGHTLY_EMBED_HOST_ALLOWLIST: '',
+      }).currentGame.embedAllowedHosts,
+    ).toBeNull();
   });
 
   it('rejects configuration without an explicit permitted usage mode', () => {

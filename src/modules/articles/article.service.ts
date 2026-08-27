@@ -514,6 +514,7 @@ function toCreateFields(input: ArticleCreateInput): ArticleWriteFields {
     sourceName: input.sourceName,
     sourceUrl: input.sourceUrl,
     sourcePublishedAt: input.sourcePublishedAt === null ? null : new Date(input.sourcePublishedAt),
+    sourceIsOfficialTeam: input.sourceIsOfficialTeam,
     heroImageUrl: input.heroImageUrl,
     heroImageAlt: input.heroImageAlt,
     heroImageAttribution: input.heroImageAttribution,
@@ -542,6 +543,7 @@ function mergeUpdateFields(article: ArticleRecord, input: ArticleUpdateInput): A
     sourceName: input.sourceName === undefined ? article.sourceName : input.sourceName,
     sourceUrl: input.sourceUrl === undefined ? article.sourceUrl : input.sourceUrl,
     sourcePublishedAt: date(input.sourcePublishedAt, article.sourcePublishedAt),
+    sourceIsOfficialTeam: input.sourceIsOfficialTeam ?? article.sourceIsOfficialTeam,
     heroImageUrl: input.heroImageUrl === undefined ? article.heroImageUrl : input.heroImageUrl,
     heroImageAlt: input.heroImageAlt === undefined ? article.heroImageAlt : input.heroImageAlt,
     heroImageAttribution:
@@ -575,6 +577,7 @@ function articleToFields(article: ArticleRecord): ArticleWriteFields {
     sourceName: article.sourceName,
     sourceUrl: article.sourceUrl,
     sourcePublishedAt: article.sourcePublishedAt,
+    sourceIsOfficialTeam: article.sourceIsOfficialTeam,
     heroImageUrl: article.heroImageUrl,
     heroImageAlt: article.heroImageAlt,
     heroImageAttribution: article.heroImageAttribution,

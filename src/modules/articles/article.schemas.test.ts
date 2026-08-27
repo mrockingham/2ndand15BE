@@ -105,4 +105,27 @@ describe('article boundary schemas', () => {
     );
     expect(publicArticleListQuerySchema.safeParse({ contentType: 'PODCAST' }).success).toBe(false);
   });
+
+  it('defaults sourceIsOfficialTeam to false on create without polluting partial updates', () => {
+    const created = articleCreateSchema.parse(originalInput());
+    expect(created.sourceIsOfficialTeam).toBe(false);
+
+    const official = articleCreateSchema.parse({
+      ...originalInput(),
+      sourceIsOfficialTeam: true,
+    });
+    expect(official.sourceIsOfficialTeam).toBe(true);
+
+    const emptyUpdate = articleUpdateSchema.safeParse({ expectedVersion: 1 });
+    expect(emptyUpdate.success).toBe(false);
+    const officialUpdate = articleUpdateSchema.parse({
+      expectedVersion: 1,
+      sourceIsOfficialTeam: true,
+    });
+    expect(officialUpdate.sourceIsOfficialTeam).toBe(true);
+    // Omitting the field on a partial update must leave it truly absent, not
+    // silently reset to a default -- the same pitfall that hit `contentType`.
+    const untouchedUpdate = articleUpdateSchema.parse({ expectedVersion: 1, title: 'Changed' });
+    expect('sourceIsOfficialTeam' in untouchedUpdate).toBe(false);
+  });
 });

@@ -19,6 +19,7 @@ import {
   sanitizeSourceDescription,
   type NormalizedFeedEntry,
 } from './feed-parser.js';
+import { classifyInitialIngestEntries, isLateOutOfOrderEntry } from './initial-ingest-policy.js';
 import type { NewsInboxRepository, TeamSuggestionWrite } from './news.repository.js';
 import {
   newsSourceCreateSchema,
@@ -36,6 +37,21 @@ const MAXIMUM_WRITES_PER_RUN = 100;
 const TEAM_ALIASES: Readonly<Record<string, readonly string[]>> = {
   WAS: ['WSH'],
   JAX: ['JAC'],
+};
+
+/** M30D: bounds applied only to a source's first-ever completed ingest, plus the
+ * steady-state late/out-of-order tolerance applied afterward. See
+ * `initial-ingest-policy.ts` and `docs/news/official-team-source-activation.md`. */
+export interface NewsIngestionPolicyConfig {
+  readonly initialLookbackHours: number;
+  readonly initialMaxItemsPerSource: number;
+  readonly lateItemToleranceHours: number;
+}
+
+export const DEFAULT_NEWS_INGESTION_POLICY: NewsIngestionPolicyConfig = {
+  initialLookbackHours: 72,
+  initialMaxItemsPerSource: 25,
+  lateItemToleranceHours: 48,
 };
 
 export interface NewsSourcePageDto {
@@ -124,12 +140,26 @@ export interface IngestionResultDto {
   readonly notModified: boolean;
   readonly feedKind: 'RSS' | 'ATOM' | null;
   readonly run: ReturnType<typeof toNewsIngestionRunDto>;
+  /** M30D: true when this run was (or, for a dry-run test, would have been) the
+   * source's bounded initial ingest -- i.e. no real candidate had ever been written
+   * for this source when the run started. */
+  readonly initialIngest: boolean;
+  /** M30D: counts of entries this run did not write for policy reasons, broken out
+   * from the existing `run.skippedCount` total (which also includes ordinary
+   * unchanged-duplicate skips). Zero outside the cases they describe. */
+  readonly diagnostics: {
+    readonly outsideLookback: number;
+    readonly missingPublishedAt: number;
+    readonly truncated: number;
+    readonly lateRejected: number;
+  };
 }
 
 export class NewsInboxService implements NewsInboxServiceContract {
   constructor(
     private readonly repository: NewsInboxRepository,
     private readonly feedClient: FeedClient,
+    private readonly ingestionPolicy: NewsIngestionPolicyConfig = DEFAULT_NEWS_INGESTION_POLICY,
     private readonly now: () => Date = () => new Date(),
   ) {}
 
@@ -319,6 +349,7 @@ export class NewsInboxService implements NewsInboxServiceContract {
       sourceName: candidate.sourceNameSnapshot,
       sourceUrl: candidate.canonicalUrl,
       sourcePublishedAt: candidate.sourcePublishedAt?.toISOString() ?? null,
+      sourceIsOfficialTeam: candidate.source?.isOfficialTeam ?? false,
       heroImageUrl: input.heroImageUrl,
       heroImageAlt: input.heroImageAlt,
       heroImageAttribution: input.heroImageAttribution,
@@ -388,6 +419,13 @@ export class NewsInboxService implements NewsInboxServiceContract {
     let responseBytes: number | null = null;
     let responseEtag = source.responseEtag;
     let responseModified = source.responseModified;
+    // M30D: a source that has never written a real candidate gets its one-time
+    // bounded initial ingest (recent-only, capped, no blind import of dateless
+    // items); every later run is steady-state and unbounded by this policy.
+    // Deliberately keyed off actual candidate rows, not `lastSuccessfulAt` -- a
+    // no-write `testSource` dry run completes successfully too (pre-existing
+    // behavior) and must not be mistaken for a real first ingest.
+    const isInitialIngest = !(await this.repository.hasAnyCandidates(source.id));
     try {
       const response = await this.feedClient.fetch(source.feedUrl, {
         etag: source.responseEtag,
@@ -409,6 +447,8 @@ export class NewsInboxService implements NewsInboxServiceContract {
           notModified: true,
           feedKind: null,
           run: toNewsIngestionRunDto(run),
+          initialIngest: isInitialIngest,
+          diagnostics: { outsideLookback: 0, missingPublishedAt: 0, truncated: 0, lateRejected: 0 },
         };
       }
       const parsed = parseNewsFeed(response.body ?? '', MAXIMUM_FEED_ENTRIES);
@@ -419,18 +459,54 @@ export class NewsInboxService implements NewsInboxServiceContract {
           statusCode: 422,
         });
       }
+      let entriesToProcess: readonly NormalizedFeedEntry[] = parsed.entries;
+      let outsideLookbackCount = 0;
+      let missingPublishedAtCount = 0;
+      let truncatedCount = 0;
+      if (isInitialIngest) {
+        const classification = classifyInitialIngestEntries(parsed.entries, this.now(), {
+          lookbackHours: this.ingestionPolicy.initialLookbackHours,
+          maxItemsPerSource: this.ingestionPolicy.initialMaxItemsPerSource,
+        });
+        entriesToProcess = classification.eligible;
+        outsideLookbackCount = classification.outsideLookback.length;
+        missingPublishedAtCount = classification.missingPublishedAt.length;
+        truncatedCount = classification.truncated.length;
+      }
       let created = 0;
       let updated = 0;
-      let skipped = 0;
+      let skipped = outsideLookbackCount + missingPublishedAtCount + truncatedCount;
       let failed = 0;
+      let lateRejected = 0;
       let firstFailure: { code: string; summary: string } | null = null;
       if (!testedOnly) {
         const teams = await this.repository.listSuggestionTeams();
-        for (const entry of parsed.entries.slice(
+        // M30D: steady-state runs compare unseen entries against the newest
+        // publication time this source has ever persisted, so a feed that reorders
+        // itself can't silently backfill old, never-before-seen content.
+        const lateItemWatermark = isInitialIngest
+          ? null
+          : await this.repository.getMaxCandidatePublishedAt(source.id);
+        for (const entry of entriesToProcess.slice(
           0,
           Math.max(0, Math.min(MAXIMUM_WRITES_PER_RUN, maximumWrites)),
         )) {
           try {
+            if (
+              !isInitialIngest &&
+              isLateOutOfOrderEntry(entry, lateItemWatermark, {
+                toleranceHours: this.ingestionPolicy.lateItemToleranceHours,
+              }) &&
+              !(await this.repository.candidateExists(
+                source.id,
+                entry.externalId,
+                entry.canonicalUrlHash,
+              ))
+            ) {
+              lateRejected += 1;
+              skipped += 1;
+              continue;
+            }
             const result = await this.repository.upsertFeedCandidate(
               source,
               entry,
@@ -446,7 +522,7 @@ export class NewsInboxService implements NewsInboxServiceContract {
           }
         }
       } else {
-        skipped = parsed.entries.length;
+        skipped += entriesToProcess.length;
       }
       const status = failed > 0 ? 'PARTIAL' : 'SUCCEEDED';
       const result = completion(
@@ -484,6 +560,13 @@ export class NewsInboxService implements NewsInboxServiceContract {
         notModified: false,
         feedKind: parsed.kind,
         run: toNewsIngestionRunDto(run),
+        initialIngest: isInitialIngest,
+        diagnostics: {
+          outsideLookback: outsideLookbackCount,
+          missingPublishedAt: missingPublishedAtCount,
+          truncated: truncatedCount,
+          lateRejected,
+        },
       };
     } catch (error) {
       const details = safeError(error);

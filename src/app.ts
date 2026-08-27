@@ -14,6 +14,8 @@ import type { AuthenticationService } from './modules/auth/auth.service.js';
 import type { AdministrativeIdentityReader } from './modules/admin/admin-authorization.js';
 import type { AdministrativeScheduleService } from './modules/admin/admin.service.js';
 import type { DataHealthServiceContract } from './modules/data-health/data-health.service.js';
+import type { GameHighlightsServiceContract } from './modules/game-highlights/game-highlights.service.js';
+import type { GameMediaCurationServiceContract } from './modules/game-media-curation/game-media-curation.service.js';
 import type {
   EditorialArticleService,
   PublicArticleReader,
@@ -47,6 +49,8 @@ export interface CreateAppOptions {
   readonly adminService?: AdministrativeScheduleService;
   readonly adminIdentities?: AdministrativeIdentityReader;
   readonly dataHealthService?: DataHealthServiceContract;
+  readonly gameHighlightsService?: GameHighlightsServiceContract;
+  readonly gameMediaCurationService?: GameMediaCurationServiceContract;
   readonly articleReader?: PublicArticleReader;
   readonly editorialArticleService?: EditorialArticleService;
   readonly newsInboxService?: NewsInboxServiceContract;
@@ -94,6 +98,12 @@ export function createApp(options: CreateAppOptions): Express {
       ...(options.dataHealthService === undefined
         ? {}
         : { dataHealthService: options.dataHealthService }),
+      ...(options.gameHighlightsService === undefined
+        ? {}
+        : { gameHighlightsService: options.gameHighlightsService }),
+      ...(options.gameMediaCurationService === undefined
+        ? {}
+        : { gameMediaCurationService: options.gameMediaCurationService }),
       ...(options.articleReader === undefined ? {} : { articleReader: options.articleReader }),
       ...(options.editorialArticleService === undefined
         ? {}

@@ -18,7 +18,7 @@ No default live source is inserted by the migration. Local RSS and Atom files un
 
 The bounded August 2 evaluation found ESPN's NFL RSS technically parseable and rejected NFL.com's `?format=rss` HTML response; neither was inserted. See [the evaluation record](source-evaluations/news-feeds-2026-08-02.md).
 
-The August 24 evaluation (Milestone 30A) added the first official-team feeds: nine `PAUSED` candidate sources across five clubs' News/Videos/Highlights RSS feeds. See [the evaluation record](source-evaluations/official-team-media-feeds-2026-08-24.md).
+The August 24 evaluation (Milestone 30A) added the first official-team feeds: nine `PAUSED` candidate sources across five clubs' News/Videos/Highlights RSS feeds. See [the evaluation record](source-evaluations/official-team-media-feeds-2026-08-24.md). Milestone 30B extended discovery to the remaining 27 clubs; see [that evaluation record](source-evaluations/official-nfl-team-feeds-2026-08-24.md). Milestone 30D activated the first cohort of official-team sources and added a bounded initial-ingest policy so a long-paused source's first activation can't flood the inbox; see [the activation record](news/official-team-source-activation.md) for the lookback/cap/late-item policy and its configuration.
 
 ## Stored metadata and editorial states
 
@@ -69,7 +69,7 @@ The CLI runs one source by default and requires an auditable active editor/admin
 npm run news:ingest -- --source=nfl-news --actor=editor@example.com
 ```
 
-`--all` processes at most five active non-manual sources sequentially. There is no cron, recurring scheduler, background worker, queue, webhook, or continuous process.
+`--all` processes at most twenty active non-manual sources sequentially (raised from five in Milestone 30D to cover Wave 1's ten activated sources with headroom). There is still no cron, recurring scheduler, background worker, queue, webhook, or continuous process in this codebase; an external, ordinary scheduler is expected to invoke the CLI on a 15-30 minute cadence. See [the activation record](news/official-team-source-activation.md) for the bounded initial-ingest policy this CLI's real ingestion now applies.
 
 ## Candidate conversion and rights
 
