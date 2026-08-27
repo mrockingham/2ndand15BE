@@ -1,19 +1,31 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import type { AppError } from '../../common/errors/app-error.js';
 import type { AdministrativePrincipal } from '../admin/admin-authorization.js';
 import type { ArticleRecord } from '../articles/article.dto.js';
 import type { PublicGameMediaDto } from '../game-media-curation/game-media-curation.dto.js';
 import type { GameWithTeams } from '../games/game.dto.js';
+import type { AiHubWeeklyInsightsService } from '../ai-hub/weekly-insights.service.js';
+import type { InsightCard } from '../ai-hub/weekly-insights.js';
 import {
   HomepageService,
   type HomepageGameMediaReader,
   type HomepageStatsReader,
 } from './homepage.service.js';
 import type { CreateHeroSlideInput, UpdateHeroSlideInput } from './homepage.schemas.js';
-import { MAX_HERO_SLIDES, MAX_TOP_STORIES } from './homepage.schemas.js';
+import {
+  MAX_HERO_SLIDES,
+  MAX_HOMEPAGE_HIGHLIGHT_PLACEMENTS,
+  MAX_TOP_STORIES,
+  updateHighlightSettingsSchema,
+} from './homepage.schemas.js';
 import type {
+  HomepageCurrentWeekContext,
   HomepageHeroSlideRecord,
+  HomepageHighlightCandidateListResult,
+  HomepageHighlightPlacementRecord,
+  HomepageHighlightSettingsRecord,
+  HomepageHighlightSourceTypeValue,
   HomepageRepository,
   HomepageTopStoryRecord,
 } from './homepage.repository.js';
@@ -49,6 +61,14 @@ class FakeHomepageRepository implements HomepageRepository {
   articlesById = new Map<string, ArticleRecord>();
   publicArticleIds = new Set<string>();
   gamesWithMedia: GameWithTeams[] = [];
+  // M37A: Homepage highlight curation
+  placements: HomepageHighlightPlacementRecord[] = [];
+  highlightSettings: HomepageHighlightSettingsRecord | null = null;
+  gameHighlightSources = new Map<string, { readonly gameId: string }>();
+  curatedVideoSources = new Map<string, { readonly gameId: string }>();
+  gamesById = new Map<string, GameWithTeams>();
+  highlightCandidates: HomepageHighlightCandidateListResult = { candidates: [], nextCursor: null };
+  currentWeekContext: HomepageCurrentWeekContext | null = null;
   private nextId = 1;
 
   listHeroSlides(): Promise<readonly HomepageHeroSlideRecord[]> {
@@ -252,6 +272,141 @@ class FakeHomepageRepository implements HomepageRepository {
   findRecentGamesWithMedia(limit: number): Promise<readonly GameWithTeams[]> {
     return Promise.resolve(this.gamesWithMedia.slice(0, limit));
   }
+
+  // -- M37A: Homepage highlight curation ------------------------------------
+
+  listActiveHighlightPlacements(): Promise<readonly HomepageHighlightPlacementRecord[]> {
+    return Promise.resolve([...this.placements].sort((a, b) => a.position - b.position));
+  }
+
+  findHighlightPlacement(placementId: string): Promise<HomepageHighlightPlacementRecord | null> {
+    return Promise.resolve(this.placements.find((p) => p.id === placementId) ?? null);
+  }
+
+  findHighlightPlacementBySource(
+    sourceType: HomepageHighlightSourceTypeValue,
+    sourceId: string,
+  ): Promise<HomepageHighlightPlacementRecord | null> {
+    return Promise.resolve(
+      this.placements.find((p) => p.sourceType === sourceType && p.sourceId === sourceId) ?? null,
+    );
+  }
+
+  createHighlightPlacement(input: {
+    sourceType: HomepageHighlightSourceTypeValue;
+    sourceId: string;
+    gameId: string;
+  }): Promise<HomepageHighlightPlacementRecord> {
+    if (this.placements.length >= MAX_HOMEPAGE_HIGHLIGHT_PLACEMENTS) {
+      return Promise.reject(
+        new AppErrorClass({
+          code: 'HOMEPAGE_HIGHLIGHT_LIMIT_REACHED',
+          message: 'limit reached',
+          statusCode: 409,
+        }),
+      );
+    }
+    const existing = this.placements.find(
+      (p) => p.sourceType === input.sourceType && p.sourceId === input.sourceId,
+    );
+    if (existing !== undefined) {
+      return Promise.reject(
+        new AppErrorClass({
+          code: 'HOMEPAGE_HIGHLIGHT_DUPLICATE',
+          message: 'duplicate',
+          statusCode: 409,
+        }),
+      );
+    }
+    const now = new Date();
+    const record: HomepageHighlightPlacementRecord = {
+      id: `placement-${String(this.nextId++)}`,
+      sourceType: input.sourceType,
+      sourceId: input.sourceId,
+      gameId: input.gameId,
+      position: this.placements.length,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.placements.push(record);
+    return Promise.resolve(record);
+  }
+
+  deleteHighlightPlacement(placementId: string): Promise<HomepageHighlightPlacementRecord | null> {
+    const index = this.placements.findIndex((p) => p.id === placementId);
+    if (index === -1) return Promise.resolve(null);
+    const [deleted] = this.placements.splice(index, 1);
+    this.placements = this.placements
+      .sort((a, b) => a.position - b.position)
+      .map((placement, i) => ({ ...placement, position: i }));
+    return Promise.resolve(deleted ?? null);
+  }
+
+  reorderHighlightPlacements(
+    placementIds: readonly string[],
+  ): Promise<readonly HomepageHighlightPlacementRecord[]> {
+    const existingIds = new Set(this.placements.map((p) => p.id));
+    const providedIds = new Set(placementIds);
+    const isExactMatch =
+      placementIds.length === this.placements.length &&
+      providedIds.size === placementIds.length &&
+      [...existingIds].every((id) => providedIds.has(id));
+    if (!isExactMatch) {
+      return Promise.reject(
+        new AppErrorClass({
+          code: 'HOMEPAGE_HIGHLIGHT_REORDER_MISMATCH',
+          message: 'mismatch',
+          statusCode: 422,
+        }),
+      );
+    }
+    this.placements = placementIds.map((id, position) => {
+      const placement = this.placements.find((p) => p.id === id);
+      if (placement === undefined) throw new Error('unreachable');
+      return { ...placement, position };
+    });
+    return Promise.resolve([...this.placements]);
+  }
+
+  getHighlightSettings(): Promise<HomepageHighlightSettingsRecord> {
+    return Promise.resolve(this.highlightSettings ?? { displayLimit: 5, fillWithAutomatic: true });
+  }
+
+  updateHighlightSettings(input: {
+    displayLimit?: number;
+    fillWithAutomatic?: boolean;
+  }): Promise<HomepageHighlightSettingsRecord> {
+    const before = this.highlightSettings ?? { displayLimit: 5, fillWithAutomatic: true };
+    this.highlightSettings = {
+      displayLimit: input.displayLimit ?? before.displayLimit,
+      fillWithAutomatic: input.fillWithAutomatic ?? before.fillWithAutomatic,
+    };
+    return Promise.resolve(this.highlightSettings);
+  }
+
+  findGameHighlightSource(id: string): Promise<{ readonly gameId: string } | null> {
+    return Promise.resolve(this.gameHighlightSources.get(id) ?? null);
+  }
+
+  findCuratedVideoSource(id: string): Promise<{ readonly gameId: string } | null> {
+    return Promise.resolve(this.curatedVideoSources.get(id) ?? null);
+  }
+
+  findGamesWithTeamsByIds(gameIds: readonly string[]): Promise<readonly GameWithTeams[]> {
+    return Promise.resolve(
+      gameIds
+        .map((id) => this.gamesById.get(id))
+        .filter((g): g is GameWithTeams => g !== undefined),
+    );
+  }
+
+  listHighlightCandidates(): Promise<HomepageHighlightCandidateListResult> {
+    return Promise.resolve(this.highlightCandidates);
+  }
+
+  findCurrentWeekContext(): Promise<HomepageCurrentWeekContext | null> {
+    return Promise.resolve(this.currentWeekContext);
+  }
 }
 
 function article(id: string, overrides: Partial<ArticleRecord> = {}): ArticleRecord {
@@ -382,6 +537,56 @@ function fakeStatsReader(overrides: Partial<HomepageStatsReader> = {}): Homepage
           },
         ],
       }),
+    getWeeklyLeaders: () => Promise.resolve({ data: [] }),
+    ...overrides,
+  };
+}
+
+/** Default: no published predictions stored -- matches the real
+ * `AiHubWeeklyInsightsService.getWeeklyInsights` behavior when nothing has
+ * been published for the requested week (see `weekly-insights.service.ts`).
+ * `getWeeklyInsights` is loosely typed (not `Partial<AiHubWeeklyInsightsService>`)
+ * so a test can hand back a realistic-but-partial `deriveWeeklyInsights`-shaped
+ * value without constructing every field that function returns. */
+function fakeAiHub(
+  overrides: {
+    getWeeklyInsights?: (...args: unknown[]) => Promise<unknown>;
+  } = {},
+): AiHubWeeklyInsightsService {
+  return {
+    getWeeklyInsights:
+      overrides.getWeeklyInsights ??
+      vi.fn().mockRejectedValue(
+        new AppErrorClass({
+          code: 'WEEKLY_INSIGHTS_NOT_FOUND',
+          message: 'No published predictions were found for the selected week.',
+          statusCode: 404,
+        }),
+      ),
+  } as unknown as AiHubWeeklyInsightsService;
+}
+
+/** A realistic `InsightCard` (see `ai-hub/weekly-insights.ts`) for constructing
+ * a fake `getWeeklyInsights` resolved value in Insight Rail tests. */
+function insightCard(overrides: Partial<InsightCard> = {}): InsightCard {
+  return {
+    rank: 1,
+    game: {
+      id: 'game-1',
+      startTime: '2026-09-07T17:00:00.000Z',
+      homeTeam: { id: 'team-home', fullName: 'NE Team', abbreviation: 'NE' },
+      awayTeam: { id: 'team-away', fullName: 'PHI Team', abbreviation: 'PHI' },
+    },
+    favorite: { id: 'team-home', fullName: 'NE Team', abbreviation: 'NE' },
+    underdog: { id: 'team-away', fullName: 'PHI Team', abbreviation: 'PHI' },
+    favoriteProbability: 0.72,
+    underdogProbability: 0.28,
+    probabilityGap: 0.44,
+    projectedScore: { home: 27, away: 17 },
+    projectedMargin: 10,
+    projectedTotal: 44,
+    confidence: 'HIGH',
+    factors: [{ code: 'TEAM_STRENGTH', favors: 'HOME', label: 'Stronger overall team' }],
     ...overrides,
   };
 }
@@ -391,6 +596,7 @@ function buildService(
   options: Partial<{
     gameMedia: HomepageGameMediaReader;
     stats: HomepageStatsReader;
+    aiHub: AiHubWeeklyInsightsService;
     fallbackSeason: number;
   }> = {},
 ) {
@@ -398,6 +604,7 @@ function buildService(
     repository,
     gameMedia: options.gameMedia ?? fakeGameMediaReader(new Map()),
     stats: options.stats ?? fakeStatsReader(),
+    aiHub: options.aiHub ?? fakeAiHub(),
     fallbackSeason: options.fallbackSeason ?? 2026,
   });
 }
@@ -802,5 +1009,530 @@ describe('HomepageService Leaders', () => {
     const service = buildService(new FakeHomepageRepository(), { stats });
     await service.getPublicHomepage();
     expect(limits).toEqual([3, 3, 3]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// M37A: Homepage highlight curation CRUD
+// ---------------------------------------------------------------------------
+
+describe('HomepageService highlight curation CRUD (M37A)', () => {
+  function registerSource(
+    repository: FakeHomepageRepository,
+    sourceType: HomepageHighlightSourceTypeValue,
+    sourceId: string,
+    gameId: string,
+  ): void {
+    const target =
+      sourceType === 'GAME_HIGHLIGHT'
+        ? repository.gameHighlightSources
+        : repository.curatedVideoSources;
+    target.set(sourceId, { gameId });
+    if (!repository.gamesById.has(gameId)) repository.gamesById.set(gameId, game(gameId));
+  }
+
+  function registerMediaForSource(
+    media: Map<string, PublicGameMediaDto>,
+    gameId: string,
+    sourceId: string,
+  ): void {
+    media.set(
+      gameId,
+      fakeMedia({
+        gameId,
+        displayVideos: [
+          {
+            id: sourceId,
+            mediaType: 'CURATED',
+            title: 'A great catch',
+            embedUrl: 'https://www.youtube.com/embed/x',
+            canonicalUrl: 'https://www.youtube.com/watch?v=x',
+            thumbnailUrl: null,
+            sourceLabel: null,
+            canEmbed: true,
+          },
+        ],
+      }),
+    );
+  }
+
+  it('adds a placement, which then appears in listHighlightPlacements', async () => {
+    const repository = new FakeHomepageRepository();
+    registerSource(repository, 'GAME_HIGHLIGHT', 'h1', 'game-1');
+    const media = new Map<string, PublicGameMediaDto>();
+    registerMediaForSource(media, 'game-1', 'h1');
+    const service = buildService(repository, { gameMedia: fakeGameMediaReader(media) });
+
+    const created = await service.addHighlightPlacement(
+      { sourceType: 'GAME_HIGHLIGHT', sourceId: 'h1' },
+      principal,
+      null,
+    );
+    expect(created.sourceId).toBe('h1');
+    expect(created.position).toBe(0);
+
+    const list = await service.listHighlightPlacements();
+    expect(list.placements.map((p) => p.id)).toEqual([created.id]);
+  });
+
+  it('404s adding a placement whose source does not exist', async () => {
+    const repository = new FakeHomepageRepository();
+    const service = buildService(repository);
+    await expect(
+      service.addHighlightPlacement(
+        { sourceType: 'GAME_HIGHLIGHT', sourceId: 'missing' },
+        principal,
+        null,
+      ),
+    ).rejects.toMatchObject({
+      code: 'HOMEPAGE_HIGHLIGHT_SOURCE_NOT_FOUND',
+    } satisfies Partial<AppError>);
+  });
+
+  it('rejects a duplicate (sourceType, sourceId) placement', async () => {
+    const repository = new FakeHomepageRepository();
+    registerSource(repository, 'GAME_HIGHLIGHT', 'h1', 'game-1');
+    const media = new Map<string, PublicGameMediaDto>();
+    registerMediaForSource(media, 'game-1', 'h1');
+    const service = buildService(repository, { gameMedia: fakeGameMediaReader(media) });
+
+    await service.addHighlightPlacement(
+      { sourceType: 'GAME_HIGHLIGHT', sourceId: 'h1' },
+      principal,
+      null,
+    );
+    await expect(
+      service.addHighlightPlacement(
+        { sourceType: 'GAME_HIGHLIGHT', sourceId: 'h1' },
+        principal,
+        null,
+      ),
+    ).rejects.toMatchObject({ code: 'HOMEPAGE_HIGHLIGHT_DUPLICATE' } satisfies Partial<AppError>);
+  });
+
+  it('rejects an 11th placement once 10 exist', async () => {
+    const repository = new FakeHomepageRepository();
+    const media = new Map<string, PublicGameMediaDto>();
+    for (let i = 0; i < MAX_HOMEPAGE_HIGHLIGHT_PLACEMENTS; i += 1) {
+      const sourceId = `h${String(i)}`;
+      const gameId = `game-${String(i)}`;
+      registerSource(repository, 'GAME_HIGHLIGHT', sourceId, gameId);
+      registerMediaForSource(media, gameId, sourceId);
+    }
+    const service = buildService(repository, { gameMedia: fakeGameMediaReader(media) });
+    for (let i = 0; i < MAX_HOMEPAGE_HIGHLIGHT_PLACEMENTS; i += 1) {
+      await service.addHighlightPlacement(
+        { sourceType: 'GAME_HIGHLIGHT', sourceId: `h${String(i)}` },
+        principal,
+        null,
+      );
+    }
+    registerSource(repository, 'GAME_HIGHLIGHT', 'overflow', 'game-overflow');
+    registerMediaForSource(media, 'game-overflow', 'overflow');
+    await expect(
+      service.addHighlightPlacement(
+        { sourceType: 'GAME_HIGHLIGHT', sourceId: 'overflow' },
+        principal,
+        null,
+      ),
+    ).rejects.toMatchObject({
+      code: 'HOMEPAGE_HIGHLIGHT_LIMIT_REACHED',
+    } satisfies Partial<AppError>);
+  });
+
+  it('removes a placement; 404s removing a missing one', async () => {
+    const repository = new FakeHomepageRepository();
+    registerSource(repository, 'GAME_HIGHLIGHT', 'h1', 'game-1');
+    const media = new Map<string, PublicGameMediaDto>();
+    registerMediaForSource(media, 'game-1', 'h1');
+    const service = buildService(repository, { gameMedia: fakeGameMediaReader(media) });
+    const created = await service.addHighlightPlacement(
+      { sourceType: 'GAME_HIGHLIGHT', sourceId: 'h1' },
+      principal,
+      null,
+    );
+    await service.removeHighlightPlacement(created.id, principal, null);
+    expect((await service.listHighlightPlacements()).placements).toEqual([]);
+
+    await expect(
+      service.removeHighlightPlacement('missing', principal, null),
+    ).rejects.toMatchObject({
+      code: 'HOMEPAGE_HIGHLIGHT_PLACEMENT_NOT_FOUND',
+    } satisfies Partial<AppError>);
+  });
+
+  it('reorders placements; rejects a non-permutation reorder', async () => {
+    const repository = new FakeHomepageRepository();
+    const media = new Map<string, PublicGameMediaDto>();
+    registerSource(repository, 'GAME_HIGHLIGHT', 'h1', 'game-1');
+    registerSource(repository, 'GAME_HIGHLIGHT', 'h2', 'game-2');
+    registerMediaForSource(media, 'game-1', 'h1');
+    registerMediaForSource(media, 'game-2', 'h2');
+    const service = buildService(repository, { gameMedia: fakeGameMediaReader(media) });
+    const a = await service.addHighlightPlacement(
+      { sourceType: 'GAME_HIGHLIGHT', sourceId: 'h1' },
+      principal,
+      null,
+    );
+    const b = await service.addHighlightPlacement(
+      { sourceType: 'GAME_HIGHLIGHT', sourceId: 'h2' },
+      principal,
+      null,
+    );
+
+    const reordered = await service.reorderHighlightPlacements(
+      { placementIds: [b.id, a.id] },
+      principal,
+      null,
+    );
+    expect(reordered.map((p) => p.id)).toEqual([b.id, a.id]);
+
+    await expect(
+      service.reorderHighlightPlacements({ placementIds: [a.id] }, principal, null),
+    ).rejects.toMatchObject({
+      code: 'HOMEPAGE_HIGHLIGHT_REORDER_MISMATCH',
+    } satisfies Partial<AppError>);
+  });
+
+  it('updateHighlightSettings persists the new displayLimit/fillWithAutomatic', async () => {
+    const repository = new FakeHomepageRepository();
+    const service = buildService(repository);
+    const updated = await service.updateHighlightSettings(
+      { displayLimit: 8, fillWithAutomatic: false },
+      principal,
+      null,
+    );
+    expect(updated).toEqual({ displayLimit: 8, fillWithAutomatic: false });
+    const list = await service.listHighlightPlacements();
+    expect(list.settings).toEqual({ displayLimit: 8, fillWithAutomatic: false });
+  });
+
+  it('the displayLimit schema enforces the 3-10 bound directly', () => {
+    expect(updateHighlightSettingsSchema.safeParse({ displayLimit: 2 }).success).toBe(false);
+    expect(updateHighlightSettingsSchema.safeParse({ displayLimit: 11 }).success).toBe(false);
+    expect(updateHighlightSettingsSchema.safeParse({ displayLimit: 3 }).success).toBe(true);
+    expect(updateHighlightSettingsSchema.safeParse({ displayLimit: 10 }).success).toBe(true);
+    expect(updateHighlightSettingsSchema.safeParse({}).success).toBe(false); // at least one field
+  });
+});
+
+// ---------------------------------------------------------------------------
+// M37A: public Highlights composition (curated + automatic fill)
+// ---------------------------------------------------------------------------
+
+describe('HomepageService public Highlights composition (M37A)', () => {
+  function placementFor(
+    id: string,
+    sourceType: HomepageHighlightSourceTypeValue,
+    sourceId: string,
+    gameId: string,
+    position: number,
+  ): HomepageHighlightPlacementRecord {
+    return {
+      id,
+      sourceType,
+      sourceId,
+      gameId,
+      position,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+  }
+
+  function validMediaFor(gameId: string, sourceId: string): PublicGameMediaDto {
+    return fakeMedia({
+      gameId,
+      displayVideos: [
+        {
+          id: sourceId,
+          mediaType: 'CURATED',
+          title: `Curated for ${gameId}`,
+          embedUrl: 'https://www.youtube.com/embed/x',
+          canonicalUrl: 'https://www.youtube.com/watch?v=x',
+          thumbnailUrl: null,
+          sourceLabel: null,
+          canEmbed: true,
+        },
+      ],
+    });
+  }
+
+  it('curated-only when fillWithAutomatic is false, even below displayLimit', async () => {
+    const repository = new FakeHomepageRepository();
+    repository.highlightSettings = { displayLimit: 5, fillWithAutomatic: false };
+    repository.placements = [
+      placementFor('p1', 'GAME_HIGHLIGHT', 'h1', 'game-1', 0),
+      placementFor('p2', 'GAME_HIGHLIGHT', 'h2', 'game-2', 1),
+    ];
+    repository.gamesById.set('game-1', game('game-1'));
+    repository.gamesById.set('game-2', game('game-2'));
+    // A pool of other games exists but must never be used since fillWithAutomatic is false.
+    repository.gamesWithMedia = [game('game-3'), game('game-4')];
+    const media = new Map([
+      ['game-1', validMediaFor('game-1', 'h1')],
+      ['game-2', validMediaFor('game-2', 'h2')],
+      ['game-3', fakeMedia({ gameId: 'game-3' })],
+      ['game-4', fakeMedia({ gameId: 'game-4' })],
+    ]);
+    const service = buildService(repository, { gameMedia: fakeGameMediaReader(media) });
+
+    const homepage = await service.getPublicHomepage();
+    expect(homepage.highlights).toHaveLength(2);
+    expect(homepage.highlights.map((h) => h.gameId).sort()).toEqual(['game-1', 'game-2']);
+    expect(homepage.highlights.every((h) => h.homepageSelection === 'CURATED')).toBe(true);
+  });
+
+  it('fills remaining slots with automatic items, tagged AUTOMATIC, once curated is exhausted', async () => {
+    const repository = new FakeHomepageRepository();
+    repository.highlightSettings = { displayLimit: 5, fillWithAutomatic: true };
+    repository.placements = [
+      placementFor('p1', 'GAME_HIGHLIGHT', 'h1', 'game-1', 0),
+      placementFor('p2', 'GAME_HIGHLIGHT', 'h2', 'game-2', 1),
+      placementFor('p3', 'GAME_HIGHLIGHT', 'h3', 'game-3', 2),
+    ];
+    repository.gamesById.set('game-1', game('game-1'));
+    repository.gamesById.set('game-2', game('game-2'));
+    repository.gamesById.set('game-3', game('game-3'));
+    repository.gamesWithMedia = [game('game-4'), game('game-5'), game('game-6')];
+    const media = new Map([
+      ['game-1', validMediaFor('game-1', 'h1')],
+      ['game-2', validMediaFor('game-2', 'h2')],
+      ['game-3', validMediaFor('game-3', 'h3')],
+      ['game-4', fakeMedia({ gameId: 'game-4' })],
+      ['game-5', fakeMedia({ gameId: 'game-5' })],
+      ['game-6', fakeMedia({ gameId: 'game-6' })],
+    ]);
+    const service = buildService(repository, { gameMedia: fakeGameMediaReader(media) });
+
+    const homepage = await service.getPublicHomepage();
+    expect(homepage.highlights).toHaveLength(5);
+    const curated = homepage.highlights.filter((h) => h.homepageSelection === 'CURATED');
+    const automatic = homepage.highlights.filter((h) => h.homepageSelection === 'AUTOMATIC');
+    expect(curated).toHaveLength(3);
+    expect(automatic).toHaveLength(2);
+    expect(curated.map((h) => h.gameId).sort()).toEqual(['game-1', 'game-2', 'game-3']);
+    expect(automatic.map((h) => h.gameId).sort()).toEqual(['game-4', 'game-5']);
+  });
+
+  it('never re-shows a game already referenced by a placement, even a stale one, in the automatic pool', async () => {
+    const repository = new FakeHomepageRepository();
+    repository.highlightSettings = { displayLimit: 2, fillWithAutomatic: true };
+    // Placement for game-1 whose sourceId is stale/deleted -- not present in
+    // game-1's displayVideos, so it's excluded from curated *and* must not
+    // resurface in the automatic pool either.
+    repository.placements = [placementFor('p1', 'GAME_HIGHLIGHT', 'stale-source', 'game-1', 0)];
+    repository.gamesById.set('game-1', game('game-1'));
+    repository.gamesWithMedia = [game('game-1'), game('game-2')];
+    const media = new Map([
+      ['game-1', fakeMedia({ gameId: 'game-1' })], // no item with id "stale-source"
+      ['game-2', fakeMedia({ gameId: 'game-2' })],
+    ]);
+    const service = buildService(repository, { gameMedia: fakeGameMediaReader(media) });
+
+    const homepage = await service.getPublicHomepage();
+    expect(homepage.highlights.map((h) => h.gameId)).toEqual(['game-2']);
+    expect(homepage.highlights[0]?.homepageSelection).toBe('AUTOMATIC');
+  });
+
+  it('a stale curated placement is silently excluded and does not count against displayLimit', async () => {
+    const repository = new FakeHomepageRepository();
+    repository.highlightSettings = { displayLimit: 5, fillWithAutomatic: true };
+    repository.placements = [
+      placementFor('p1', 'GAME_HIGHLIGHT', 'stale-source', 'game-1', 0), // stale
+      placementFor('p2', 'GAME_HIGHLIGHT', 'h2', 'game-2', 1), // valid
+      placementFor('p3', 'GAME_HIGHLIGHT', 'h3', 'game-3', 2), // valid
+    ];
+    repository.gamesById.set('game-1', game('game-1'));
+    repository.gamesById.set('game-2', game('game-2'));
+    repository.gamesById.set('game-3', game('game-3'));
+    repository.gamesWithMedia = [game('game-4'), game('game-5'), game('game-6'), game('game-7')];
+    const media = new Map([
+      ['game-1', fakeMedia({ gameId: 'game-1' })], // no "stale-source" item -> stale
+      ['game-2', validMediaFor('game-2', 'h2')],
+      ['game-3', validMediaFor('game-3', 'h3')],
+      ['game-4', fakeMedia({ gameId: 'game-4' })],
+      ['game-5', fakeMedia({ gameId: 'game-5' })],
+      ['game-6', fakeMedia({ gameId: 'game-6' })],
+      ['game-7', fakeMedia({ gameId: 'game-7' })],
+    ]);
+    const service = buildService(repository, { gameMedia: fakeGameMediaReader(media) });
+
+    const homepage = await service.getPublicHomepage();
+    expect(homepage.highlights).toHaveLength(5);
+    const curated = homepage.highlights.filter((h) => h.homepageSelection === 'CURATED');
+    const automatic = homepage.highlights.filter((h) => h.homepageSelection === 'AUTOMATIC');
+    expect(curated).toHaveLength(2);
+    expect(automatic).toHaveLength(3);
+    // game-1 (the stale placement's game) never appears anywhere.
+    expect(homepage.highlights.some((h) => h.gameId === 'game-1')).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// M37A: Insight Rail
+// ---------------------------------------------------------------------------
+
+describe('HomepageService Insight Rail (M37A)', () => {
+  const context: HomepageCurrentWeekContext = { season: 2026, week: 5, seasonType: 'REG' };
+
+  describe('AI Hub snapshot', () => {
+    it('returns null when no predictions are published yet for the resolved week', async () => {
+      const repository = new FakeHomepageRepository();
+      repository.currentWeekContext = context;
+      const service = buildService(repository); // default fakeAiHub rejects with WEEKLY_INSIGHTS_NOT_FOUND
+      const homepage = await service.getPublicHomepage();
+      expect(homepage.insights.aiHub).toBeNull();
+    });
+
+    it('returns null (never called) when no current-week context can be resolved', async () => {
+      const repository = new FakeHomepageRepository();
+      repository.currentWeekContext = null;
+      const getWeeklyInsights = vi.fn();
+      const service = buildService(repository, { aiHub: fakeAiHub({ getWeeklyInsights }) });
+      const homepage = await service.getPublicHomepage();
+      expect(homepage.insights.aiHub).toBeNull();
+      expect(getWeeklyInsights).not.toHaveBeenCalled();
+    });
+
+    it('maps a populated snapshot: strongestPick/closestMatchup/highestProjectedTotal', async () => {
+      const repository = new FakeHomepageRepository();
+      repository.currentWeekContext = context;
+      const strongest = insightCard({ rank: 1, favoriteProbability: 0.81 });
+      const closest = insightCard({
+        rank: 2,
+        game: { ...strongest.game, id: 'game-2' },
+        favoriteProbability: 0.51,
+      });
+      const highestTotal = insightCard({
+        rank: 3,
+        game: { ...strongest.game, id: 'game-3' },
+        projectedScore: { home: 35, away: 31 },
+        projectedTotal: 66,
+      });
+      const getWeeklyInsights = vi.fn().mockResolvedValue({
+        strongestPick: strongest,
+        closestMatchup: closest,
+        projectedHighestScoringGame: highestTotal,
+      });
+      const service = buildService(repository, { aiHub: fakeAiHub({ getWeeklyInsights }) });
+
+      const homepage = await service.getPublicHomepage();
+      expect(homepage.insights.aiHub).not.toBeNull();
+      expect(homepage.insights.aiHub?.season).toBe(2026);
+      expect(homepage.insights.aiHub?.week).toBe(5);
+      expect(homepage.insights.aiHub?.seasonType).toBe('REG');
+      expect(homepage.insights.aiHub?.strongestPick).toEqual({
+        game: {
+          gameId: strongest.game.id,
+          startTime: strongest.game.startTime,
+          homeTeam: strongest.game.homeTeam,
+          awayTeam: strongest.game.awayTeam,
+        },
+        favoriteTeam: strongest.favorite,
+        favoriteProbability: strongest.favoriteProbability,
+        projectedScore: strongest.projectedScore,
+        projectedTotal: strongest.projectedTotal,
+      });
+      expect(homepage.insights.aiHub?.closestMatchup?.favoriteProbability).toBe(0.51);
+      expect(homepage.insights.aiHub?.highestProjectedTotal?.projectedTotal).toBe(66);
+    });
+  });
+
+  describe('weekly leaders snapshot', () => {
+    it('returns null when findCurrentWeekContext resolves null', async () => {
+      const repository = new FakeHomepageRepository();
+      repository.currentWeekContext = null;
+      const service = buildService(repository);
+      const homepage = await service.getPublicHomepage();
+      expect(homepage.insights.weeklyLeaders).toBeNull();
+    });
+
+    it('returns null when the resolved week and every backward-stepped week (up to 4) are empty', async () => {
+      const repository = new FakeHomepageRepository();
+      repository.currentWeekContext = { season: 2026, week: 5, seasonType: 'REG' };
+      const queriedWeeks: number[] = [];
+      const stats = fakeStatsReader({
+        getWeeklyLeaders: (query) => {
+          queriedWeeks.push(query.week);
+          return Promise.resolve({ data: [] });
+        },
+      });
+      const service = buildService(repository, { stats });
+      const homepage = await service.getPublicHomepage();
+      expect(homepage.insights.weeklyLeaders).toBeNull();
+      // Weeks 5,4,3,2,1 queried (3 categories each) -- never week 0.
+      expect(new Set(queriedWeeks)).toEqual(new Set([5, 4, 3, 2, 1]));
+      expect(queriedWeeks).not.toContain(0);
+    });
+
+    it("returns the resolved week's data when found on the first try", async () => {
+      const repository = new FakeHomepageRepository();
+      repository.currentWeekContext = { season: 2026, week: 5, seasonType: 'REG' };
+      const stats = fakeStatsReader({
+        getWeeklyLeaders: (query) => {
+          if (query.week !== 5) return Promise.resolve({ data: [] });
+          return Promise.resolve({
+            data: [
+              {
+                rank: 1,
+                metricValue: 300,
+                week: 5,
+                season: 2026,
+                player: { id: 'p1', displayName: 'Player One' },
+                team: { abbreviation: 'NE' },
+              },
+            ],
+          });
+        },
+      });
+      const service = buildService(repository, { stats });
+      const homepage = await service.getPublicHomepage();
+      expect(homepage.insights.weeklyLeaders?.week).toBe(5);
+      expect(homepage.insights.weeklyLeaders?.season).toBe(2026);
+      expect(homepage.insights.weeklyLeaders?.passing?.playerName).toBe('Player One');
+    });
+
+    it('steps backward and finds an earlier week when the current week is empty, reporting the actual week used', async () => {
+      const repository = new FakeHomepageRepository();
+      repository.currentWeekContext = { season: 2026, week: 5, seasonType: 'REG' };
+      const stats = fakeStatsReader({
+        getWeeklyLeaders: (query) => {
+          if (query.week !== 3) return Promise.resolve({ data: [] });
+          return Promise.resolve({
+            data: [
+              {
+                rank: 1,
+                metricValue: 150,
+                week: 3,
+                season: 2026,
+                player: { id: 'p2', displayName: 'Player Two' },
+                team: { abbreviation: 'PHI' },
+              },
+            ],
+          });
+        },
+      });
+      const service = buildService(repository, { stats });
+      const homepage = await service.getPublicHomepage();
+      expect(homepage.insights.weeklyLeaders?.week).toBe(3);
+      expect(homepage.insights.weeklyLeaders?.season).toBe(2026);
+      expect(homepage.insights.weeklyLeaders?.rushing?.playerName).toBe('Player Two');
+    });
+
+    it('never steps into week < 1', async () => {
+      const repository = new FakeHomepageRepository();
+      repository.currentWeekContext = { season: 2026, week: 2, seasonType: 'REG' };
+      const queriedWeeks: number[] = [];
+      const stats = fakeStatsReader({
+        getWeeklyLeaders: (query) => {
+          queriedWeeks.push(query.week);
+          return Promise.resolve({ data: [] });
+        },
+      });
+      const service = buildService(repository, { stats });
+      await service.getPublicHomepage();
+      expect(Math.min(...queriedWeeks)).toBe(1);
+      expect(queriedWeeks).not.toContain(0);
+    });
   });
 });

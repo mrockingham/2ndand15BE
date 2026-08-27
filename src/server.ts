@@ -256,6 +256,7 @@ const homepageService = new HomepageService({
   repository: new PrismaHomepageRepository(prisma),
   gameMedia: gameMediaCurationService,
   stats: statsHubReader,
+  aiHub: weeklyInsightsService,
   fallbackSeason: config.sports.currentNflSeason,
 });
 const teamHubReader = new TeamHubService({

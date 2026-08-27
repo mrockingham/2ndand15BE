@@ -3,12 +3,17 @@ import type { Request, RequestHandler } from 'express';
 import { AppError } from '../../common/errors/app-error.js';
 import type { AdministrativePrincipal } from '../admin/admin-authorization.js';
 import {
+  addHighlightPlacementSchema,
   createHeroSlideSchema,
+  highlightCandidatesQuerySchema,
   homepageHeroSlideIdParamsSchema,
+  homepageHighlightPlacementIdParamsSchema,
   homepageTopStoryArticleIdParamsSchema,
   reorderHeroSlidesSchema,
+  reorderHighlightPlacementsSchema,
   reorderTopStoriesSchema,
   updateHeroSlideSchema,
+  updateHighlightSettingsSchema,
 } from './homepage.schemas.js';
 import type { HomepageServiceContract } from './homepage.service.js';
 
@@ -23,6 +28,12 @@ export interface HomepageController {
   readonly markTopStory: RequestHandler;
   readonly unmarkTopStory: RequestHandler;
   readonly reorderTopStories: RequestHandler;
+  readonly listHighlightPlacements: RequestHandler;
+  readonly listHighlightCandidates: RequestHandler;
+  readonly addHighlightPlacement: RequestHandler;
+  readonly removeHighlightPlacement: RequestHandler;
+  readonly reorderHighlightPlacements: RequestHandler;
+  readonly updateHighlightSettings: RequestHandler;
   readonly getPublicHomepage: RequestHandler;
 }
 
@@ -119,6 +130,56 @@ export function createHomepageController(service: HomepageServiceContract): Home
       const input = parseOrThrow(reorderTopStoriesSchema, request.body, 'request body');
       response.status(200).json({
         data: await service.reorderTopStories(
+          input,
+          requirePrincipal(request.admin),
+          requestId(request),
+        ),
+      });
+    },
+    listHighlightPlacements: async (_request, response) => {
+      response.status(200).json({ data: await service.listHighlightPlacements() });
+    },
+    listHighlightCandidates: async (request, response) => {
+      const query = parseOrThrow(highlightCandidatesQuerySchema, request.query, 'query parameters');
+      response.status(200).json({ data: await service.listHighlightCandidates(query) });
+    },
+    addHighlightPlacement: async (request, response) => {
+      const input = parseOrThrow(addHighlightPlacementSchema, request.body, 'request body');
+      response.status(201).json({
+        data: await service.addHighlightPlacement(
+          input,
+          requirePrincipal(request.admin),
+          requestId(request),
+        ),
+      });
+    },
+    removeHighlightPlacement: async (request, response) => {
+      const { placementId } = parseOrThrow(
+        homepageHighlightPlacementIdParamsSchema,
+        request.params,
+        'path parameters',
+      );
+      await service.removeHighlightPlacement(
+        placementId,
+        requirePrincipal(request.admin),
+        requestId(request),
+      );
+      response.status(204).send();
+    },
+    reorderHighlightPlacements: async (request, response) => {
+      const input = parseOrThrow(reorderHighlightPlacementsSchema, request.body, 'request body');
+      response.status(200).json({
+        data: await service.reorderHighlightPlacements(
+          input,
+          requirePrincipal(request.admin),
+          requestId(request),
+        ),
+      });
+    },
+    updateHighlightSettings: async (request, response) => {
+      const input = parseOrThrow(updateHighlightSettingsSchema, request.body, 'request body');
+      response.status(200).json({
+        data: await service.updateHighlightSettings(
           input,
           requirePrincipal(request.admin),
           requestId(request),

@@ -6,12 +6,21 @@ import type { DisplayMediaItemDto } from '../game-media-curation/game-media-cura
 import {
   toAdminHeroListDto,
   toAdminHeroSlideDto,
+  toAdminHomepageHighlightDto,
   toAdminTopStoryDto,
+  toHomepageHighlightCandidateDto,
+  toHomepageHighlightSettingsDto,
   toPublicHeroSlideDto,
   toPublicHomepageHighlightDto,
   toPublicTopStoryDto,
 } from './homepage.dto.js';
-import type { HomepageHeroSlideRecord, HomepageTopStoryRecord } from './homepage.repository.js';
+import type {
+  HomepageHeroSlideRecord,
+  HomepageHighlightCandidateRecord,
+  HomepageHighlightPlacementRecord,
+  HomepageHighlightSettingsRecord,
+  HomepageTopStoryRecord,
+} from './homepage.repository.js';
 
 function heroSlide(overrides: Partial<HomepageHeroSlideRecord> = {}): HomepageHeroSlideRecord {
   return {
@@ -189,7 +198,7 @@ describe('toPublicHomepageHighlightDto', () => {
   };
 
   it('maps game + display item into the provider-neutral homepage shape', () => {
-    const dto = toPublicHomepageHighlightDto(game(), item);
+    const dto = toPublicHomepageHighlightDto(game(), item, 'AUTOMATIC');
     expect(dto).toEqual({
       gameId: 'game-1',
       title: 'Eagles vs. Patriots',
@@ -215,10 +224,126 @@ describe('toPublicHomepageHighlightDto', () => {
         secondaryColor: '#ffffff',
       },
       gameDate: '2026-08-22T23:00:00.000Z',
+      homepageSelection: 'AUTOMATIC',
     });
   });
 
+  it('tags a curated placement item with homepageSelection: CURATED', () => {
+    const dto = toPublicHomepageHighlightDto(game(), item, 'CURATED');
+    expect(dto.homepageSelection).toBe('CURATED');
+  });
+
   it('throws if ever given a GLOBAL item (never surfaced on the homepage)', () => {
-    expect(() => toPublicHomepageHighlightDto(game(), { ...item, mediaType: 'GLOBAL' })).toThrow();
+    expect(() =>
+      toPublicHomepageHighlightDto(game(), { ...item, mediaType: 'GLOBAL' }, 'AUTOMATIC'),
+    ).toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// M37A: admin highlight curation DTOs
+// ---------------------------------------------------------------------------
+
+function highlightPlacement(
+  overrides: Partial<HomepageHighlightPlacementRecord> = {},
+): HomepageHighlightPlacementRecord {
+  return {
+    id: 'placement-1',
+    sourceType: 'GAME_HIGHLIGHT',
+    sourceId: 'highlight-1',
+    gameId: 'game-1',
+    position: 0,
+    createdAt: new Date('2026-08-27T00:00:00.000Z'),
+    updatedAt: new Date('2026-08-27T00:00:00.000Z'),
+    ...overrides,
+  };
+}
+
+describe('toAdminHomepageHighlightDto', () => {
+  it('maps placement + game + preview into the admin shape', () => {
+    const preview = { title: 'A great catch', thumbnailUrl: 'https://example.test/thumb.jpg' };
+    const dto = toAdminHomepageHighlightDto(highlightPlacement(), game(), preview);
+    expect(dto).toEqual({
+      id: 'placement-1',
+      position: 0,
+      sourceType: 'GAME_HIGHLIGHT',
+      sourceId: 'highlight-1',
+      gameId: 'game-1',
+      matchup: {
+        awayTeam: {
+          id: 'team-away',
+          fullName: 'PHI Team',
+          abbreviation: 'PHI',
+          logoUrl: null,
+          primaryColor: '#000000',
+          secondaryColor: '#ffffff',
+        },
+        homeTeam: {
+          id: 'team-home',
+          fullName: 'NE Team',
+          abbreviation: 'NE',
+          logoUrl: null,
+          primaryColor: '#000000',
+          secondaryColor: '#ffffff',
+        },
+      },
+      gameDate: '2026-08-22T23:00:00.000Z',
+      preview,
+      createdAt: '2026-08-27T00:00:00.000Z',
+      updatedAt: '2026-08-27T00:00:00.000Z',
+    });
+  });
+
+  it('reports a null preview when the underlying media item is stale/deleted', () => {
+    const dto = toAdminHomepageHighlightDto(highlightPlacement(), game(), null);
+    expect(dto.preview).toBeNull();
+  });
+});
+
+describe('toHomepageHighlightCandidateDto', () => {
+  function candidate(
+    overrides: Partial<HomepageHighlightCandidateRecord> = {},
+  ): HomepageHighlightCandidateRecord {
+    return {
+      sourceType: 'CURATED_GAME_VIDEO',
+      sourceId: 'video-1',
+      gameId: 'game-1',
+      title: 'Curated clip',
+      thumbnailUrl: 'https://example.test/clip.jpg',
+      game: game(),
+      ...overrides,
+    };
+  }
+
+  it('maps a candidate record into the admin candidate shape, carrying isSelected through', () => {
+    const dto = toHomepageHighlightCandidateDto(candidate(), true);
+    expect(dto).toEqual({
+      sourceType: 'CURATED_GAME_VIDEO',
+      sourceId: 'video-1',
+      gameId: 'game-1',
+      matchup: {
+        awayTeam: expect.objectContaining({ id: 'team-away' }) as unknown,
+        homeTeam: expect.objectContaining({ id: 'team-home' }) as unknown,
+      },
+      title: 'Curated clip',
+      thumbnailUrl: 'https://example.test/clip.jpg',
+      gameDate: '2026-08-22T23:00:00.000Z',
+      isSelected: true,
+    });
+  });
+
+  it('reports isSelected: false when not currently placed', () => {
+    const dto = toHomepageHighlightCandidateDto(candidate(), false);
+    expect(dto.isSelected).toBe(false);
+  });
+});
+
+describe('toHomepageHighlightSettingsDto', () => {
+  it('maps a settings record 1:1', () => {
+    const settings: HomepageHighlightSettingsRecord = { displayLimit: 7, fillWithAutomatic: false };
+    expect(toHomepageHighlightSettingsDto(settings)).toEqual({
+      displayLimit: 7,
+      fillWithAutomatic: false,
+    });
   });
 });
