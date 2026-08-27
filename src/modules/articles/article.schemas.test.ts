@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { articleCreateSchema, articleUpdateSchema } from './article.schemas.js';
+import {
+  articleCreateSchema,
+  articleUpdateSchema,
+  publicArticleListQuerySchema,
+} from './article.schemas.js';
 
 function originalInput() {
   return {
@@ -65,5 +69,63 @@ describe('article boundary schemas', () => {
     expect(articleUpdateSchema.safeParse({ expectedVersion: 1, title: 'Changed' }).success).toBe(
       true,
     );
+  });
+
+  it('defaults contentType and mediaThumbnailUrl on create without polluting partial updates', () => {
+    const created = articleCreateSchema.parse(originalInput());
+    expect(created.contentType).toBe('ARTICLE');
+    expect(created.mediaThumbnailUrl).toBeNull();
+
+    const video = articleCreateSchema.parse({
+      ...originalInput(),
+      contentType: 'VIDEO',
+      mediaThumbnailUrl: 'https://example.com/thumb.jpg',
+    });
+    expect(video.contentType).toBe('VIDEO');
+    expect(video.mediaThumbnailUrl).toBe('https://example.com/thumb.jpg');
+
+    expect(
+      articleCreateSchema.safeParse({ ...originalInput(), contentType: 'PODCAST' }).success,
+    ).toBe(false);
+
+    const emptyUpdate = articleUpdateSchema.safeParse({ expectedVersion: 1 });
+    expect(emptyUpdate.success).toBe(false);
+    const contentTypeUpdate = articleUpdateSchema.parse({
+      expectedVersion: 1,
+      contentType: 'HIGHLIGHT',
+    });
+    expect(contentTypeUpdate.contentType).toBe('HIGHLIGHT');
+    expect('mediaThumbnailUrl' in contentTypeUpdate).toBe(false);
+  });
+
+  it('accepts an optional public contentType filter', () => {
+    expect(publicArticleListQuerySchema.parse({}).contentType).toBeUndefined();
+    expect(publicArticleListQuerySchema.parse({ contentType: 'HIGHLIGHT' }).contentType).toBe(
+      'HIGHLIGHT',
+    );
+    expect(publicArticleListQuerySchema.safeParse({ contentType: 'PODCAST' }).success).toBe(false);
+  });
+
+  it('defaults sourceIsOfficialTeam to false on create without polluting partial updates', () => {
+    const created = articleCreateSchema.parse(originalInput());
+    expect(created.sourceIsOfficialTeam).toBe(false);
+
+    const official = articleCreateSchema.parse({
+      ...originalInput(),
+      sourceIsOfficialTeam: true,
+    });
+    expect(official.sourceIsOfficialTeam).toBe(true);
+
+    const emptyUpdate = articleUpdateSchema.safeParse({ expectedVersion: 1 });
+    expect(emptyUpdate.success).toBe(false);
+    const officialUpdate = articleUpdateSchema.parse({
+      expectedVersion: 1,
+      sourceIsOfficialTeam: true,
+    });
+    expect(officialUpdate.sourceIsOfficialTeam).toBe(true);
+    // Omitting the field on a partial update must leave it truly absent, not
+    // silently reset to a default -- the same pitfall that hit `contentType`.
+    const untouchedUpdate = articleUpdateSchema.parse({ expectedVersion: 1, title: 'Changed' });
+    expect('sourceIsOfficialTeam' in untouchedUpdate).toBe(false);
   });
 });

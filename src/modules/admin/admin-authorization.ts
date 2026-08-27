@@ -25,7 +25,16 @@ export type AdministrativeCapability =
   | 'RUN_NEWS_INGESTION'
   | 'VIEW_NEWS_CANDIDATES'
   | 'REVIEW_NEWS_CANDIDATES'
-  | 'CONVERT_NEWS_CANDIDATE';
+  | 'CONVERT_NEWS_CANDIDATE'
+  | 'MANAGE_PREDICTIONS'
+  | 'VIEW_GAME_PLAYS_DIAGNOSTIC'
+  | 'REPAIR_GAME_PLAYS'
+  | 'VIEW_DATA_HEALTH'
+  | 'PROBE_GAME_DATA'
+  | 'VIEW_GAME_MEDIA'
+  | 'MANAGE_GAME_MEDIA'
+  | 'VIEW_HOMEPAGE_CMS'
+  | 'MANAGE_HOMEPAGE_CMS';
 
 export interface AdministrativePrincipal {
   readonly userId: string;
@@ -56,6 +65,12 @@ const capabilitiesByRole: Readonly<Record<UserRole, ReadonlySet<AdministrativeCa
     'VIEW_NEWS_CANDIDATES',
     'REVIEW_NEWS_CANDIDATES',
     'CONVERT_NEWS_CANDIDATE',
+    'MANAGE_PREDICTIONS',
+    'VIEW_GAME_PLAYS_DIAGNOSTIC',
+    'VIEW_DATA_HEALTH',
+    'VIEW_GAME_MEDIA',
+    'VIEW_HOMEPAGE_CMS',
+    'MANAGE_HOMEPAGE_CMS',
   ]),
   ADMIN: new Set([
     'VIEW_SCHEDULE',
@@ -79,6 +94,15 @@ const capabilitiesByRole: Readonly<Record<UserRole, ReadonlySet<AdministrativeCa
     'VIEW_NEWS_CANDIDATES',
     'REVIEW_NEWS_CANDIDATES',
     'CONVERT_NEWS_CANDIDATE',
+    'MANAGE_PREDICTIONS',
+    'VIEW_GAME_PLAYS_DIAGNOSTIC',
+    'REPAIR_GAME_PLAYS',
+    'VIEW_DATA_HEALTH',
+    'PROBE_GAME_DATA',
+    'VIEW_GAME_MEDIA',
+    'MANAGE_GAME_MEDIA',
+    'VIEW_HOMEPAGE_CMS',
+    'MANAGE_HOMEPAGE_CMS',
   ]),
 };
 

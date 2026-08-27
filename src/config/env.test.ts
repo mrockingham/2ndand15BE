@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { EnvironmentValidationError, loadConfig, loadHighlightlyEvaluationConfig } from './env.js';
+import {
+  EnvironmentValidationError,
+  loadConfig,
+  loadCurrentGameSyncConfig,
+  loadHighlightlyEvaluationConfig,
+} from './env.js';
 
 const requiredEnvironment = {
   DATABASE_URL: 'postgresql://test:test@localhost:5432/test?schema=public',
@@ -50,6 +55,13 @@ describe('loadConfig', () => {
         provider: 'development',
         logResetUrl: false,
       },
+      editorialAi: {
+        provider: 'none',
+        apiKey: null,
+        model: null,
+        baseUrl: 'https://api.openai.com/v1',
+        timeoutMs: 30_000,
+      },
       sports: {
         provider: 'mock',
         currentNflSeason: 2026,
@@ -65,7 +77,28 @@ describe('loadConfig', () => {
           storeLogoUrls: false,
         },
       },
+      newsIngestion: {
+        initialLookbackHours: 72,
+        initialMaxItemsPerSource: 25,
+        lateItemToleranceHours: 48,
+      },
+      gameMediaCuration: {
+        embedAllowedHosts: [
+          'youtube.com',
+          'www.youtube.com',
+          'youtube-nocookie.com',
+          'www.youtube-nocookie.com',
+        ],
+      },
     });
+  });
+
+  it('disables the game-curated-video embed allowlist when explicitly set empty', () => {
+    const config = loadConfig({
+      ...requiredEnvironment,
+      GAME_CURATED_VIDEO_EMBED_HOST_ALLOWLIST: '',
+    });
+    expect(config.gameMediaCuration.embedAllowedHosts).toBeNull();
   });
 
   it('parses a comma-separated CORS allowlist', () => {
@@ -193,6 +226,25 @@ describe('loadConfig', () => {
       }),
     ).toThrow(EnvironmentValidationError);
   });
+
+  it('keeps editorial AI optional and requires both key and explicit model when enabled', () => {
+    expect(() => loadConfig({ ...requiredEnvironment, EDITORIAL_AI_PROVIDER: 'openai' })).toThrow(
+      EnvironmentValidationError,
+    );
+    const config = loadConfig({
+      ...requiredEnvironment,
+      EDITORIAL_AI_PROVIDER: 'openai',
+      OPENAI_API_KEY: 'private-editorial-key',
+      OPENAI_EDITORIAL_MODEL: 'configured-model',
+    });
+    expect(config.editorialAi).toEqual({
+      provider: 'openai',
+      apiKey: 'private-editorial-key',
+      model: 'configured-model',
+      baseUrl: 'https://api.openai.com/v1',
+      timeoutMs: 30_000,
+    });
+  });
 });
 
 describe('loadHighlightlyEvaluationConfig', () => {
@@ -230,5 +282,77 @@ describe('loadHighlightlyEvaluationConfig', () => {
         CURRENT_NFL_SEASON: '2026',
       }).evaluationSeason,
     ).toBe(2026);
+  });
+});
+
+describe('loadCurrentGameSyncConfig', () => {
+  it('loads explicit Highlightly evaluation-mode synchronization settings', () => {
+    expect(
+      loadCurrentGameSyncConfig({
+        DATABASE_URL: requiredEnvironment.DATABASE_URL,
+        CURRENT_GAME_PROVIDER: 'highlightly',
+        HIGHLIGHTLY_EVALUATION_MODE: 'true',
+        HIGHLIGHTLY_PUBLICATION_APPROVED: 'false',
+        HIGHLIGHTLY_API_KEY: 'private-test-key',
+      }),
+    ).toMatchObject({
+      nodeEnv: 'development',
+      currentGame: {
+        provider: 'highlightly',
+        evaluationMode: true,
+        publicationApproved: false,
+      },
+    });
+  });
+
+  it('defaults the embed-host allowlist to the known YouTube hosts', () => {
+    expect(
+      loadCurrentGameSyncConfig({
+        DATABASE_URL: requiredEnvironment.DATABASE_URL,
+        CURRENT_GAME_PROVIDER: 'highlightly',
+        HIGHLIGHTLY_EVALUATION_MODE: 'true',
+        HIGHLIGHTLY_API_KEY: 'private-test-key',
+      }).currentGame.embedAllowedHosts,
+    ).toEqual([
+      'youtube.com',
+      'www.youtube.com',
+      'youtube-nocookie.com',
+      'www.youtube-nocookie.com',
+    ]);
+  });
+
+  it('defaults embed playback to disabled', () => {
+    expect(
+      loadCurrentGameSyncConfig({
+        DATABASE_URL: requiredEnvironment.DATABASE_URL,
+        CURRENT_GAME_PROVIDER: 'highlightly',
+        HIGHLIGHTLY_EVALUATION_MODE: 'true',
+        HIGHLIGHTLY_API_KEY: 'private-test-key',
+      }).currentGame.embedPlaybackEnabled,
+    ).toBe(false);
+  });
+
+  it('disables the embed-host allowlist when explicitly set empty', () => {
+    expect(
+      loadCurrentGameSyncConfig({
+        DATABASE_URL: requiredEnvironment.DATABASE_URL,
+        CURRENT_GAME_PROVIDER: 'highlightly',
+        HIGHLIGHTLY_EVALUATION_MODE: 'true',
+        HIGHLIGHTLY_API_KEY: 'private-test-key',
+        HIGHLIGHTLY_EMBED_HOST_ALLOWLIST: '',
+      }).currentGame.embedAllowedHosts,
+    ).toBeNull();
+  });
+
+  it('rejects configuration without an explicit permitted usage mode', () => {
+    expect(() =>
+      loadCurrentGameSyncConfig({
+        DATABASE_URL: requiredEnvironment.DATABASE_URL,
+        CURRENT_GAME_PROVIDER: 'highlightly',
+        HIGHLIGHTLY_EVALUATION_MODE: 'false',
+        HIGHLIGHTLY_PUBLICATION_APPROVED: 'false',
+        HIGHLIGHTLY_API_KEY: 'private-test-key',
+      }),
+    ).toThrow(EnvironmentValidationError);
   });
 });

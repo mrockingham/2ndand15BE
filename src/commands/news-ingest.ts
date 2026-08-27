@@ -3,17 +3,21 @@ import 'dotenv/config';
 import { randomUUID } from 'node:crypto';
 
 import { createPrismaClient } from '../common/database/prisma.js';
-import { loadDatabaseConfig } from '../config/env.js';
+import { loadNewsIngestionConfig } from '../config/env.js';
 import type { AdministrativePrincipal } from '../modules/admin/admin-authorization.js';
 import { SafeFeedClient } from '../modules/news-inbox/feed-client.js';
 import { PrismaNewsInboxRepository } from '../modules/news-inbox/news.repository.js';
 import { NewsInboxService } from '../modules/news-inbox/news.service.js';
 
-const MAXIMUM_BULK_SOURCES = 5;
+// M30D: raised from the original 5 to comfortably cover Wave 1 (10 official-team
+// sources) plus headroom for the next wave, while still keeping `--all` a bounded,
+// single explicit run rather than an unbounded background sweep.
+const MAXIMUM_BULK_SOURCES = 20;
 
 async function main(): Promise<void> {
   const arguments_ = parseArguments(process.argv.slice(2));
-  const prisma = createPrismaClient(loadDatabaseConfig().databaseUrl);
+  const config = loadNewsIngestionConfig();
+  const prisma = createPrismaClient(config.databaseUrl);
   try {
     const user = await prisma.user.findUnique({
       where: { normalizedEmail: arguments_.actorEmail.toLowerCase() },
@@ -28,7 +32,11 @@ async function main(): Promise<void> {
       role: user.role,
     };
     const repository = new PrismaNewsInboxRepository(prisma);
-    const service = new NewsInboxService(repository, new SafeFeedClient());
+    const service = new NewsInboxService(
+      repository,
+      new SafeFeedClient(),
+      config.newsIngestion,
+    );
     const sources = arguments_.all
       ? await listBoundedActiveSources(repository)
       : [await requireSource(repository, arguments_.sourceSlug)];

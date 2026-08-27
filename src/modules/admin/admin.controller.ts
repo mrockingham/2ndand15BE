@@ -6,9 +6,13 @@ import {
   adminGameIdParamsSchema,
   adminGameListQuerySchema,
   auditListQuerySchema,
+  gameFeaturedInputSchema,
   gameOverrideInputSchema,
+  gameResultFallbackInputSchema,
   manualGameCreateSchema,
   manualGameUpdateSchema,
+  playsReviewQueueQuerySchema,
+  repairGamePlaysInputSchema,
   scheduleImportRequestSchema,
   verificationInputSchema,
 } from './admin.schemas.js';
@@ -20,11 +24,16 @@ export interface AdminController {
   readonly createGame: RequestHandler;
   readonly updateGame: RequestHandler;
   readonly upsertOverride: RequestHandler;
+  readonly upsertResultFallback: RequestHandler;
   readonly deleteOverride: RequestHandler;
+  readonly setFeatured: RequestHandler;
   readonly verifyGame: RequestHandler;
   readonly validateImport: RequestHandler;
   readonly importSchedule: RequestHandler;
   readonly listAuditEvents: RequestHandler;
+  readonly getPlaysDiagnostic: RequestHandler;
+  readonly repairGamePlays: RequestHandler;
+  readonly listPlaysReviewQueue: RequestHandler;
 }
 
 export function createAdminController(service: AdministrativeScheduleService): AdminController {
@@ -68,11 +77,35 @@ export function createAdminController(service: AdministrativeScheduleService): A
         ),
       });
     },
+    upsertResultFallback: async (request, response) => {
+      const { gameId } = parseOrThrow(adminGameIdParamsSchema, request.params, 'path parameters');
+      const input = parseOrThrow(gameResultFallbackInputSchema, request.body, 'request body');
+      response.status(200).json({
+        data: await service.upsertResultFallback(
+          gameId,
+          input,
+          requirePrincipal(request.admin),
+          requestId(request),
+        ),
+      });
+    },
     deleteOverride: async (request, response) => {
       const { gameId } = parseOrThrow(adminGameIdParamsSchema, request.params, 'path parameters');
       response.status(200).json({
         data: await service.deleteOverride(
           gameId,
+          requirePrincipal(request.admin),
+          requestId(request),
+        ),
+      });
+    },
+    setFeatured: async (request, response) => {
+      const { gameId } = parseOrThrow(adminGameIdParamsSchema, request.params, 'path parameters');
+      const input = parseOrThrow(gameFeaturedInputSchema, request.body, 'request body');
+      response.status(200).json({
+        data: await service.setFeatured(
+          gameId,
+          input,
           requirePrincipal(request.admin),
           requestId(request),
         ),
@@ -114,6 +147,35 @@ export function createAdminController(service: AdministrativeScheduleService): A
       const query = parseOrThrow(auditListQuerySchema, request.query, 'query parameters');
       const result = await service.listAuditEvents(query, requirePrincipal(request.admin));
       response.status(200).json({ data: result.events, meta: { nextCursor: result.nextCursor } });
+    },
+    getPlaysDiagnostic: async (request, response) => {
+      const { gameId } = parseOrThrow(adminGameIdParamsSchema, request.params, 'path parameters');
+      response.status(200).json({
+        data: await service.getPlaysDiagnostic(gameId, requirePrincipal(request.admin)),
+      });
+    },
+    repairGamePlays: async (request, response) => {
+      const { gameId } = parseOrThrow(adminGameIdParamsSchema, request.params, 'path parameters');
+      const input = parseOrThrow(repairGamePlaysInputSchema, request.body, 'request body');
+      response.status(200).json({
+        data: await service.repairGamePlays(
+          gameId,
+          input,
+          requirePrincipal(request.admin),
+          requestId(request),
+        ),
+      });
+    },
+    listPlaysReviewQueue: async (request, response) => {
+      const query = parseOrThrow(playsReviewQueueQuerySchema, request.query, 'query parameters');
+      const result = await service.listPlaysReviewQueue(query, requirePrincipal(request.admin));
+      response.status(200).json({
+        data: result.games.map((game) => ({
+          gameId: game.gameId,
+          playsBlockedAt: game.playsBlockedAt?.toISOString() ?? null,
+          playsBlockReason: game.playsBlockReason,
+        })),
+      });
     },
   };
 }

@@ -48,6 +48,13 @@ export function createTestConfig(overrides: Partial<AppConfig> = {}): AppConfig 
       provider: 'development',
       logResetUrl: false,
     },
+    editorialAi: {
+      provider: 'none',
+      apiKey: null,
+      model: null,
+      baseUrl: 'https://api.openai.com/v1',
+      timeoutMs: 30_000,
+    },
     sports: {
       provider: 'mock',
       currentNflSeason: 2026,
@@ -62,6 +69,14 @@ export function createTestConfig(overrides: Partial<AppConfig> = {}): AppConfig 
         syncSeasonType: null,
         storeLogoUrls: false,
       },
+    },
+    newsIngestion: {
+      initialLookbackHours: 72,
+      initialMaxItemsPerSource: 25,
+      lateItemToleranceHours: 48,
+    },
+    gameMediaCuration: {
+      embedAllowedHosts: ['youtube.com', 'www.youtube.com', 'youtube-nocookie.com'],
     },
     ...overrides,
   };

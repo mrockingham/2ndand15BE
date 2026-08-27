@@ -1,4 +1,5 @@
 import type { Prisma } from '../../generated/prisma/client.js';
+import { formatGameClock } from './game-clock.js';
 
 export const publicGameInclude = {
   homeTeam: true,
@@ -56,10 +57,10 @@ export function toGameDto(game: GameWithTeams): GameDto {
     status: override?.status ?? game.status,
     homeTeam: toTeamSummary(game.homeTeam),
     awayTeam: toTeamSummary(game.awayTeam),
-    homeScore: game.homeScore,
-    awayScore: game.awayScore,
+    homeScore: override?.homeScore ?? game.homeScore,
+    awayScore: override?.awayScore ?? game.awayScore,
     quarter: game.quarter,
-    clock: game.clock,
+    clock: formatGameClock(game.clock),
     venue: {
       name: override?.venueName ?? game.venueName,
       city: override?.venueCity ?? game.venueCity,
@@ -69,7 +70,7 @@ export function toGameDto(game: GameWithTeams): GameDto {
   };
 }
 
-function toTeamSummary(team: GameWithTeams['homeTeam']): GameTeamSummaryDto {
+export function toTeamSummary(team: GameWithTeams['homeTeam']): GameTeamSummaryDto {
   return {
     id: team.id,
     fullName: team.fullName,

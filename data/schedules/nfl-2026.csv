@@ -1,4 +1,5 @@
 season,seasonType,week,startTime,awayTeam,homeTeam,status,venueName,venueCity,broadcastNetwork,isNeutralSite,sourceName,sourceType,sourceUrl,externalReference,notes
+2026,PRE,,2026-08-07T00:00:00Z,CAR,ARI,SCHEDULED,Tom Benson Hall of Fame Stadium,"Canton, Ohio",NBC,true,NFL.com 2026 Schedule,OFFICIAL_WEB,https://www.nfl.com/schedules/2026/by-week/hall-of-fame-game,nfl-2026-pre-wnone-car-ari,Hall of Fame Game; NFL source identity is PRE 0 and designates Arizona as home; internal week is null because the established database constraint permits only weeks 1-22 or null.
 2026,PRE,1,2026-08-13T23:00:00Z,DET,CIN,SCHEDULED,,,,false,NFL.com 2026 Schedule,OFFICIAL_WEB,https://www.nfl.com/schedules/2026/by-week/preseason-week-1,nfl-2026-pre-w01-det-cin,
 2026,PRE,1,2026-08-13T23:00:00Z,GB,PIT,SCHEDULED,,,NFL Network,false,NFL.com 2026 Schedule,OFFICIAL_WEB,https://www.nfl.com/schedules/2026/by-week/preseason-week-1,nfl-2026-pre-w01-gb-pit,
 2026,PRE,1,2026-08-13T23:30:00Z,IND,NE,SCHEDULED,,,,false,NFL.com 2026 Schedule,OFFICIAL_WEB,https://www.nfl.com/schedules/2026/by-week/preseason-week-1,nfl-2026-pre-w01-ind-ne,

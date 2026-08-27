@@ -22,6 +22,9 @@ Keep the current milestone small. Do not implement future product ideas merely b
 - Internal `Game.id` values are public game keys; provider game IDs belong only in `GameProviderMapping`.
 - Internal `Player.id` values are public player keys; provider/site player IDs belong only in `PlayerExternalIdentifier` and names must never be used as identity.
 - Public player/stat requests query PostgreSQL only. They must never download nflverse files or expose external IDs, raw rows, checksums, paths, actors, or conflict metadata.
+- Public Team Hub roster membership means at least one stored weekly roster row for the selected internal team and historical season. It must never be presented as full-season, final, or current 2026 membership; historical and latest-known teams remain separately labeled.
+- Public Stats Hub metric IDs must resolve through the versioned registry; never accept a client-supplied database column or SQL identifier.
+- A team-filtered season leaderboard aggregates only statistics recorded for that team and must never label a traded player’s full-season total as one team’s production.
 - Historical missing statistics remain null and distinct from factual zero values.
 - Public game fields resolve editorial overrides before normalized base values; provider synchronization must never delete or overwrite override rows.
 - Public registration always creates role `USER`; administrative capabilities come from the current persisted role, never request input or stale token claims.
@@ -145,6 +148,7 @@ Lower layers must not import higher layers. Avoid cross-module access to another
 - Test provider normalization against fixture data without network access.
 - Test factual schedule datasets with aggregate invariants plus targeted offset, DST, alias, stable-reference, and international-game samples; do not add one test per row.
 - Test historical data with synthetic Parquet fixtures, missing-versus-zero rules, identity conflicts, team/game mapping, summary aggregation, dry-run no-write behavior, idempotency, schema drift, and public DTO privacy; standard tests must not require live nflverse downloads.
+- Test Stats Hub registry integrity, competition ranks, stable cursor ordering, team splits, season-type separation, null/zero behavior, recent calculations, and public DTO privacy without requiring live providers.
 - Test refresh rotation, revocation, expiration, and reuse behavior once authentication is implemented.
 - Tests must be deterministic: inject or control time, randomness, and IDs when relevant.
 - A bug fix should include a regression test that fails before the fix.

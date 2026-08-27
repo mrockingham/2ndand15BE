@@ -57,6 +57,25 @@ describe('reviewSchedule', () => {
     expect(review.missingBroadcastCount).toBe(1);
   });
 
+  it('does not classify a domestic neutral-site game as international', () => {
+    const review = reviewSchedule([
+      scheduleRow({
+        seasonType: 'PRE',
+        week: null,
+        awayTeam: 'CAR',
+        homeTeam: 'ARI',
+        venueName: 'Tom Benson Hall of Fame Stadium',
+        venueCity: 'Canton, Ohio',
+        isNeutralSite: true,
+        externalReference: 'nfl-2026-pre-wnone-car-ari',
+        notes: 'Hall of Fame Game.',
+      }),
+    ]);
+
+    expect(review.neutralSiteGames).toHaveLength(1);
+    expect(review.internationalGames).toEqual([]);
+  });
+
   it('detects a team appearing twice in the same regular-season week', () => {
     const review = reviewSchedule([
       scheduleRow(),

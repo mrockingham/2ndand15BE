@@ -131,11 +131,32 @@ describe('application middleware', () => {
         '/teams/{teamId}': {
           get: { operationId: 'getTeamById' },
         },
+        '/teams/{teamId}/hub': {
+          get: { operationId: 'getTeamHubOverview' },
+        },
+        '/teams/{teamId}/roster': {
+          get: { operationId: 'getHistoricalTeamRoster' },
+        },
+        '/teams/{teamId}/stat-leaders': {
+          get: { operationId: 'getTeamStatLeaders' },
+        },
         '/games': {
           get: { operationId: 'listGames' },
         },
         '/games/{gameId}': {
           get: { operationId: 'getGameById' },
+        },
+        '/stats/metadata': {
+          get: { operationId: 'getStatsMetadata' },
+        },
+        '/stats/leaders': {
+          get: { operationId: 'getSeasonStatLeaders' },
+        },
+        '/stats/weekly-leaders': {
+          get: { operationId: 'getWeeklyStatLeaders' },
+        },
+        '/stats/recent': {
+          get: { operationId: 'getRecentPlayerPerformance' },
         },
         '/teams/{teamId}/games': {
           get: { operationId: 'listTeamGames' },

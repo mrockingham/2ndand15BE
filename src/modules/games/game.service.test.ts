@@ -13,7 +13,7 @@ function createRepository(overrides: Partial<GameRepository> = {}): GameReposito
   };
 }
 describe('GameService', () => {
-  it('uses the configured current season and a bounded two-week window by default', async () => {
+  it('uses the current season with a seven-day recent and fourteen-day upcoming window by default', async () => {
     const findGames = vi
       .fn<GameRepository['findGames']>()
       .mockResolvedValue({ games: [], nextCursor: null });
@@ -26,11 +26,48 @@ describe('GameService', () => {
     expect(findGames).toHaveBeenCalledWith(
       expect.objectContaining({
         season: 2026,
-        startTime: now,
+        startTime: new Date('2026-07-24T12:00:00.000Z'),
         endTime: new Date('2026-08-14T12:00:00.000Z'),
         limit: 20,
       }),
     );
+  });
+  it('keeps a recent final with a null special-event week eligible for the default list', async () => {
+    const hallOfFameGame = createGameRecord({
+      seasonType: 'PRE',
+      week: null,
+      startTime: new Date('2026-08-07T00:00:00.000Z'),
+      status: 'FINAL',
+      homeScore: 30,
+      awayScore: 33,
+    });
+    const findGames = vi
+      .fn<GameRepository['findGames']>()
+      .mockResolvedValue({ games: [hallOfFameGame], nextCursor: null });
+
+    const result = await new GameService(
+      createRepository({ findGames }),
+      () => new Date('2026-08-09T12:00:00.000Z'),
+      {
+        currentNflSeason: 2026,
+        allowHistoricalDefaultGameResults: false,
+      },
+    ).listGames({ limit: 20 });
+
+    expect(findGames).toHaveBeenCalledWith(
+      expect.objectContaining({
+        season: 2026,
+        startTime: new Date('2026-08-02T12:00:00.000Z'),
+        endTime: new Date('2026-08-23T12:00:00.000Z'),
+      }),
+    );
+    expect(result.games[0]).toMatchObject({
+      seasonType: 'PRE',
+      week: null,
+      status: 'FINAL',
+      homeScore: 30,
+      awayScore: 33,
+    });
   });
   it('preserves an explicitly requested historical season', async () => {
     const findGames = vi

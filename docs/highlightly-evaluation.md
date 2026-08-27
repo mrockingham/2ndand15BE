@@ -52,6 +52,6 @@ Authentication failure, transport exhaustion, rate-limit exhaustion, or malforme
 
 ## Licensing boundary
 
-Highlightly's published terms were last updated July 24, 2026. They say the subscription does not grant a license to publish or redistribute delivered data, does not grant rights to league or team logos and trademarks, and restricts systematic extraction or reuse of a substantial part of the database. The subscription must not be treated as an NFL trademark or content license.
+Re-reviewed August 21, 2026 against terms last updated July 24, 2026. Section 6.1 permits distribution, transfer, storage, and use of API data in applications/products. Direct API resale, sublicensing/redistribution, and proxy/pass-through services require permission; section 6.2 also prohibits systematic extraction for a competing database or service. Sections 6.3-6.4 leave visual/logo permissions with the user.
 
-Written confirmation and, where applicable, rights-holder permission are required before commercial public display, paid-subscription use, caching, long-term storage, derived analytics, AI training, logo display or hosting, play-description republication, play-animation generation, or video-highlight embedding. See `https://highlightly.net/terms/` and obtain legal review before production use.
+The application therefore retains its explicit production-publication approval gate, stores no Highlightly visual assets, exposes no provider identifiers or raw payloads, and does not provide API pass-through access. See `https://highlightly.net/terms/` and [current-season-games/sync-hardening.md](current-season-games/sync-hardening.md).

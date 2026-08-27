@@ -18,15 +18,17 @@ The bounded one-time extraction retained only factual game fields from official 
 
 ## Dataset totals
 
-| Scope                               | Rows |
-| ----------------------------------- | ---: |
-| All represented games               |  320 |
-| Preseason                           |   48 |
-| Regular season                      |  272 |
-| Explicitly represented TBD kickoffs |   24 |
-| Omitted Hall of Fame Game           |    1 |
+| Scope                                | Rows |
+| ------------------------------------ | ---: |
+| All represented games                |  321 |
+| Preseason                            |   49 |
+| Regular season                       |  272 |
+| Explicitly represented TBD kickoffs  |   24 |
+| Hall of Fame Game (`PRE`, null week) |    1 |
 
-Preseason Weeks 1-3 each contain 16 games. The Arizona-Carolina Hall of Fame Game is not forced into Week 1 because the product has no separate documented Hall of Fame week convention.
+Preseason Weeks 1-3 each contain 16 games. The Hall of Fame Game is represented separately as `PRE` with `week = null`. NFL.com's Game Center identifies the source event as `PRE 0`, but the established hosted `games_week_check` permits only weeks 1-22 or null; the milestone's preference order therefore selects null without a schema migration. Carolina is away and Arizona is home, following the NFL schedule and its explicit Arizona home-team designation. The Canton venue is neutral; home/away is not inferred from the venue.
+
+The reviewed static identity is Carolina at Arizona on August 6, 2026 at 8:00 p.m. ET (`2026-08-07T00:00:00Z`), at Tom Benson Hall of Fame Stadium in Canton, Ohio, on NBC. Its initial stored state is `SCHEDULED` with null scores. Results and current-game state remain a separate provider-update concern.
 
 Regular-season counts:
 
@@ -100,7 +102,7 @@ NFL.com publishes matchups but no kickoff timestamp for:
 
 ESPN agrees that all 24 are TBD. These rows use CSV `TBD`, nullable PostgreSQL `Game.startTime`, and public `startTime: null`. They retain week/team identity, official provenance, stable external reference, and a review note so an editor can assign and verify the kickoff later. No source disagreement affects team identity or any concrete kickoff.
 
-The explicit-TBD policy removed the only material blocker. The Hall of Fame Game remains the sole documented omission because no clean product week convention exists.
+The explicit-TBD policy preserves the 24 unresolved kickoffs. Milestone 22A resolved the former Hall of Fame omission through the explicit null-week convention without adding a season type or changing the Prisma schema.
 
 ## Import and hosted database results
 
@@ -108,6 +110,21 @@ The explicit-TBD policy removed the only material blocker. The Hall of Fame Game
 - First write: `received=320`, `created=320`, `updated=0`, `skipped=0`, `warnings=0`, `failed=0`
 - Identical second write: `received=320`, `created=0`, `updated=0`, `skipped=320`, `warnings=0`, `failed=0`
 - Stable official-reference/game-ID digest after both writes: `7ad09eda0cc863204e8e780f3fa0b5664a64d1736aea5e3467a8b457b613e1cd`
+
+The figures above are the original Milestone 11 baseline import. Milestone 22A subsequently added the one reviewed Hall of Fame row through the same importer; its hosted dry-run/write/idempotency results are recorded below after verification.
+
+### Milestone 22A Hall of Fame addendum
+
+- Before: 2,023 total games; 329 games in 2026; no 2026 CAR/ARI game
+- Bounded dry run: `received=1`, `created=1`, `updated=0`, `skipped=0`, `warnings=0`, `failed=0`
+- First write: `received=1`, `created=1`, `updated=0`, `skipped=0`, `warnings=0`, `failed=0`
+- Identical second write: `received=1`, `created=0`, `updated=0`, `skipped=1`, `warnings=0`, `failed=0`
+- After: 2,024 total games; 330 games in 2026; exactly one 2026 preseason CAR/ARI game
+- Internal game ID: `0768c441-16a6-457c-b50f-e7273d750d77`
+- Provider mappings remained 1,958; no provider identity was invented
+- Team, historical player/stat, article, and news-candidate counts were unchanged
+
+All six public verification reads returned HTTP 200. Game detail, the preseason listing, both team-game listings, and both Team Hubs contained the internal game exactly once. The public DTO preserved `week: null`, `SCHEDULED`, null scores, Arizona home, Carolina away, the Canton venue, NBC, and `isNeutralSite: true` without exposing provenance or provider identifiers.
 
 Sanitized preservation counts:
 
@@ -147,7 +164,7 @@ Total games increased from 266 to 586 and provenance rows from 266 to 586, exact
 - [x] Canonical teams, aliases, identities, and team-week conflicts reviewed
 - [x] International games and DST samples reviewed
 - [x] Optional unknown venue/broadcast values left null
-- [x] Hall of Fame omission documented
+- [x] Hall of Fame Game represented as `PRE` with a null week
 - [x] Fictional 2099 fixture isolation documented and preserved
 - [x] Explicitly represent 24 official TBD kickoffs without fake times
 - [x] Reach 272 regular-season games and one bye / 17 games per team

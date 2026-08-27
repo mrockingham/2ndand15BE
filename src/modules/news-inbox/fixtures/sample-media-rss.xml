@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:media="http://search.yahoo.com/mrss/">
+  <channel>
+    <title>Development Fictional Team Videos</title>
+    <link>https://video.example.com/</link>
+    <description>Fictional local test feed for VIDEO/HIGHLIGHT candidate parsing (M30A)</description>
+    <item>
+      <guid isPermaLink="false">fictional-media-1</guid>
+      <title><![CDATA[Fictional Coach Postgame Press Conference | Week 1]]></title>
+      <link>https://video.example.com/video/fictional-coach-postgame-press-conference-week-1</link>
+      <description><![CDATA[HC addresses the media following the fictional Week 1 matchup.]]></description>
+      <pubDate>Sun, 01 Aug 2026 05:38:31 GMT</pubDate>
+      <media:content url="https://static.example.com/image/fictional-thumb-1.jpg" />
+      <enclosure url="https://static.example.com/image/fictional-thumb-1.jpg" length="0" type="image/jpeg"></enclosure>
+    </item>
+    <item>
+      <guid isPermaLink="false">fictional-media-2</guid>
+      <title><![CDATA[HIGHLIGHT: Fictional Player Intercepts Pass]]></title>
+      <link>https://video.example.com/video/highlight-fictional-player-intercepts-pass</link>
+      <description><![CDATA[Fictional S intercepts a pass in the end zone.]]></description>
+      <pubDate>Sun, 01 Aug 2026 04:20:00 GMT</pubDate>
+      <media:content url="https://static.example.com/image/fictional-thumb-2.jpg" />
+    </item>
+    <item>
+      <guid isPermaLink="false">fictional-media-3</guid>
+      <title><![CDATA[Fictional item with a real (non-image) enclosure]]></title>
+      <link>https://video.example.com/video/fictional-item-with-real-enclosure</link>
+      <description><![CDATA[Enclosure here is explicitly a video file, not a thumbnail, and must never be captured as thumbnailUrl.]]></description>
+      <pubDate>Sun, 01 Aug 2026 03:00:00 GMT</pubDate>
+      <enclosure url="https://static.example.com/video/fictional-clip.mp4" length="1048576" type="video/mp4"></enclosure>
+    </item>
+    <item>
+      <guid isPermaLink="false">fictional-media-4</guid>
+      <title><![CDATA[Fictional video item with no media metadata at all]]></title>
+      <link>https://video.example.com/video/fictional-item-no-media</link>
+      <description><![CDATA[No enclosure or media:content anywhere in this item.]]></description>
+      <pubDate>Sun, 01 Aug 2026 02:00:00 GMT</pubDate>
+    </item>
+  </channel>
+</rss>

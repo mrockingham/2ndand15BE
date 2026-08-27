@@ -1,11 +1,13 @@
 import type {
   GameSourceType,
   GameStatus,
+  CurrentGameTeamStat,
   Prisma,
   PrismaClient,
   SeasonType,
   UserRole,
 } from '../../generated/prisma/client.js';
+import type { AuditActor } from '../../common/audit/audit-actor.js';
 import type {
   AdministrativeIdentityReader,
   AdministrativePrincipal,
@@ -15,17 +17,15 @@ import { sanitizeAuditSnapshot } from './audit-sanitizer.js';
 import type {
   AdminGameListQuery,
   AuditListQuery,
+  GameFeaturedInput,
   GameOverrideInput,
+  GameResultFallbackInput,
   ManualGameCreateInput,
   ManualGameUpdateInput,
   VerificationInput,
 } from './admin.schemas.js';
 
-export interface AuditActor {
-  readonly userId: string | null;
-  readonly emailSnapshot: string;
-  readonly requestId: string | null;
-}
+export type { AuditActor } from '../../common/audit/audit-actor.js';
 
 export interface ImportGameWrite {
   readonly season: number;
@@ -83,7 +83,20 @@ export interface AdminRepository extends AdministrativeIdentityReader {
     input: GameOverrideInput,
     actor: AuditActor,
   ): Promise<AdminGameRecord>;
+  upsertResultFallback(
+    gameId: string,
+    input: GameResultFallbackInput,
+    actor: AuditActor,
+    now: Date,
+  ): Promise<AdminGameRecord>;
+  findCurrentTeamStats(gameId: string): Promise<readonly CurrentGameTeamStat[]>;
   deleteOverride(gameId: string, actor: AuditActor): Promise<AdminGameRecord>;
+  setFeatured(
+    gameId: string,
+    input: GameFeaturedInput,
+    actor: AuditActor,
+    now: Date,
+  ): Promise<AdminGameRecord>;
   verifyGame(
     gameId: string,
     input: VerificationInput,
@@ -107,6 +120,13 @@ export interface AdminRepository extends AdministrativeIdentityReader {
     role: UserRole,
     actor: AuditActor,
   ): Promise<{ id: string; email: string; previousRole: UserRole; role: UserRole } | null>;
+  listPlaysReviewRequired(limit: number): Promise<
+    readonly {
+      readonly gameId: string;
+      readonly playsBlockedAt: Date | null;
+      readonly playsBlockReason: string | null;
+    }[]
+  >;
 }
 
 export class PrismaAdminRepository implements AdminRepository {
@@ -301,6 +321,71 @@ export class PrismaAdminRepository implements AdminRepository {
     });
   }
 
+  upsertResultFallback(
+    gameId: string,
+    input: GameResultFallbackInput,
+    actor: AuditActor,
+    now: Date,
+  ): Promise<AdminGameRecord> {
+    return this.prisma.$transaction(async (transaction) => {
+      const before = await transaction.game.findUniqueOrThrow({
+        where: { id: gameId },
+        include: adminGameInclude,
+      });
+      const data = {
+        status: input.status,
+        homeScore: input.homeScore,
+        awayScore: input.awayScore,
+        resultSourceName: input.sourceName,
+        resultSourceUrl: input.sourceUrl ?? null,
+        resultVerifiedAt: now,
+        resultReason: input.reason,
+        internalNote: input.internalNote ?? null,
+        publicCorrectionNote: input.publicCorrectionNote ?? null,
+      } as const;
+      await transaction.gameEditorialOverride.upsert({
+        where: { gameId },
+        create: {
+          gameId,
+          ...data,
+          createdById: actor.userId,
+          updatedById: actor.userId,
+          createdBySnapshot: actor.emailSnapshot,
+          updatedBySnapshot: actor.emailSnapshot,
+        },
+        update: {
+          ...data,
+          updatedById: actor.userId,
+          updatedBySnapshot: actor.emailSnapshot,
+        },
+      });
+      const after = await transaction.game.findUniqueOrThrow({
+        where: { id: gameId },
+        include: adminGameInclude,
+      });
+      await createAudit(
+        transaction,
+        actor,
+        before.editorialOverride?.resultVerifiedAt === null || before.editorialOverride === null
+          ? 'GAME_RESULT_FALLBACK_CREATED'
+          : 'GAME_RESULT_FALLBACK_UPDATED',
+        'GAME',
+        gameId,
+        before,
+        after,
+        input.reason,
+      );
+      return after;
+    });
+  }
+
+  findCurrentTeamStats(gameId: string): Promise<readonly CurrentGameTeamStat[]> {
+    return this.prisma.currentGameTeamStat.findMany({
+      where: { gameId },
+      orderBy: { isHome: 'desc' },
+    });
+  }
+
   deleteOverride(gameId: string, actor: AuditActor): Promise<AdminGameRecord> {
     return this.prisma.$transaction(async (transaction) => {
       const before = await transaction.game.findUniqueOrThrow({
@@ -313,6 +398,35 @@ export class PrismaAdminRepository implements AdminRepository {
         include: adminGameInclude,
       });
       await createAudit(transaction, actor, 'GAME_OVERRIDE_DELETED', 'GAME', gameId, before, after);
+      return after;
+    });
+  }
+
+  setFeatured(
+    gameId: string,
+    input: GameFeaturedInput,
+    actor: AuditActor,
+    now: Date,
+  ): Promise<AdminGameRecord> {
+    return this.prisma.$transaction(async (transaction) => {
+      const before = await transaction.game.findUniqueOrThrow({
+        where: { id: gameId },
+        include: adminGameInclude,
+      });
+      await transaction.game.update({
+        where: { id: gameId },
+        data: {
+          manualFeatured: input.featured,
+          manualFeaturedReason: input.featured === null ? null : (input.reason ?? null),
+          manualFeaturedById: input.featured === null ? null : actor.userId,
+          manualFeaturedAt: input.featured === null ? null : now,
+        },
+      });
+      const after = await transaction.game.findUniqueOrThrow({
+        where: { id: gameId },
+        include: adminGameInclude,
+      });
+      await createAudit(transaction, actor, 'GAME_FEATURED_SET', 'GAME', gameId, before, after);
       return after;
     });
   }
@@ -471,6 +585,15 @@ export class PrismaAdminRepository implements AdminRepository {
     return { events: page, nextCursor: hasMore ? (page.at(-1)?.id ?? null) : null };
   }
 
+  async listPlaysReviewRequired(limit: number) {
+    return this.prisma.currentGamePollState.findMany({
+      where: { playsReviewRequired: true },
+      orderBy: { playsBlockedAt: 'asc' },
+      take: limit,
+      select: { gameId: true, playsBlockedAt: true, playsBlockReason: true },
+    });
+  }
+
   setUserRole(normalizedEmail: string, role: UserRole, actor: AuditActor) {
     return this.prisma.$transaction(async (transaction) => {
       const user = await transaction.user.findUnique({ where: { normalizedEmail } });
@@ -558,7 +681,10 @@ function toImportedBaseData(input: ImportGameWrite) {
 function toImportOverride(input: ImportGameWrite, game: AdminGameRecord) {
   return {
     startTime: sameDate(input.startTime, game.startTime) ? null : input.startTime,
-    status: input.status === game.status ? null : input.status,
+    ...(game.editorialOverride?.resultVerifiedAt === null ||
+    game.editorialOverride?.resultVerifiedAt === undefined
+      ? { status: input.status === game.status ? null : input.status }
+      : {}),
     week: input.week === game.week ? null : input.week,
     venueName: input.venueName === game.venueName ? null : input.venueName,
     venueCity: input.venueCity === game.venueCity ? null : input.venueCity,
@@ -581,6 +707,7 @@ async function createAudit(
   entityId: string | null,
   before: unknown,
   after: unknown,
+  reason?: string,
 ): Promise<void> {
   await transaction.adminAuditEvent.create({
     data: {
@@ -592,6 +719,7 @@ async function createAudit(
       ...(before === null ? {} : { beforeSnapshot: sanitizeAuditSnapshot(before) }),
       ...(after === null ? {} : { afterSnapshot: sanitizeAuditSnapshot(after) }),
       requestId: actor.requestId,
+      ...(reason === undefined ? {} : { reason }),
     },
   });
 }

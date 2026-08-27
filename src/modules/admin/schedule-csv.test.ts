@@ -30,6 +30,16 @@ describe('schedule CSV parsing', () => {
     expect(parseScheduleCsv(`${header}\n${row}\n`)[0]?.startTime).toBe('TBD');
   });
 
+  it('accepts a null week for the preseason Hall of Fame Game', () => {
+    const row = validRow.replace(',REG,1,', ',PRE,,').replace(',MIA,BUF,', ',CAR,ARI,');
+    expect(parseScheduleCsv(`${header}\n${row}\n`)[0]).toMatchObject({
+      seasonType: 'PRE',
+      week: null,
+      awayTeam: 'CAR',
+      homeTeam: 'ARI',
+    });
+  });
+
   it.each<[string, string]>([
     [validRow.replace('2026-09-10T00:20:00Z', '2026-09-10T00:20:00'), 'startTime'],
     [validRow.replace(',REG,', ',INVALID,'), 'seasonType'],

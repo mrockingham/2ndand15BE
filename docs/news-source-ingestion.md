@@ -18,6 +18,8 @@ No default live source is inserted by the migration. Local RSS and Atom files un
 
 The bounded August 2 evaluation found ESPN's NFL RSS technically parseable and rejected NFL.com's `?format=rss` HTML response; neither was inserted. See [the evaluation record](source-evaluations/news-feeds-2026-08-02.md).
 
+The August 24 evaluation (Milestone 30A) added the first official-team feeds: nine `PAUSED` candidate sources across five clubs' News/Videos/Highlights RSS feeds. See [the evaluation record](source-evaluations/official-team-media-feeds-2026-08-24.md). Milestone 30B extended discovery to the remaining 27 clubs; see [that evaluation record](source-evaluations/official-nfl-team-feeds-2026-08-24.md). Milestone 30D activated the first cohort of official-team sources and added a bounded initial-ingest policy so a long-paused source's first activation can't flood the inbox; see [the activation record](news/official-team-source-activation.md) for the lookback/cap/late-item policy and its configuration.
+
 ## Stored metadata and editorial states
 
 Candidates retain a stable external ID when supplied, source/publisher snapshot, normalized canonical URL and SHA-256 identity, headline, at most 2,000 characters of plain-text source description, author, nullable source publication time, discovery time, suggestions, and review metadata. Full bodies, `content:encoded`, page HTML, paywalled text, images, video, scripts, cookies, credentials, and raw feed XML are not stored.
@@ -45,9 +47,17 @@ Responses are limited to 512 KiB and must use an expected RSS/Atom/XML type (or 
 
 Each command writes at most 100 entries. One lease per source prevents overlapping runs; an abandoned lease is recoverable after 15 minutes. Conditional ETag/Last-Modified validators are retained privately and sent on later requests. HTTP 304 creates a successful zero-change run.
 
+## Content types and media metadata (Milestone 30A)
+
+Every source declares a `contentType` (`ARTICLE`, `VIDEO`, or `HIGHLIGHT`) once, at creation — never inferred per item, never by AI. A feed URL is dedicated to one content type in practice (a club's News feed is `ARTICLE`, its Videos feed is `VIDEO`, its Highlights feed is `HIGHLIGHT`), so source configuration is the only classification mechanism, and it is copied onto every candidate the source produces. Legacy/text sources default to `ARTICLE` and are unaffected.
+
+The parser additionally captures one media field, `thumbnailUrl`, from a feed's `media:content` or `<enclosure>` tag — but only when the tag's `type`/`medium` attribute indicates an image; a genuine video/audio enclosure is never captured as a thumbnail. Real official-team feeds evaluated for this milestone never expose a direct video file, an embed URL, or a duration — only a thumbnail image and a canonical page link — so no other media fields exist yet. Video/highlight downloading, rehosting, embedding beyond a feed-provided URL, or stream-manifest scraping are all out of scope; the canonical page URL is the only guaranteed way to reach the actual content, and that is by design (see the evaluation record above).
+
 ## Team suggestions
 
 Suggestions use the configured default team, exact active full-team names, exact abbreviations, and the documented `WSH -> WAS` and `JAC -> JAX` aliases. City-only and fuzzy matching are deliberately absent. Suggestions are advisory and record their rule; candidate conversion accepts a separate editor-confirmed team-ID list.
+
+A source flagged `isOfficialLeague` or `isOfficialTeam` is treated as strong NFL evidence on its own during quality evaluation, independent of team-suggestion matching — this is what lets an official-team feed skip the AI relevance classifier entirely, not a separate mechanism.
 
 ## Manual operations
 
@@ -59,7 +69,7 @@ The CLI runs one source by default and requires an auditable active editor/admin
 npm run news:ingest -- --source=nfl-news --actor=editor@example.com
 ```
 
-`--all` processes at most five active non-manual sources sequentially. There is no cron, recurring scheduler, background worker, queue, webhook, or continuous process.
+`--all` processes at most twenty active non-manual sources sequentially (raised from five in Milestone 30D to cover Wave 1's ten activated sources with headroom). There is still no cron, recurring scheduler, background worker, queue, webhook, or continuous process in this codebase; an external, ordinary scheduler is expected to invoke the CLI on a 15-30 minute cadence. See [the activation record](news/official-team-source-activation.md) for the bounded initial-ingest policy this CLI's real ingestion now applies.
 
 ## Candidate conversion and rights
 
@@ -69,4 +79,4 @@ The transaction creates a `CURATED` `DRAFT`, confirmed article-team joins, revis
 
 ## Known limitations
 
-RSS/Atom publishers vary in standards compliance, timestamps, GUID stability, redirects, and description practices. Malformed or unsafe feeds fail closed. There is no ordinary-page fallback, full-text extraction, image proxy, social/email/video ingestion, automatic publication, AI summary, alerting, recurring scheduling, or frontend inbox in this milestone.
+RSS/Atom publishers vary in standards compliance, timestamps, GUID stability, redirects, and description practices. Malformed or unsafe feeds fail closed. There is no ordinary-page fallback, full-text extraction, image proxy, social/email ingestion, automatic publication, AI summary, alerting, recurring scheduling, or frontend inbox in this milestone. Video/highlight candidates carry only metadata and a feed-provided thumbnail (Milestone 30A) — no video file is ever downloaded, rehosted, or proxied, and this remains true regardless of what a future feed's `<enclosure>` might contain.

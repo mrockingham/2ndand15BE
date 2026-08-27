@@ -22,9 +22,12 @@ export interface PublicArticleListDto {
   readonly type: 'ORIGINAL' | 'CURATED' | 'ANNOUNCEMENT';
   readonly title: string;
   readonly summary: string | null;
+  readonly contentType: 'ARTICLE' | 'VIDEO' | 'HIGHLIGHT';
+  readonly mediaThumbnailUrl: string | null;
   readonly sourceName: string | null;
   readonly sourceUrl: string | null;
   readonly sourcePublishedAt: string | null;
+  readonly sourceIsOfficialTeam: boolean;
   readonly heroImageUrl: string | null;
   readonly heroImageAlt: string | null;
   readonly isFeatured: boolean;
@@ -48,6 +51,8 @@ export interface AdminArticleListDto {
   readonly version: number;
   readonly title: string;
   readonly summary: string | null;
+  readonly contentType: ArticleRecord['contentType'];
+  readonly mediaThumbnailUrl: string | null;
   readonly isFeatured: boolean;
   readonly featuredPriority: number | null;
   readonly publishedAt: string | null;
@@ -62,6 +67,7 @@ export interface AdminArticleDetailDto extends AdminArticleListDto {
   readonly sourceName: string | null;
   readonly sourceUrl: string | null;
   readonly sourcePublishedAt: string | null;
+  readonly sourceIsOfficialTeam: boolean;
   readonly heroImageUrl: string | null;
   readonly heroImageAlt: string | null;
   readonly heroImageAttribution: string | null;
@@ -82,9 +88,12 @@ export function toPublicArticleListDto(
     type: article.type,
     title: article.title,
     summary: article.summary,
+    contentType: article.contentType,
+    mediaThumbnailUrl: article.mediaThumbnailUrl,
     sourceName: article.sourceName,
     sourceUrl: article.sourceUrl,
     sourcePublishedAt: article.sourcePublishedAt?.toISOString() ?? null,
+    sourceIsOfficialTeam: article.sourceIsOfficialTeam,
     heroImageUrl: article.heroImageUrl,
     heroImageAlt: article.heroImageAlt,
     isFeatured: article.isFeatured,
@@ -116,6 +125,8 @@ export function toAdminArticleListDto(article: ArticleRecord): AdminArticleListD
     version: article.version,
     title: article.title,
     summary: article.summary,
+    contentType: article.contentType,
+    mediaThumbnailUrl: article.mediaThumbnailUrl,
     isFeatured: article.isFeatured,
     featuredPriority: article.featuredPriority,
     publishedAt: article.publishedAt?.toISOString() ?? null,
@@ -133,6 +144,7 @@ export function toAdminArticleDetailDto(article: ArticleRecord): AdminArticleDet
     sourceName: article.sourceName,
     sourceUrl: article.sourceUrl,
     sourcePublishedAt: article.sourcePublishedAt?.toISOString() ?? null,
+    sourceIsOfficialTeam: article.sourceIsOfficialTeam,
     heroImageUrl: article.heroImageUrl,
     heroImageAlt: article.heroImageAlt,
     heroImageAttribution: article.heroImageAttribution,

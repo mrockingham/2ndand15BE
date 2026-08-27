@@ -16,6 +16,9 @@ export interface GameQueryPolicy {
   readonly currentNflSeason: number;
   readonly allowHistoricalDefaultGameResults: boolean;
 }
+const DEFAULT_RECENT_LOOKBACK_MS = 7 * 86_400_000;
+const DEFAULT_UPCOMING_LOOKAHEAD_MS = 14 * 86_400_000;
+
 export class GameService implements GameReader {
   constructor(
     private readonly repository: GameRepository,
@@ -97,7 +100,10 @@ function toDateRange(
   if (query.startDate === undefined || query.endDate === undefined) {
     return hasDomainFilter
       ? {}
-      : { startTime: now, endTime: new Date(now.getTime() + 14 * 86_400_000) };
+      : {
+          startTime: new Date(now.getTime() - DEFAULT_RECENT_LOOKBACK_MS),
+          endTime: new Date(now.getTime() + DEFAULT_UPCOMING_LOOKAHEAD_MS),
+        };
   }
   return {
     startTime: parseDateBound(query.startDate, false),

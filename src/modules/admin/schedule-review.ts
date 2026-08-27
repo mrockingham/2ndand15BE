@@ -121,7 +121,6 @@ export function reviewSchedule(rows: readonly ScheduleImportRow[]): ScheduleRevi
     if (row.broadcastNetwork === null) missingBroadcastCount += 1;
     if (row.isNeutralSite) neutralSiteGames.push(game);
     if (
-      row.isNeutralSite ||
       (row.venueCity !== null && INTERNATIONAL_CITY_PATTERN.test(row.venueCity)) ||
       (row.notes !== null && /international/i.test(row.notes))
     )

@@ -15,6 +15,14 @@ export interface NormalizedFeedEntry {
   readonly description: string | null;
   readonly author: string | null;
   readonly publishedAt: Date | null;
+  /**
+   * M30A: a feed-provided thumbnail image, read from Media RSS `media:content` or a
+   * standard RSS `<enclosure>` (real official-team feeds use `<enclosure>` for a
+   * thumbnail image, not a video/audio file -- `type` is checked and only `image/*`
+   * enclosures are captured here; anything else is left null rather than guessed at).
+   * Never a direct video URL: the canonical page link is the video/highlight URL.
+   */
+  readonly thumbnailUrl: string | null;
 }
 
 export interface ParsedFeed {
@@ -25,7 +33,12 @@ export interface ParsedFeed {
 interface EntryState {
   readonly values: Map<string, string>;
   atomLink: string | null;
+  thumbnailUrl: string | null;
 }
+
+/** Media RSS / enclosure tags whose only useful signal here is a thumbnail image
+ * attribute -- never treated as a playable/downloadable media URL. */
+const THUMBNAIL_TAG_NAMES = new Set(['media:content', 'enclosure']);
 
 interface CaptureState {
   readonly key: string;
@@ -76,7 +89,7 @@ export function parseNewsFeed(xml: string, maximumEntries = 100): ParsedFeed {
           'The feed exceeds the configured entry limit.',
         );
       }
-      entry = { values: new Map(), atomLink: null };
+      entry = { values: new Map(), atomLink: null, thumbnailUrl: null };
       entryDepth = depth;
       return;
     }
@@ -95,6 +108,20 @@ export function parseNewsFeed(xml: string, maximumEntries = 100): ParsedFeed {
       const relationship = attributes.rel?.toLowerCase();
       if (relationship === undefined || relationship === 'alternate') {
         entry.atomLink = attributes.href ?? null;
+      }
+      return;
+    }
+    if (entry.thumbnailUrl === null && THUMBNAIL_TAG_NAMES.has(name)) {
+      const attributes = tag.attributes as Record<string, string>;
+      const url = attributes.url?.trim();
+      const type = attributes.type?.toLowerCase();
+      const medium = attributes.medium?.toLowerCase();
+      const looksLikeImage =
+        (type === undefined || type.startsWith('image/')) &&
+        medium !== 'video' &&
+        medium !== 'audio';
+      if (url !== undefined && url.length > 0 && looksLikeImage) {
+        entry.thumbnailUrl = url;
       }
       return;
     }
@@ -195,6 +222,7 @@ function finalizeEntry(entry: EntryState, kind: ParsedFeed['kind'] | null): Norm
       descriptionValue === undefined ? null : sanitizeSourceDescription(descriptionValue),
     author: boundedNullable(entry.values.get('author') ?? entry.values.get('creator'), 160),
     publishedAt: parseOptionalDate(entry.values.get('published') ?? entry.values.get('updated')),
+    thumbnailUrl: boundedNullable(entry.thumbnailUrl ?? undefined, 2_048),
   };
 }
 

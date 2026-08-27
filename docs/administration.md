@@ -16,6 +16,8 @@ Public values resolve field-by-field as:
 
 ```text
 editorial override -> normalized Game -> null/unknown
+
+Final score corrections for provider omissions use the dedicated sourced result-fallback operation, not the generic schedule override. It is dry-run by default, requires an existing reviewed game plus `FINAL` and both oriented scores, records source/reason/server verification time/actor, and writes an append-only game audit only when state changes. See `docs/current-season-games/result-fallback.md`.
 ```
 
 Public game shapes remain unchanged and never expose provenance, internal notes, audit events, actor emails, or provider mappings. Date, week, and status filters plus kickoff ordering use resolved values. Resolution is performed from a bounded maximum of 1,000 season/source candidates; broader requests fail explicitly instead of returning incomplete results.
@@ -49,3 +51,7 @@ The intentionally fictional 2099 import and other development fixtures remain st
 `EDITOR` receives `VIEW_NEWS_SOURCES`, `RUN_NEWS_INGESTION`, `VIEW_NEWS_CANDIDATES`, `REVIEW_NEWS_CANDIDATES`, and `CONVERT_NEWS_CANDIDATE`. `ADMIN` also receives `MANAGE_NEWS_SOURCES`. Current persisted roles are checked on every request; none of these routes are public.
 
 Source and candidate changes reuse `AdminAuditEvent` with compact snapshots. Audits include source creation/update/test, ingestion initiation, pause/resume, manual submission, review transitions, dismissal, and conversion. They never contain raw XML, source descriptions, article bodies, validators, credentials, cookies, or authorization headers. See [news-source ingestion](news-source-ingestion.md).
+
+## Data health
+
+`EDITOR` and `ADMIN` receive `VIEW_DATA_HEALTH` (DB-only coverage of current-season game data); `ADMIN` additionally receives `PROBE_GAME_DATA` (an explicit, bounded Highlightly diagnostic). See [administration/data-health.md](administration/data-health.md).
