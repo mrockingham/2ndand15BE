@@ -34,7 +34,9 @@ export type AdministrativeCapability =
   | 'VIEW_GAME_MEDIA'
   | 'MANAGE_GAME_MEDIA'
   | 'VIEW_HOMEPAGE_CMS'
-  | 'MANAGE_HOMEPAGE_CMS';
+  | 'MANAGE_HOMEPAGE_CMS'
+  | 'VIEW_CONTACT_MESSAGES'
+  | 'MANAGE_CONTACT_MESSAGES';
 
 export interface AdministrativePrincipal {
   readonly userId: string;
@@ -71,6 +73,7 @@ const capabilitiesByRole: Readonly<Record<UserRole, ReadonlySet<AdministrativeCa
     'VIEW_GAME_MEDIA',
     'VIEW_HOMEPAGE_CMS',
     'MANAGE_HOMEPAGE_CMS',
+    'VIEW_CONTACT_MESSAGES',
   ]),
   ADMIN: new Set([
     'VIEW_SCHEDULE',
@@ -103,6 +106,8 @@ const capabilitiesByRole: Readonly<Record<UserRole, ReadonlySet<AdministrativeCa
     'MANAGE_GAME_MEDIA',
     'VIEW_HOMEPAGE_CMS',
     'MANAGE_HOMEPAGE_CMS',
+    'VIEW_CONTACT_MESSAGES',
+    'MANAGE_CONTACT_MESSAGES',
   ]),
 };
 

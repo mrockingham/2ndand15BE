@@ -42,6 +42,8 @@ import {
 } from '../modules/homepage/homepage.routes.js';
 import type { HomepageServiceContract } from '../modules/homepage/homepage.service.js';
 import { createHealthRouter } from '../modules/health/health.routes.js';
+import { createReadinessRouter } from '../modules/health/readiness.routes.js';
+import type { ReadinessControllerOptions } from '../modules/health/readiness.controller.js';
 import { createAuthRouter } from '../modules/auth/auth.routes.js';
 import type { AuthenticationService } from '../modules/auth/auth.service.js';
 import { createTeamRouter } from '../modules/teams/team.routes.js';
@@ -61,10 +63,16 @@ import type { EditorialAiServiceContract } from '../modules/editorial-ai/editori
 import { createPredictionRouters } from '../modules/ai-hub/prediction.routes.js';
 import type { PredictionService } from '../modules/ai-hub/prediction.service.js';
 import type { AiHubWeeklyInsightsService } from '../modules/ai-hub/weekly-insights.service.js';
+import {
+  createAdminContactRouter,
+  createPublicContactRouter,
+} from '../modules/contact/contact.routes.js';
+import type { ContactServiceContract } from '../modules/contact/contact.service.js';
 
 export interface ApiRouterOptions {
   readonly rateLimit: AppConfig['rateLimit'];
   readonly health?: HealthControllerOptions;
+  readonly readiness?: ReadinessControllerOptions;
   readonly teamReader: TeamReader;
   readonly gameReader: GameReader;
   readonly gameStatsReader?: GameStatsReader;
@@ -89,6 +97,8 @@ export interface ApiRouterOptions {
   readonly editorialAiService?: EditorialAiServiceContract;
   readonly predictionService?: PredictionService;
   readonly weeklyInsightsService?: AiHubWeeklyInsightsService;
+  readonly contactService?: ContactServiceContract;
+  readonly contactRateLimit?: AppConfig['contact']['rateLimit'];
 }
 
 export function createApiRouter(options: ApiRouterOptions): Router {
@@ -117,6 +127,9 @@ export function createApiRouter(options: ApiRouterOptions): Router {
     swaggerUi.setup(openApiDocument),
   );
   router.use('/health', createHealthRouter(options.health));
+  if (options.readiness !== undefined) {
+    router.use('/ready', createReadinessRouter(options.readiness));
+  }
   if (options.predictionService !== undefined && options.adminIdentities !== undefined) {
     const predictions = createPredictionRouters({
       authenticate: options.authenticate,
@@ -211,6 +224,16 @@ export function createApiRouter(options: ApiRouterOptions): Router {
       }),
     );
   }
+  if (options.contactService !== undefined && options.adminIdentities !== undefined) {
+    router.use(
+      '/admin/contact-messages',
+      createAdminContactRouter({
+        authenticate: options.authenticate,
+        identities: options.adminIdentities,
+        service: options.contactService,
+      }),
+    );
+  }
   if (options.articleReader !== undefined) {
     router.use('/articles', createPublicArticleRouter(options.articleReader));
     router.use('/teams/:teamId/articles', createTeamArticleRouter(options.articleReader));
@@ -234,6 +257,15 @@ export function createApiRouter(options: ApiRouterOptions): Router {
   router.use('/teams', createTeamRouter(options.teamReader));
   if (options.homepageService !== undefined)
     router.use('/homepage', createPublicHomepageRouter(options.homepageService));
+  if (options.contactService !== undefined && options.contactRateLimit !== undefined) {
+    router.use(
+      '/contact',
+      createPublicContactRouter({
+        service: options.contactService,
+        rateLimit: options.contactRateLimit,
+      }),
+    );
+  }
   router.use(
     '/auth',
     createAuthRouter({

@@ -69,6 +69,43 @@ const optionalSecretSchema = z.preprocess(
   z.string().min(1).max(1024).optional(),
 );
 
+const optionalEmailSchema = z.preprocess(
+  (value) => (value === '' || value === undefined ? undefined : value),
+  z.email().max(254).optional(),
+);
+
+// Reverse proxy trust. Accepts a numeric hop count (e.g. "1" for a single
+// load balancer/reverse proxy in front of the app) or a comma-separated list
+// of trusted proxy IPs/CIDRs, passed straight through to Express's
+// `trust proxy` setting. Deliberately rejects "true"/"*" -- those trust every
+// hop in X-Forwarded-For, which lets a client spoof its own IP for
+// rate-limiting/logging purposes. See docs/production/deployment.md.
+const trustProxySchema = z
+  .string()
+  .default('0')
+  .transform((value, context): number | readonly string[] => {
+    const trimmed = value.trim();
+    if (trimmed.toLowerCase() === 'true' || trimmed === '*') {
+      context.addIssue({
+        code: 'custom',
+        message:
+          'Must be a numeric hop count (e.g. "1") or a comma-separated list of trusted proxy IPs/CIDRs -- "true" and "*" are not allowed',
+      });
+      return z.NEVER;
+    }
+
+    if (/^\d+$/.test(trimmed)) {
+      return Number.parseInt(trimmed, 10);
+    }
+
+    const entries = trimmed
+      .split(',')
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+
+    return entries;
+  });
+
 const optionalSeasonSchema = z.preprocess(
   (value) => (value === '' || value === undefined ? undefined : value),
   z.coerce.number().int().min(1920).max(2100).optional(),
@@ -194,6 +231,7 @@ const baseEnvironmentSchema = databaseEnvironmentSchema.extend({
   ...newsIngestionPolicyFields,
   HOST: z.string().min(1).default('0.0.0.0'),
   PORT: z.coerce.number().int().min(1).max(65_535).default(3000),
+  TRUST_PROXY: trustProxySchema,
   CORS_ORIGINS: corsOriginsSchema,
   RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60_000),
   RATE_LIMIT_MAX: z.coerce.number().int().positive().default(100),
@@ -244,8 +282,13 @@ const environmentSchema = baseEnvironmentSchema
     PASSWORD_RESET_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(5),
     PASSWORD_RESET_TOKEN_TTL: durationSchema('30m'),
     PASSWORD_RESET_FRONTEND_URL: z.url().default('http://localhost:5173/reset-password'),
-    EMAIL_PROVIDER: z.enum(['development']).default('development'),
+    EMAIL_PROVIDER: z.enum(['development', 'resend']).default('development'),
     EMAIL_DEV_LOG_RESET_URL: booleanSchema(false),
+    RESEND_API_KEY: optionalSecretSchema,
+    EMAIL_FROM: z.string().min(3).max(320).default('2nd & 15 <support@2ndand15.com>'),
+    CONTACT_TO_EMAIL: optionalEmailSchema,
+    CONTACT_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(3_600_000),
+    CONTACT_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(5),
     EDITORIAL_AI_PROVIDER: z.enum(['none', 'openai']).default('none'),
     OPENAI_API_KEY: optionalSecretSchema,
     OPENAI_EDITORIAL_MODEL: z.preprocess(
@@ -278,11 +321,26 @@ const environmentSchema = baseEnvironmentSchema
       });
     }
 
+    if (value.EMAIL_PROVIDER === 'resend' && value.RESEND_API_KEY === undefined) {
+      context.addIssue({
+        code: 'custom',
+        path: ['RESEND_API_KEY'],
+        message: 'Is required when EMAIL_PROVIDER is resend',
+      });
+    }
+
     if (value.NODE_ENV === 'production') {
       if (value.ALLOW_HISTORICAL_DEFAULT_GAME_RESULTS) {
         context.addIssue({
           code: 'custom',
           path: ['ALLOW_HISTORICAL_DEFAULT_GAME_RESULTS'],
+          message: 'Must be false in production',
+        });
+      }
+      if (value.FIXTURE_DATA_ENABLED) {
+        context.addIssue({
+          code: 'custom',
+          path: ['FIXTURE_DATA_ENABLED'],
           message: 'Must be false in production',
         });
       }
@@ -307,6 +365,20 @@ const environmentSchema = baseEnvironmentSchema
           message: 'Must be false in production',
         });
       }
+      if (value.EMAIL_PROVIDER === 'development') {
+        context.addIssue({
+          code: 'custom',
+          path: ['EMAIL_PROVIDER'],
+          message: 'Must not be "development" in production',
+        });
+      }
+      if (value.CONTACT_TO_EMAIL === undefined) {
+        context.addIssue({
+          code: 'custom',
+          path: ['CONTACT_TO_EMAIL'],
+          message: 'Is required in production',
+        });
+      }
     }
   });
 
@@ -319,6 +391,7 @@ export interface DatabaseConfig {
 export interface AppConfig extends DatabaseConfig {
   readonly host: string;
   readonly port: number;
+  readonly trustProxy: number | readonly string[];
   readonly corsOrigins: readonly string[];
   readonly rateLimit: RateLimitConfig;
   readonly auth: {
@@ -339,8 +412,14 @@ export interface AppConfig extends DatabaseConfig {
     readonly rateLimit: RateLimitConfig;
   };
   readonly email: {
-    readonly provider: 'development';
+    readonly provider: 'development' | 'resend';
     readonly logResetUrl: boolean;
+    readonly from: string;
+    readonly resendApiKey: string | null;
+  };
+  readonly contact: {
+    readonly toEmail: string | null;
+    readonly rateLimit: RateLimitConfig;
   };
   readonly sports: SportsConfig;
   readonly editorialAi: {
@@ -546,6 +625,7 @@ export function loadConfig(
     nodeEnv: data.NODE_ENV,
     host: data.HOST,
     port: data.PORT,
+    trustProxy: data.TRUST_PROXY,
     databaseUrl: data.DATABASE_URL,
     corsOrigins: data.CORS_ORIGINS,
     logLevel: data.LOG_LEVEL,
@@ -579,6 +659,15 @@ export function loadConfig(
     email: {
       provider: data.EMAIL_PROVIDER,
       logResetUrl: data.EMAIL_DEV_LOG_RESET_URL,
+      from: data.EMAIL_FROM,
+      resendApiKey: data.RESEND_API_KEY ?? null,
+    },
+    contact: {
+      toEmail: data.CONTACT_TO_EMAIL ?? null,
+      rateLimit: {
+        windowMs: data.CONTACT_RATE_LIMIT_WINDOW_MS,
+        max: data.CONTACT_RATE_LIMIT_MAX,
+      },
     },
     sports: toSportsConfig(data),
     editorialAi: {

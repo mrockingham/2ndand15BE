@@ -31,12 +31,16 @@ import {
 import { PrismaGameMediaCurationRepository } from './modules/game-media-curation/game-media-curation.repository.js';
 import { GameMediaCurationService } from './modules/game-media-curation/game-media-curation.service.js';
 import { PrismaHomepageRepository } from './modules/homepage/homepage.repository.js';
+import { PrismaContactRepository } from './modules/contact/contact.repository.js';
+import { ContactService } from './modules/contact/contact.service.js';
 import { HomepageService } from './modules/homepage/homepage.service.js';
 import { PrismaGlobalGameMediaRepository } from './modules/game-media-curation/global-game-media.repository.js';
 import { PrismaArticleRepository } from './modules/articles/article.repository.js';
 import { ArticleService } from './modules/articles/article.service.js';
 import { AuthService } from './modules/auth/auth.service.js';
 import { DevelopmentEmailService } from './modules/email/in-memory-email.service.js';
+import { ResendEmailService } from './modules/email/resend-email.service.js';
+import type { EmailService } from './modules/email/email.service.js';
 import {
   PrismaGameRepository,
   resolvePublicGameDataSource,
@@ -266,7 +270,15 @@ const accessTokens = new JwtAccessTokenService({
   secret: config.auth.accessTokenSecret,
   expiresInSeconds: config.auth.accessTokenTtlSeconds,
 });
-const emailService = new DevelopmentEmailService(logger, config.email.logResetUrl);
+const emailService: EmailService =
+  config.email.provider === 'resend'
+    ? new ResendEmailService({
+        apiKey: config.email.resendApiKey ?? '',
+        from: config.email.from,
+        contactToEmail: config.contact.toEmail,
+        logger,
+      })
+    : new DevelopmentEmailService(logger, config.email.logResetUrl);
 const authService = new AuthService({
   repository: new PrismaAuthRepository(prisma),
   passwordHasher: new Argon2idPasswordHasher(),
@@ -281,6 +293,13 @@ const authService = new AuthService({
   },
 });
 const userService = new UserService(new PrismaUserRepository(prisma));
+const contactService = new ContactService({
+  repository: new PrismaContactRepository(prisma),
+  emailService,
+  onNotificationDeliveryError: (error) => {
+    logger.error({ err: error }, 'Contact notification email delivery failed');
+  },
+});
 const app = createApp({
   config,
   logger,
@@ -306,6 +325,13 @@ const app = createApp({
   teamHubReader,
   predictionService,
   weeklyInsightsService,
+  contactService,
+  readiness: {
+    checkDatabase: async () => {
+      await prisma.$queryRaw`SELECT 1`;
+      return true;
+    },
+  },
 });
 
 const server = app.listen(config.port, config.host, (error?: Error) => {
