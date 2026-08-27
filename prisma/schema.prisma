@@ -1775,3 +1775,29 @@ model HistoricalImportFile {
   @@index([runId, status], map: "historical_import_files_run_status_idx")
   @@map("historical_import_files")
 }
+
+enum ContactMessageStatus {
+  NEW
+  READ
+  RESOLVED
+  SPAM
+}
+
+/// Public Contact form submissions. Deliberately does not store raw IP or
+/// user-agent -- rate limiting (CONTACT_RATE_LIMIT_*) uses Express's resolved
+/// req.ip in-memory only, and no durable per-submitter fingerprint is kept.
+/// See docs/production/contact.md.
+model ContactMessage {
+  id        String               @id @default(uuid()) @db.Uuid
+  name      String               @db.VarChar(100)
+  email     String               @db.VarChar(254)
+  subject   String?              @db.VarChar(150)
+  message   String               @db.VarChar(5000)
+  status    ContactMessageStatus @default(NEW)
+  createdAt DateTime             @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime             @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@index([status, createdAt], map: "contact_messages_status_created_idx")
+  @@index([createdAt], map: "contact_messages_created_idx")
+  @@map("contact_messages")
+}

@@ -21,6 +21,7 @@ describe('loadConfig', () => {
       nodeEnv: 'development',
       host: '0.0.0.0',
       port: 3000,
+      trustProxy: 0,
       databaseUrl: requiredEnvironment.DATABASE_URL,
       corsOrigins: ['http://localhost:5173'],
       logLevel: 'info',
@@ -54,6 +55,15 @@ describe('loadConfig', () => {
       email: {
         provider: 'development',
         logResetUrl: false,
+        from: '2nd & 15 <support@2ndand15.com>',
+        resendApiKey: null,
+      },
+      contact: {
+        toEmail: null,
+        rateLimit: {
+          windowMs: 3_600_000,
+          max: 5,
+        },
       },
       editorialAi: {
         provider: 'none',
@@ -159,6 +169,25 @@ describe('loadConfig', () => {
     expect(config.auth.refreshTokenTtlSeconds).toBe(1_209_600);
     expect(config.auth.cookie).toMatchObject({ secure: true, sameSite: 'none' });
     expect(config.passwordReset.tokenTtlSeconds).toBe(2_700);
+  });
+
+  it('requires RESEND_API_KEY when EMAIL_PROVIDER is resend', () => {
+    expect(() =>
+      loadConfig({
+        ...requiredEnvironment,
+        EMAIL_PROVIDER: 'resend',
+      }),
+    ).toThrow(EnvironmentValidationError);
+
+    const config = loadConfig({
+      ...requiredEnvironment,
+      EMAIL_PROVIDER: 'resend',
+      RESEND_API_KEY: 'test-resend-api-key',
+    });
+    expect(config.email).toMatchObject({
+      provider: 'resend',
+      resendApiKey: 'test-resend-api-key',
+    });
   });
 
   it('rejects insecure production cookie and reset URL settings', () => {

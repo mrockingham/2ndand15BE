@@ -22,6 +22,7 @@ import type {
   PublicArticleReader,
 } from './modules/articles/article.service.js';
 import type { HealthControllerOptions } from './modules/health/health.controller.js';
+import type { ReadinessControllerOptions } from './modules/health/readiness.controller.js';
 import type { GameReader } from './modules/games/game.service.js';
 import type { GameStatsReader } from './modules/game-stats/game-stats.service.js';
 import type { GamePlayReader } from './modules/game-plays/game-plays.service.js';
@@ -35,11 +36,13 @@ import type { TeamHubReader } from './modules/team-hub/team-hub.service.js';
 import type { EditorialAiServiceContract } from './modules/editorial-ai/editorial-ai.service.js';
 import type { PredictionService } from './modules/ai-hub/prediction.service.js';
 import type { AiHubWeeklyInsightsService } from './modules/ai-hub/weekly-insights.service.js';
+import type { ContactServiceContract } from './modules/contact/contact.service.js';
 
 export interface CreateAppOptions {
   readonly config: AppConfig;
   readonly logger?: Logger;
   readonly health?: HealthControllerOptions;
+  readonly readiness?: ReadinessControllerOptions;
   readonly teamReader: TeamReader;
   readonly gameReader: GameReader;
   readonly gameStatsReader?: GameStatsReader;
@@ -62,11 +65,18 @@ export interface CreateAppOptions {
   readonly editorialAiService?: EditorialAiServiceContract;
   readonly predictionService?: PredictionService;
   readonly weeklyInsightsService?: AiHubWeeklyInsightsService;
+  readonly contactService?: ContactServiceContract;
 }
 
 export function createApp(options: CreateAppOptions): Express {
   const app = express();
   const logger = options.logger ?? createLogger(options.config);
+
+  // Must be set before any middleware/handler reads req.ip (rate limiters,
+  // logging, IP-based logic) so Express resolves the real client IP from
+  // X-Forwarded-For only for the trusted hop count/proxy list configured via
+  // TRUST_PROXY. See docs/production/deployment.md.
+  app.set('trust proxy', options.config.trustProxy);
 
   app.disable('x-powered-by');
   app.use(createRequestLogger(logger));
@@ -128,7 +138,14 @@ export function createApp(options: CreateAppOptions): Express {
       ...(options.weeklyInsightsService === undefined
         ? {}
         : { weeklyInsightsService: options.weeklyInsightsService }),
+      ...(options.contactService === undefined
+        ? {}
+        : {
+            contactService: options.contactService,
+            contactRateLimit: options.config.contact.rateLimit,
+          }),
       ...(options.health === undefined ? {} : { health: options.health }),
+      ...(options.readiness === undefined ? {} : { readiness: options.readiness }),
     }),
   );
   app.use(notFoundHandler);

@@ -247,6 +247,38 @@ Current-game team and safely reconciled player box scores use the same guarded m
 - User objects returned by registration, login, refresh, and `/users/me` contain `favoriteTeam` and the constrained `role`. Registration always creates `USER`; no public request may assign or change a role.
 - Set or replace a favorite with `{ "favoriteTeamId": "<internal-team-uuid>" }`; clear it with `{ "favoriteTeamId": null }`. Provider IDs and provider mappings are never part of this contract.
 
+## Production
+
+Production deployment, the long-running current-game live worker, email
+delivery, the contact form, and rollback are each covered in their own guide
+under `docs/production/`:
+
+- [Deployment guide](docs/production/deployment.md) — full environment
+  variable checklist, `TRUST_PROXY`, deployment order, liveness vs.
+  readiness, and fixture-data safety.
+- [Live-game worker](docs/production/live-game-worker.md) — the long-running
+  current-game poller process, startup/shutdown, failure resilience,
+  multi-instance safety, and liveness verification.
+- [Email delivery](docs/production/email.md) — the `EmailService`
+  abstraction, the Resend provider, and the password-reset delivery policy.
+- [Contact form](docs/production/contact.md) — the public endpoint, honeypot,
+  rate limiting, and admin triage API.
+- [Rollback plan](docs/production/rollback.md) — frontend/backend rollback
+  and database rollback policy.
+
+A few operational commands support production launch and are documented in
+the guides above:
+
+- `npm run current-games:worker` — starts the long-running production
+  current-game live worker (compiled; use `current-games:worker:dev` locally).
+- `npm run email:test -- --to=<address>` — sends one real test email through
+  the configured provider. Never run automatically.
+- `node scripts/production-smoke.mjs` — a dependency-free post-deploy smoke
+  test against a running deployment's public (and, optionally, authenticated)
+  HTTP surface; configured entirely via `SMOKE_*` environment variables.
+- `npm run production:content-audit` — a read-only report of likely
+  disposable pre-launch test/placeholder content, for manual review only.
+
 ## Architecture
 
 Read [AGENTS.md](AGENTS.md), [the product brief](docs/product-brief.md), [the backend architecture](docs/architecture.md), and [the MVP roadmap](docs/mvp-roadmap.md) before implementing a milestone.

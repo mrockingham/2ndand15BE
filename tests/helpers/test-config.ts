@@ -14,6 +14,7 @@ export function createTestConfig(overrides: Partial<AppConfig> = {}): AppConfig 
     nodeEnv: 'test',
     host: '127.0.0.1',
     port: 3000,
+    trustProxy: 0,
     databaseUrl: 'postgresql://test:test@localhost:5432/test?schema=public',
     corsOrigins: ['http://localhost:5173'],
     logLevel: 'silent',
@@ -47,6 +48,15 @@ export function createTestConfig(overrides: Partial<AppConfig> = {}): AppConfig 
     email: {
       provider: 'development',
       logResetUrl: false,
+      from: '2nd & 15 <support@2ndand15.com>',
+      resendApiKey: null,
+    },
+    contact: {
+      toEmail: 'contact-test@2ndand15.com',
+      rateLimit: {
+        windowMs: 3_600_000,
+        max: 5,
+      },
     },
     editorialAi: {
       provider: 'none',

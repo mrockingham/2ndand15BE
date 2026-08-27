@@ -245,6 +245,22 @@ describe('AuthService', () => {
     });
   });
 
+  it('resolves identically (no throw, no distinguishing value) for forgotPassword on a known vs. an unknown email', async () => {
+    const harness = createHarness();
+    await harness.service.register({
+      email: 'user@example.com',
+      password: 'a secure password',
+      metadata,
+    });
+
+    await expect(
+      harness.service.forgotPassword({ email: 'user@example.com', metadata }),
+    ).resolves.toBeUndefined();
+    await expect(
+      harness.service.forgotPassword({ email: 'definitely-unknown@example.com', metadata }),
+    ).resolves.toBeUndefined();
+  });
+
   it('rejects invalid and expired reset tokens with one generic error', async () => {
     const harness = createHarness();
     await harness.service.register({

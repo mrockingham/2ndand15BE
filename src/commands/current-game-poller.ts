@@ -1,27 +1,11 @@
 import 'dotenv/config';
 
-import { randomUUID } from 'node:crypto';
-
 import { z } from 'zod';
 
 import { createPrismaClient } from '../common/database/prisma.js';
 import { createLogger } from '../common/logging/logger.js';
 import { loadCurrentGameSyncConfig } from '../config/env.js';
-import { PrismaCurrentGameDetailsRepository } from '../modules/sports/current-game-details.repository.js';
-import { FinalPlaySnapshotService } from '../modules/sports/current-game-play-final-replacement.js';
-import { PrismaCurrentGamePlayRepository } from '../modules/sports/current-game-play.repository.js';
-import { PrismaCurrentGamePollStateRepository } from '../modules/sports/current-game-poll-state.repository.js';
-import { CurrentGamePoller } from '../modules/sports/current-game-poller.js';
-import { HighlightlyCurrentGamePlayProvider } from '../modules/sports/providers/highlightly/highlightly-current-game-play-provider.js';
-import { PrismaCurrentGameSyncRepository } from '../modules/sports/current-game-sync.repository.js';
-import { HighlightlyEvaluationHttpClient } from '../modules/sports/evaluation/highlightly/highlightly-http-client.js';
-import { createHighlightlyMatchDetailFetcher } from '../modules/sports/highlightly-match-detail-fetcher.js';
-import { createHighlightlyHighlightFetcher } from '../modules/sports/highlightly-highlight-fetcher.js';
-import { createHighlightlyGeoRestrictionFetcher } from '../modules/sports/highlightly-geo-restriction-fetcher.js';
-import { HighlightlyCurrentGameProvider } from '../modules/sports/providers/highlightly/highlightly-current-game-provider.js';
-import { CurrentGameSyncService } from '../modules/sports/sync-current-games.js';
-import { PrismaGameHighlightsRepository } from '../modules/game-highlights/game-highlights.repository.js';
-import { GameHighlightsService } from '../modules/game-highlights/game-highlights.service.js';
+import { buildCurrentGamePoller } from '../modules/sports/build-current-game-poller.js';
 
 interface Args {
   readonly once: boolean;
@@ -49,39 +33,7 @@ try {
 
   const logger = createLogger(config);
   prisma = createPrismaClient(config.databaseUrl);
-  const client = new HighlightlyEvaluationHttpClient({
-    baseUrl: config.currentGame.highlightly.baseUrl,
-    apiKey: config.currentGame.highlightly.apiKey,
-    requestTimeoutMs: config.currentGame.highlightly.requestTimeoutMs,
-    maxRetries: config.currentGame.highlightly.maxRetries,
-    logger,
-  });
-
-  const playRepository = new PrismaCurrentGamePlayRepository(prisma);
-  const poller = new CurrentGamePoller({
-    gameSyncService: new CurrentGameSyncService(
-      new HighlightlyCurrentGameProvider(client),
-      new PrismaCurrentGameSyncRepository(prisma),
-    ),
-    detailsRepository: new PrismaCurrentGameDetailsRepository(prisma),
-    playRepository,
-    finalPlaySnapshotService: new FinalPlaySnapshotService(
-      new HighlightlyCurrentGamePlayProvider(client),
-      playRepository,
-    ),
-    matchDetailFetcher: createHighlightlyMatchDetailFetcher(client),
-    highlightsService: new GameHighlightsService(new PrismaGameHighlightsRepository(prisma), {
-      fetcher: createHighlightlyHighlightFetcher(client),
-      client,
-      geoFetcher: createHighlightlyGeoRestrictionFetcher(client),
-      embedAllowedHosts: config.currentGame.embedAllowedHosts,
-    }),
-    pollStateRepository: new PrismaCurrentGamePollStateRepository(prisma),
-    requestCounter: client,
-    rateLimitObservation: () => client.getRateLimitObservation(),
-    now: () => new Date(),
-    workerId: `${String(process.pid)}-${randomUUID().slice(0, 8)}`,
-  });
+  const { poller } = buildCurrentGamePoller(config, logger, prisma);
 
   const cycleOptions = {
     schedulingConfig: {
