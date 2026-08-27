@@ -302,6 +302,10 @@ model User {
   updatedCuratedVideos        GameCuratedVideo[]           @relation("GameCuratedVideoUpdater")
   createdGlobalGameVideos     GlobalGameCenterVideo[]      @relation("GlobalGameCenterVideoCreator")
   updatedGlobalGameVideos     GlobalGameCenterVideo[]      @relation("GlobalGameCenterVideoUpdater")
+  createdHeroSlides           HomepageHeroSlide[]          @relation("HomepageHeroSlideCreator")
+  updatedHeroSlides           HomepageHeroSlide[]          @relation("HomepageHeroSlideUpdater")
+  createdTopStories           HomepageTopStory[]           @relation("HomepageTopStoryCreator")
+  updatedTopStories           HomepageTopStory[]           @relation("HomepageTopStoryUpdater")
   reviewedCandidates          NewsCandidate[]              @relation("NewsCandidateReviewer")
   newsIngestionRuns           NewsIngestionRun[]           @relation("NewsIngestionInitiator")
   reviewedSourceRights        SourceRightsProfile[]        @relation("SourceRightsReviewer")
@@ -952,6 +956,132 @@ model GlobalGameCenterVideo {
   @@map("global_game_center_videos")
 }
 
+/// M35A: one slide in the homepage Hero carousel. `position` is the sole
+/// ordering signal (0 = first slide), contiguous 0..N, matching the
+/// `GameCuratedVideo`/`HomepageTopStory` convention -- no separate "is first"
+/// flag. Every image-presentation field is a *display instruction* applied at
+/// render time, never a modification of the stored image file -- the same
+/// `imageUrl` keeps working if these values are reset to their defaults, so
+/// edits here are always non-destructive.
+model HomepageHeroSlide {
+  id                String                     @id @default(uuid()) @db.Uuid
+  position          Int
+  isActive          Boolean                    @default(true) @map("is_active")
+  imageUrl          String                     @map("image_url") @db.Text
+  imageAlt          String?                    @map("image_alt") @db.VarChar(300)
+  /// Percent, bounded 25-150 (100 = unmodified).
+  imageBrightness   Int                        @default(100) @map("image_brightness")
+  /// Percent, bounded 50-150 (100 = unmodified).
+  imageContrast     Int                        @default(100) @map("image_contrast")
+  /// Percent, bounded 0-200 (100 = unmodified, 0 = grayscale).
+  imageSaturation   Int                        @default(100) @map("image_saturation")
+  /// Percent, bounded 0-100 (0 = no overlay).
+  overlayOpacity    Int                        @default(0) @map("overlay_opacity")
+  /// Normalized percent, bounded 0-100 (50 = centered).
+  focalPointX       Int                        @default(50) @map("focal_point_x")
+  focalPointY       Int                        @default(50) @map("focal_point_y")
+  /// Percent, bounded 100-200 (100 = unmodified/no zoom).
+  imageScale        Int                        @default(100) @map("image_scale")
+  createdById       String?                    @map("created_by_id") @db.Uuid
+  updatedById       String?                    @map("updated_by_id") @db.Uuid
+  createdBySnapshot String                     @map("created_by_snapshot") @db.VarChar(254)
+  updatedBySnapshot String                     @map("updated_by_snapshot") @db.VarChar(254)
+  createdAt         DateTime                   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime                   @updatedAt @map("updated_at") @db.Timestamptz(3)
+  createdBy         User?                      @relation("HomepageHeroSlideCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedBy         User?                      @relation("HomepageHeroSlideUpdater", fields: [updatedById], references: [id], onDelete: SetNull)
+  contentBlocks     HomepageHeroContentBlock[]
+  ctas              HomepageHeroCta[]
+
+  @@unique([position], map: "homepage_hero_slides_position_key")
+  @@map("homepage_hero_slides")
+}
+
+/// M35A: fixed 3x3 placement grid for Hero slide rich text -- never arbitrary
+/// pixel coordinates, so responsive rendering stays predictable across screen
+/// sizes. At most one block per slot per slide.
+enum HomepageHeroContentSlot {
+  TOP_LEFT
+  TOP_CENTER
+  TOP_RIGHT
+  MIDDLE_LEFT
+  MIDDLE_CENTER
+  MIDDLE_RIGHT
+  BOTTOM_LEFT
+  BOTTOM_CENTER
+  BOTTOM_RIGHT
+}
+
+/// M35A: `content` is a constrained, provider-neutral JSON rich-text document
+/// (see `homepage-rich-text.ts`) -- never raw HTML, never a script/iframe
+/// carrier. Validated by Zod at write time; the JSONB column itself has no
+/// structural constraint, matching how `GameCuratedVideo`'s embed URLs are
+/// validated at the application boundary rather than in the database.
+model HomepageHeroContentBlock {
+  id          String                  @id @default(uuid()) @db.Uuid
+  heroSlideId String                  @map("hero_slide_id") @db.Uuid
+  slot        HomepageHeroContentSlot
+  content     Json                    @db.JsonB
+  createdAt   DateTime                @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime                @updatedAt @map("updated_at") @db.Timestamptz(3)
+  heroSlide   HomepageHeroSlide       @relation(fields: [heroSlideId], references: [id], onDelete: Cascade)
+
+  @@unique([heroSlideId, slot], map: "homepage_hero_content_blocks_slide_slot_key")
+  @@index([heroSlideId], map: "homepage_hero_content_blocks_slide_id_idx")
+  @@map("homepage_hero_content_blocks")
+}
+
+/// M35A: generalizes what was previously hard-coded "Slide 1's two buttons" --
+/// any slide may have 0-2 CTAs. `position` (0 or 1) orders them; there is no
+/// per-slide restriction on which slide may have CTAs, so product can
+/// configure them on any slide (including none) without a schema change.
+enum HomepageHeroCtaVariant {
+  PRIMARY
+  SECONDARY
+}
+
+model HomepageHeroCta {
+  id          String                 @id @default(uuid()) @db.Uuid
+  heroSlideId String                 @map("hero_slide_id") @db.Uuid
+  position    Int
+  label       String                 @db.VarChar(60)
+  url         String                 @db.Text
+  variant     HomepageHeroCtaVariant @default(PRIMARY)
+  createdAt   DateTime               @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime               @updatedAt @map("updated_at") @db.Timestamptz(3)
+  heroSlide   HomepageHeroSlide      @relation(fields: [heroSlideId], references: [id], onDelete: Cascade)
+
+  @@unique([heroSlideId, position], map: "homepage_hero_ctas_slide_position_key")
+  @@index([heroSlideId], map: "homepage_hero_ctas_slide_id_idx")
+  @@map("homepage_hero_ctas")
+}
+
+/// M35A: homepage Top Story curation, deliberately a separate table rather
+/// than an `Article.isTopStory` boolean -- `Article.isFeatured` already exists
+/// for a different editorial-featuring concept, and reusing or overloading it
+/// for homepage placement would conflate two independent product decisions.
+/// `articleId` is unique, so an article can be curated at most once; removing
+/// a row here never touches `Article`, `NewsCandidate`, or any provenance
+/// data -- it is purely a homepage placement pointer. `position` is the sole
+/// ordering signal (0 = lead story).
+model HomepageTopStory {
+  id                String   @id @default(uuid()) @db.Uuid
+  articleId         String   @unique @map("article_id") @db.Uuid
+  position          Int
+  createdById       String?  @map("created_by_id") @db.Uuid
+  updatedById       String?  @map("updated_by_id") @db.Uuid
+  createdBySnapshot String   @map("created_by_snapshot") @db.VarChar(254)
+  updatedBySnapshot String   @map("updated_by_snapshot") @db.VarChar(254)
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  article           Article  @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  createdBy         User?    @relation("HomepageTopStoryCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedBy         User?    @relation("HomepageTopStoryUpdater", fields: [updatedById], references: [id], onDelete: SetNull)
+
+  @@unique([position], map: "homepage_top_stories_position_key")
+  @@map("homepage_top_stories")
+}
+
 model AdminAuditEvent {
   id                 String   @id @default(uuid()) @db.Uuid
   actorUserId        String?  @map("actor_user_id") @db.Uuid
@@ -1016,6 +1146,7 @@ model Article {
   playerTags              ArticlePlayer[]
   aiMetadata              ArticleAiMetadata?
   mediaCandidates         ArticleMediaCandidate[]
+  topStory                HomepageTopStory?
 
   @@unique([id, version], map: "articles_id_version_key")
   @@index([status, publishedAt, id], map: "articles_status_published_idx")

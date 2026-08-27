@@ -30,6 +30,8 @@ import {
 } from './modules/game-highlights/game-highlights.service.js';
 import { PrismaGameMediaCurationRepository } from './modules/game-media-curation/game-media-curation.repository.js';
 import { GameMediaCurationService } from './modules/game-media-curation/game-media-curation.service.js';
+import { PrismaHomepageRepository } from './modules/homepage/homepage.repository.js';
+import { HomepageService } from './modules/homepage/homepage.service.js';
 import { PrismaGlobalGameMediaRepository } from './modules/game-media-curation/global-game-media.repository.js';
 import { PrismaArticleRepository } from './modules/articles/article.repository.js';
 import { ArticleService } from './modules/articles/article.service.js';
@@ -246,6 +248,12 @@ const gameStatsReader = new GameStatsService(
   config.sports.currentNflSeason,
 );
 const gamePlayReader = new GamePlayService(new PrismaGamePlayRepository(prisma), gameReader);
+const homepageService = new HomepageService({
+  repository: new PrismaHomepageRepository(prisma),
+  gameMedia: gameMediaCurationService,
+  stats: statsHubReader,
+  fallbackSeason: config.sports.currentNflSeason,
+});
 const teamHubReader = new TeamHubService({
   repository: new PrismaTeamHubRepository(prisma),
   teams: teamReader,
@@ -288,6 +296,7 @@ const app = createApp({
   dataHealthService,
   gameHighlightsService,
   gameMediaCurationService,
+  homepageService,
   articleReader: articleService,
   editorialArticleService: articleService,
   newsInboxService,

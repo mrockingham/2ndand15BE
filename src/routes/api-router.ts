@@ -36,6 +36,11 @@ import {
   createPublicGameMediaRouter,
 } from '../modules/game-media-curation/game-media-curation.routes.js';
 import type { GameMediaCurationServiceContract } from '../modules/game-media-curation/game-media-curation.service.js';
+import {
+  createAdminHomepageRouter,
+  createPublicHomepageRouter,
+} from '../modules/homepage/homepage.routes.js';
+import type { HomepageServiceContract } from '../modules/homepage/homepage.service.js';
 import { createHealthRouter } from '../modules/health/health.routes.js';
 import { createAuthRouter } from '../modules/auth/auth.routes.js';
 import type { AuthenticationService } from '../modules/auth/auth.service.js';
@@ -74,6 +79,7 @@ export interface ApiRouterOptions {
   readonly dataHealthService?: DataHealthServiceContract;
   readonly gameHighlightsService?: GameHighlightsServiceContract;
   readonly gameMediaCurationService?: GameMediaCurationServiceContract;
+  readonly homepageService?: HomepageServiceContract;
   readonly articleReader?: PublicArticleReader;
   readonly editorialArticleService?: EditorialArticleService;
   readonly newsInboxService?: NewsInboxServiceContract;
@@ -195,6 +201,16 @@ export function createApiRouter(options: ApiRouterOptions): Router {
       }),
     );
   }
+  if (options.homepageService !== undefined && options.adminIdentities !== undefined) {
+    router.use(
+      '/admin/homepage',
+      createAdminHomepageRouter({
+        authenticate: options.authenticate,
+        identities: options.adminIdentities,
+        service: options.homepageService,
+      }),
+    );
+  }
   if (options.articleReader !== undefined) {
     router.use('/articles', createPublicArticleRouter(options.articleReader));
     router.use('/teams/:teamId/articles', createTeamArticleRouter(options.articleReader));
@@ -216,6 +232,8 @@ export function createApiRouter(options: ApiRouterOptions): Router {
   if (options.teamHubReader !== undefined)
     router.use('/teams/:teamId', createTeamHubRouter(options.teamHubReader));
   router.use('/teams', createTeamRouter(options.teamReader));
+  if (options.homepageService !== undefined)
+    router.use('/homepage', createPublicHomepageRouter(options.homepageService));
   router.use(
     '/auth',
     createAuthRouter({

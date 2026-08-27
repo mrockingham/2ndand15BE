@@ -16,6 +16,7 @@ import type { AdministrativeScheduleService } from './modules/admin/admin.servic
 import type { DataHealthServiceContract } from './modules/data-health/data-health.service.js';
 import type { GameHighlightsServiceContract } from './modules/game-highlights/game-highlights.service.js';
 import type { GameMediaCurationServiceContract } from './modules/game-media-curation/game-media-curation.service.js';
+import type { HomepageServiceContract } from './modules/homepage/homepage.service.js';
 import type {
   EditorialArticleService,
   PublicArticleReader,
@@ -51,6 +52,7 @@ export interface CreateAppOptions {
   readonly dataHealthService?: DataHealthServiceContract;
   readonly gameHighlightsService?: GameHighlightsServiceContract;
   readonly gameMediaCurationService?: GameMediaCurationServiceContract;
+  readonly homepageService?: HomepageServiceContract;
   readonly articleReader?: PublicArticleReader;
   readonly editorialArticleService?: EditorialArticleService;
   readonly newsInboxService?: NewsInboxServiceContract;
@@ -104,6 +106,9 @@ export function createApp(options: CreateAppOptions): Express {
       ...(options.gameMediaCurationService === undefined
         ? {}
         : { gameMediaCurationService: options.gameMediaCurationService }),
+      ...(options.homepageService === undefined
+        ? {}
+        : { homepageService: options.homepageService }),
       ...(options.articleReader === undefined ? {} : { articleReader: options.articleReader }),
       ...(options.editorialArticleService === undefined
         ? {}

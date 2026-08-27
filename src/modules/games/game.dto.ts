@@ -70,7 +70,7 @@ export function toGameDto(game: GameWithTeams): GameDto {
   };
 }
 
-function toTeamSummary(team: GameWithTeams['homeTeam']): GameTeamSummaryDto {
+export function toTeamSummary(team: GameWithTeams['homeTeam']): GameTeamSummaryDto {
   return {
     id: team.id,
     fullName: team.fullName,
