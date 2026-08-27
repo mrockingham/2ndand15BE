@@ -56,5 +56,33 @@ export function createAdminHomepageRouter(options: AdminHomepageRouterOptions): 
     require('MANAGE_HOMEPAGE_CMS'),
     controller.unmarkTopStory,
   );
+
+  // M37A: Homepage highlight curation. `/highlight-candidates` and
+  // `/highlights/order`/`/highlights/settings` are registered as their own
+  // static paths before `/highlights/:placementId` so Express's route-order
+  // matching never shadows them (same precaution as `/top-stories/order`).
+  router.get(
+    '/highlight-candidates',
+    require('VIEW_HOMEPAGE_CMS'),
+    controller.listHighlightCandidates,
+  );
+  router.get('/highlights', require('VIEW_HOMEPAGE_CMS'), controller.listHighlightPlacements);
+  router.post('/highlights', require('MANAGE_HOMEPAGE_CMS'), controller.addHighlightPlacement);
+  router.put(
+    '/highlights/order',
+    require('MANAGE_HOMEPAGE_CMS'),
+    controller.reorderHighlightPlacements,
+  );
+  router.put(
+    '/highlights/settings',
+    require('MANAGE_HOMEPAGE_CMS'),
+    controller.updateHighlightSettings,
+  );
+  router.delete(
+    '/highlights/:placementId',
+    require('MANAGE_HOMEPAGE_CMS'),
+    controller.removeHighlightPlacement,
+  );
+
   return router;
 }

@@ -306,6 +306,9 @@ model User {
   updatedHeroSlides           HomepageHeroSlide[]          @relation("HomepageHeroSlideUpdater")
   createdTopStories           HomepageTopStory[]           @relation("HomepageTopStoryCreator")
   updatedTopStories           HomepageTopStory[]           @relation("HomepageTopStoryUpdater")
+  createdHighlightPlacements  HomepageHighlightPlacement[] @relation("HomepageHighlightPlacementCreator")
+  updatedHighlightPlacements  HomepageHighlightPlacement[] @relation("HomepageHighlightPlacementUpdater")
+  updatedHighlightSettings    HomepageHighlightSettings[]  @relation("HomepageHighlightSettingsUpdater")
   reviewedCandidates          NewsCandidate[]              @relation("NewsCandidateReviewer")
   newsIngestionRuns           NewsIngestionRun[]           @relation("NewsIngestionInitiator")
   reviewedSourceRights        SourceRightsProfile[]        @relation("SourceRightsReviewer")
@@ -435,6 +438,7 @@ model Game {
   highlights            GameHighlight[]
   highlightSyncState    GameHighlightSyncState?
   curatedVideos         GameCuratedVideo[]
+  homepageHighlights    HomepageHighlightPlacement[]
 
   @@index([league, season, seasonType, week, startTime], map: "games_schedule_idx")
   @@index([status, startTime], map: "games_status_start_time_idx")
@@ -1800,4 +1804,57 @@ model ContactMessage {
   @@index([status, createdAt], map: "contact_messages_status_created_idx")
   @@index([createdAt], map: "contact_messages_created_idx")
   @@map("contact_messages")
+}
+
+enum HomepageHighlightSourceType {
+  GAME_HIGHLIGHT
+  CURATED_GAME_VIDEO
+}
+
+/// M37A: admin-curated Homepage highlight selections. Points at an existing
+/// internal media row by id only (never a provider id, never a copied
+/// URL/title) -- `sourceId` resolves against `GameHighlight.id` or
+/// `GameCuratedVideo.id` depending on `sourceType`; those are two unrelated
+/// tables, so no single DB foreign key can express it. `gameId` is
+/// denormalized from whichever row `sourceId` pointed at when the placement
+/// was created, purely so automatic-fallback selection can cheaply exclude
+/// games already curated here without a per-type join, and so admin listings
+/// can show matchup context. Row presence = active (no `isActive` column,
+/// matching `HomepageTopStory`'s convention) -- `DELETE` removes the row.
+model HomepageHighlightPlacement {
+  id                String                       @id @default(uuid()) @db.Uuid
+  sourceType        HomepageHighlightSourceType  @map("source_type")
+  sourceId          String                       @map("source_id") @db.Uuid
+  gameId            String                       @map("game_id") @db.Uuid
+  position          Int
+  createdById       String?                      @map("created_by_id") @db.Uuid
+  updatedById       String?                      @map("updated_by_id") @db.Uuid
+  createdBySnapshot String                       @map("created_by_snapshot") @db.VarChar(254)
+  updatedBySnapshot String                       @map("updated_by_snapshot") @db.VarChar(254)
+  createdAt         DateTime                     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime                     @updatedAt @map("updated_at") @db.Timestamptz(3)
+  game              Game                         @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  createdBy         User?                        @relation("HomepageHighlightPlacementCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedBy         User?                        @relation("HomepageHighlightPlacementUpdater", fields: [updatedById], references: [id], onDelete: SetNull)
+
+  @@unique([sourceType, sourceId], map: "homepage_highlight_placements_source_key")
+  @@unique([position], map: "homepage_highlight_placements_position_key")
+  @@index([gameId], map: "homepage_highlight_placements_game_id_idx")
+  @@map("homepage_highlight_placements")
+}
+
+/// M37A: singleton configuration for Homepage highlight display. Enforced as
+/// a singleton at the repository level (find-first / upsert-in-place), same
+/// pattern as `GlobalGameCenterVideo` -- no DB-level single-row constraint.
+model HomepageHighlightSettings {
+  id                String   @id @default(uuid()) @db.Uuid
+  displayLimit      Int      @default(5) @map("display_limit")
+  fillWithAutomatic Boolean  @default(true) @map("fill_with_automatic")
+  updatedById       String?  @map("updated_by_id") @db.Uuid
+  updatedBySnapshot String   @map("updated_by_snapshot") @db.VarChar(254)
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  updatedBy         User?    @relation("HomepageHighlightSettingsUpdater", fields: [updatedById], references: [id], onDelete: SetNull)
+
+  @@map("homepage_highlight_settings")
 }

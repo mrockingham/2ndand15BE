@@ -182,3 +182,62 @@ export const reorderTopStoriesSchema = z
   .object({ articleIds: z.array(z.uuid()).min(1).max(MAX_TOP_STORIES) })
   .strict();
 export type ReorderTopStoriesInput = z.infer<typeof reorderTopStoriesSchema>;
+
+// ---------------------------------------------------------------------------
+// M37A: Homepage highlight curation
+// ---------------------------------------------------------------------------
+
+export const MAX_HOMEPAGE_HIGHLIGHT_PLACEMENTS = 10;
+export const MIN_HOMEPAGE_HIGHLIGHT_DISPLAY_LIMIT = 3;
+export const MAX_HOMEPAGE_HIGHLIGHT_DISPLAY_LIMIT = 10;
+
+export const homepageHighlightSourceTypeSchema = z.enum(['GAME_HIGHLIGHT', 'CURATED_GAME_VIDEO']);
+
+export const homepageHighlightPlacementIdParamsSchema = z
+  .object({ placementId: z.uuid() })
+  .strict();
+
+export const addHighlightPlacementSchema = z
+  .object({
+    sourceType: homepageHighlightSourceTypeSchema,
+    sourceId: z.uuid(),
+  })
+  .strict();
+export type AddHighlightPlacementInput = z.infer<typeof addHighlightPlacementSchema>;
+
+export const reorderHighlightPlacementsSchema = z
+  .object({
+    placementIds: z.array(z.uuid()).min(1).max(MAX_HOMEPAGE_HIGHLIGHT_PLACEMENTS),
+  })
+  .strict();
+export type ReorderHighlightPlacementsInput = z.infer<typeof reorderHighlightPlacementsSchema>;
+
+export const updateHighlightSettingsSchema = z
+  .object({
+    displayLimit: z
+      .number()
+      .int()
+      .min(MIN_HOMEPAGE_HIGHLIGHT_DISPLAY_LIMIT)
+      .max(MAX_HOMEPAGE_HIGHLIGHT_DISPLAY_LIMIT),
+    fillWithAutomatic: z.boolean(),
+  })
+  .partial()
+  .strict()
+  .superRefine((value, context) => {
+    if (Object.keys(value).length === 0) {
+      context.addIssue({ code: 'custom', message: 'At least one field is required.' });
+    }
+  });
+export type UpdateHighlightSettingsInput = z.infer<typeof updateHighlightSettingsSchema>;
+
+export const highlightCandidatesQuerySchema = z
+  .object({
+    gameId: z.uuid().optional(),
+    dateFrom: z.coerce.date().optional(),
+    dateTo: z.coerce.date().optional(),
+    mediaType: homepageHighlightSourceTypeSchema.optional(),
+    limit: z.coerce.number().int().min(1).max(100).default(25),
+    cursor: z.string().min(1).max(200).optional(),
+  })
+  .strict();
+export type HighlightCandidatesQuery = z.infer<typeof highlightCandidatesQuerySchema>;

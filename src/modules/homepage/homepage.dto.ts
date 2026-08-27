@@ -11,6 +11,9 @@ import type { HeroRichTextDocument } from './homepage-rich-text.js';
 import type {
   HomepageHeroCtaRecord,
   HomepageHeroSlideRecord,
+  HomepageHighlightCandidateRecord,
+  HomepageHighlightPlacementRecord,
+  HomepageHighlightSettingsRecord,
   HomepageTopStoryRecord,
 } from './homepage.repository.js';
 import type {
@@ -186,7 +189,8 @@ export function toPublicTopStoryDto(
 /** Provider-neutral -- never a raw Highlightly provider ID, and `mediaType`
  * is never `'GLOBAL'` here: the homepage Highlights section only ever
  * surfaces game-specific media (see M35A spec §19-20 and
- * `HomepageService.getHighlights`). */
+ * `HomepageService.getHighlights`). `homepageSelection` is additive (M37A) --
+ * internal/debugging provenance, the public UI doesn't have to render it. */
 export interface PublicHomepageHighlightDto {
   readonly gameId: string;
   readonly title: string;
@@ -198,11 +202,13 @@ export interface PublicHomepageHighlightDto {
   readonly awayTeam: GameTeamSummaryDto;
   readonly homeTeam: GameTeamSummaryDto;
   readonly gameDate: string | null;
+  readonly homepageSelection: 'CURATED' | 'AUTOMATIC';
 }
 
 export function toPublicHomepageHighlightDto(
   game: GameWithTeams,
   item: DisplayMediaItemDto,
+  homepageSelection: 'CURATED' | 'AUTOMATIC',
 ): PublicHomepageHighlightDto {
   if (item.mediaType === 'GLOBAL') {
     throw new Error('The homepage Highlights section never surfaces the global video.');
@@ -218,7 +224,165 @@ export function toPublicHomepageHighlightDto(
     awayTeam: toTeamSummary(game.awayTeam),
     homeTeam: toTeamSummary(game.homeTeam),
     gameDate: game.startTime?.toISOString() ?? null,
+    homepageSelection,
   };
+}
+
+// ---------------------------------------------------------------------------
+// M37A: admin highlight curation
+// ---------------------------------------------------------------------------
+
+export interface AdminHomepageHighlightDto {
+  readonly id: string;
+  readonly position: number;
+  readonly sourceType: 'GAME_HIGHLIGHT' | 'CURATED_GAME_VIDEO';
+  readonly sourceId: string;
+  readonly gameId: string;
+  readonly matchup: {
+    readonly awayTeam: GameTeamSummaryDto;
+    readonly homeTeam: GameTeamSummaryDto;
+  };
+  readonly gameDate: string | null;
+  /** `null` when the underlying media row has been deleted or is no longer
+   * publicly eligible -- the placement row still exists (and is still
+   * manageable/removable by an admin) but is currently excluded from the
+   * public Homepage (see `HomepageService.getHighlights`). */
+  readonly preview: {
+    readonly title: string;
+    readonly thumbnailUrl: string | null;
+  } | null;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+/** `game` is looked up via `findGamesWithTeamsByIds` -- always resolvable in
+ * practice, since a placement's `gameId` foreign key cascade-deletes the
+ * placement row itself if the game is ever removed. */
+export function toAdminHomepageHighlightDto(
+  placement: HomepageHighlightPlacementRecord,
+  game: GameWithTeams,
+  preview: { readonly title: string; readonly thumbnailUrl: string | null } | null,
+): AdminHomepageHighlightDto {
+  return {
+    id: placement.id,
+    position: placement.position,
+    sourceType: placement.sourceType,
+    sourceId: placement.sourceId,
+    gameId: placement.gameId,
+    matchup: { awayTeam: toTeamSummary(game.awayTeam), homeTeam: toTeamSummary(game.homeTeam) },
+    gameDate: game.startTime?.toISOString() ?? null,
+    preview,
+    createdAt: placement.createdAt.toISOString(),
+    updatedAt: placement.updatedAt.toISOString(),
+  };
+}
+
+export interface HomepageHighlightCandidateDto {
+  readonly sourceType: 'GAME_HIGHLIGHT' | 'CURATED_GAME_VIDEO';
+  readonly sourceId: string;
+  readonly gameId: string;
+  readonly matchup: {
+    readonly awayTeam: GameTeamSummaryDto;
+    readonly homeTeam: GameTeamSummaryDto;
+  };
+  readonly title: string;
+  readonly thumbnailUrl: string | null;
+  readonly gameDate: string | null;
+  readonly isSelected: boolean;
+}
+
+export function toHomepageHighlightCandidateDto(
+  candidate: HomepageHighlightCandidateRecord,
+  isSelected: boolean,
+): HomepageHighlightCandidateDto {
+  return {
+    sourceType: candidate.sourceType,
+    sourceId: candidate.sourceId,
+    gameId: candidate.gameId,
+    matchup: {
+      awayTeam: toTeamSummary(candidate.game.awayTeam),
+      homeTeam: toTeamSummary(candidate.game.homeTeam),
+    },
+    title: candidate.title,
+    thumbnailUrl: candidate.thumbnailUrl,
+    gameDate: candidate.game.startTime?.toISOString() ?? null,
+    isSelected,
+  };
+}
+
+export interface HomepageHighlightSettingsDto {
+  readonly displayLimit: number;
+  readonly fillWithAutomatic: boolean;
+}
+
+export function toHomepageHighlightSettingsDto(
+  settings: HomepageHighlightSettingsRecord,
+): HomepageHighlightSettingsDto {
+  return { displayLimit: settings.displayLimit, fillWithAutomatic: settings.fillWithAutomatic };
+}
+
+// ---------------------------------------------------------------------------
+// M37A: Insight Rail
+// ---------------------------------------------------------------------------
+
+export interface HomepageInsightGameDto {
+  readonly gameId: string;
+  readonly startTime: string | null;
+  readonly homeTeam: {
+    readonly id: string;
+    readonly fullName: string;
+    readonly abbreviation: string;
+  };
+  readonly awayTeam: {
+    readonly id: string;
+    readonly fullName: string;
+    readonly abbreviation: string;
+  };
+}
+
+export interface HomepageInsightPickDto {
+  readonly game: HomepageInsightGameDto;
+  readonly favoriteTeam: {
+    readonly id: string;
+    readonly fullName: string;
+    readonly abbreviation: string;
+  };
+  readonly favoriteProbability: number;
+  readonly projectedScore: { readonly home: number; readonly away: number } | null;
+  readonly projectedTotal: number | null;
+}
+
+export interface HomepageAiHubSnapshotDto {
+  readonly season: number;
+  readonly week: number;
+  readonly seasonType: 'PRE' | 'REG' | 'POST';
+  readonly strongestPick: HomepageInsightPickDto | null;
+  readonly closestMatchup: HomepageInsightPickDto | null;
+  readonly highestProjectedTotal: HomepageInsightPickDto | null;
+}
+
+export interface HomepageWeeklyLeaderDto {
+  readonly playerId: string;
+  readonly playerName: string;
+  readonly team: string;
+  readonly value: number;
+  readonly metric: string;
+  readonly week: number;
+  readonly season: number;
+}
+
+export interface HomepageWeeklyLeadersDto {
+  readonly season: number;
+  readonly week: number;
+  readonly seasonType: 'REG' | 'POST';
+  readonly passing: HomepageWeeklyLeaderDto | null;
+  readonly rushing: HomepageWeeklyLeaderDto | null;
+  readonly receiving: HomepageWeeklyLeaderDto | null;
+}
+
+export interface HomepageInsightsDto {
+  readonly aiHub: HomepageAiHubSnapshotDto | null;
+  readonly weeklyLeaders: HomepageWeeklyLeadersDto | null;
 }
 
 export interface PublicHomepageLeaderPlayerDto {
@@ -255,4 +419,5 @@ export interface PublicHomepageDto {
   readonly topStories: readonly PublicTopStoryDto[];
   readonly highlights: readonly PublicHomepageHighlightDto[];
   readonly leaders: PublicHomepageLeadersDto;
+  readonly insights: HomepageInsightsDto;
 }

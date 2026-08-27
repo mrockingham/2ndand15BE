@@ -9,8 +9,11 @@ import { heroRichTextDocumentSchema } from './homepage-rich-text.js';
 import {
   MAX_HERO_SLIDES,
   MAX_TOP_STORIES,
+  MAX_HOMEPAGE_HIGHLIGHT_PLACEMENTS,
   type CreateHeroSlideInput,
+  type HighlightCandidatesQuery,
   type UpdateHeroSlideInput,
+  type UpdateHighlightSettingsInput,
 } from './homepage.schemas.js';
 
 export type HomepageHeroContentSlotValue =
@@ -67,6 +70,43 @@ export interface HomepageTopStoryRecord {
   readonly updatedAt: Date;
 }
 
+export type HomepageHighlightSourceTypeValue = 'GAME_HIGHLIGHT' | 'CURATED_GAME_VIDEO';
+
+export interface HomepageHighlightPlacementRecord {
+  readonly id: string;
+  readonly sourceType: HomepageHighlightSourceTypeValue;
+  readonly sourceId: string;
+  readonly gameId: string;
+  readonly position: number;
+  readonly createdAt: Date;
+  readonly updatedAt: Date;
+}
+
+export interface HomepageHighlightSettingsRecord {
+  readonly displayLimit: number;
+  readonly fillWithAutomatic: boolean;
+}
+
+export interface HomepageHighlightCandidateRecord {
+  readonly sourceType: HomepageHighlightSourceTypeValue;
+  readonly sourceId: string;
+  readonly gameId: string;
+  readonly title: string;
+  readonly thumbnailUrl: string | null;
+  readonly game: GameWithTeams;
+}
+
+export interface HomepageHighlightCandidateListResult {
+  readonly candidates: readonly HomepageHighlightCandidateRecord[];
+  readonly nextCursor: string | null;
+}
+
+export interface HomepageCurrentWeekContext {
+  readonly season: number;
+  readonly week: number;
+  readonly seasonType: 'PRE' | 'REG' | 'POST';
+}
+
 export interface HomepageRepository {
   listHeroSlides(): Promise<readonly HomepageHeroSlideRecord[]>;
   listActiveHeroSlides(): Promise<readonly HomepageHeroSlideRecord[]>;
@@ -111,6 +151,45 @@ export interface HomepageRepository {
    * game-specific media item (curated or automatic) -- never the global
    * video alone, and never a season-wide scan. */
   findRecentGamesWithMedia(limit: number): Promise<readonly GameWithTeams[]>;
+
+  // M37A: Homepage highlight curation
+  listActiveHighlightPlacements(): Promise<readonly HomepageHighlightPlacementRecord[]>;
+  findHighlightPlacement(placementId: string): Promise<HomepageHighlightPlacementRecord | null>;
+  findHighlightPlacementBySource(
+    sourceType: HomepageHighlightSourceTypeValue,
+    sourceId: string,
+  ): Promise<HomepageHighlightPlacementRecord | null>;
+  createHighlightPlacement(
+    input: { sourceType: HomepageHighlightSourceTypeValue; sourceId: string; gameId: string },
+    actor: AuditActor,
+  ): Promise<HomepageHighlightPlacementRecord>;
+  deleteHighlightPlacement(
+    placementId: string,
+    actor: AuditActor,
+  ): Promise<HomepageHighlightPlacementRecord | null>;
+  reorderHighlightPlacements(
+    placementIds: readonly string[],
+    actor: AuditActor,
+  ): Promise<readonly HomepageHighlightPlacementRecord[]>;
+  getHighlightSettings(): Promise<HomepageHighlightSettingsRecord>;
+  updateHighlightSettings(
+    input: UpdateHighlightSettingsInput,
+    actor: AuditActor,
+  ): Promise<HomepageHighlightSettingsRecord>;
+  /** Existence + owning-game lookup used when adding a placement -- never a
+   * provider id, just confirms the internal media row is real. */
+  findGameHighlightSource(id: string): Promise<{ readonly gameId: string } | null>;
+  findCuratedVideoSource(id: string): Promise<{ readonly gameId: string } | null>;
+  findGamesWithTeamsByIds(gameIds: readonly string[]): Promise<readonly GameWithTeams[]>;
+  listHighlightCandidates(
+    query: HighlightCandidatesQuery,
+  ): Promise<HomepageHighlightCandidateListResult>;
+
+  // M37A: Insight Rail
+  /** Schedule-driven current-week resolution: the nearest not-yet-final game,
+   * else the most recent FINAL game. `null` only if the season has no games
+   * with a `week` at all. */
+  findCurrentWeekContext(): Promise<HomepageCurrentWeekContext | null>;
 }
 
 const heroSlideInclude = {
@@ -182,6 +261,30 @@ function topStoryReorderMismatchError(): AppError {
   return new AppError({
     code: 'HOMEPAGE_TOP_STORY_REORDER_MISMATCH',
     message: 'articleIds must include exactly every current Top Story, each once.',
+    statusCode: 422,
+  });
+}
+
+function highlightPlacementLimitReachedError(): AppError {
+  return new AppError({
+    code: 'HOMEPAGE_HIGHLIGHT_LIMIT_REACHED',
+    message: `The homepage may have at most ${String(MAX_HOMEPAGE_HIGHLIGHT_PLACEMENTS)} curated highlights.`,
+    statusCode: 409,
+  });
+}
+
+function highlightPlacementDuplicateError(): AppError {
+  return new AppError({
+    code: 'HOMEPAGE_HIGHLIGHT_DUPLICATE',
+    message: 'This media item is already curated on the homepage.',
+    statusCode: 409,
+  });
+}
+
+function highlightPlacementReorderMismatchError(): AppError {
+  return new AppError({
+    code: 'HOMEPAGE_HIGHLIGHT_REORDER_MISMATCH',
+    message: 'placementIds must include exactly every current highlight placement, each once.',
     statusCode: 422,
   });
 }
@@ -536,6 +639,291 @@ export class PrismaHomepageRepository implements HomepageRepository {
       take: limit,
     });
   }
+
+  async listActiveHighlightPlacements(): Promise<readonly HomepageHighlightPlacementRecord[]> {
+    return this.prisma.homepageHighlightPlacement.findMany({ orderBy: { position: 'asc' } });
+  }
+
+  findHighlightPlacement(placementId: string): Promise<HomepageHighlightPlacementRecord | null> {
+    return this.prisma.homepageHighlightPlacement.findUnique({ where: { id: placementId } });
+  }
+
+  findHighlightPlacementBySource(
+    sourceType: HomepageHighlightSourceTypeValue,
+    sourceId: string,
+  ): Promise<HomepageHighlightPlacementRecord | null> {
+    return this.prisma.homepageHighlightPlacement.findUnique({
+      where: { sourceType_sourceId: { sourceType, sourceId } },
+    });
+  }
+
+  createHighlightPlacement(
+    input: { sourceType: HomepageHighlightSourceTypeValue; sourceId: string; gameId: string },
+    actor: AuditActor,
+  ): Promise<HomepageHighlightPlacementRecord> {
+    return this.prisma.$transaction(async (transaction) => {
+      const count = await transaction.homepageHighlightPlacement.count();
+      if (count >= MAX_HOMEPAGE_HIGHLIGHT_PLACEMENTS) throw highlightPlacementLimitReachedError();
+      const existing = await transaction.homepageHighlightPlacement.findUnique({
+        where: {
+          sourceType_sourceId: { sourceType: input.sourceType, sourceId: input.sourceId },
+        },
+      });
+      if (existing !== null) throw highlightPlacementDuplicateError();
+      const created = await transaction.homepageHighlightPlacement.create({
+        data: {
+          sourceType: input.sourceType,
+          sourceId: input.sourceId,
+          gameId: input.gameId,
+          position: count,
+          createdById: actor.userId,
+          updatedById: actor.userId,
+          createdBySnapshot: actor.emailSnapshot,
+          updatedBySnapshot: actor.emailSnapshot,
+        },
+      });
+      await createAudit(
+        transaction,
+        actor,
+        'HOMEPAGE_HIGHLIGHT_ADDED',
+        'HOMEPAGE_HIGHLIGHT_PLACEMENT',
+        created.id,
+        null,
+        created,
+      );
+      return created;
+    });
+  }
+
+  deleteHighlightPlacement(
+    placementId: string,
+    actor: AuditActor,
+  ): Promise<HomepageHighlightPlacementRecord | null> {
+    return this.prisma.$transaction(async (transaction) => {
+      const existing = await transaction.homepageHighlightPlacement.findUnique({
+        where: { id: placementId },
+      });
+      if (existing === null) return null;
+      const deleted = await transaction.homepageHighlightPlacement.delete({
+        where: { id: placementId },
+      });
+      const remaining = await transaction.homepageHighlightPlacement.findMany({
+        orderBy: { position: 'asc' },
+        select: { id: true },
+      });
+      await reassignHighlightPlacementPositions(
+        transaction,
+        remaining.map((row) => row.id),
+        actor,
+      );
+      await createAudit(
+        transaction,
+        actor,
+        'HOMEPAGE_HIGHLIGHT_REMOVED',
+        'HOMEPAGE_HIGHLIGHT_PLACEMENT',
+        deleted.id,
+        deleted,
+        null,
+      );
+      return deleted;
+    });
+  }
+
+  reorderHighlightPlacements(
+    placementIds: readonly string[],
+    actor: AuditActor,
+  ): Promise<readonly HomepageHighlightPlacementRecord[]> {
+    return this.prisma.$transaction(async (transaction) => {
+      const existing = await transaction.homepageHighlightPlacement.findMany({
+        select: { id: true },
+      });
+      const existingIds = new Set(existing.map((row) => row.id));
+      const providedIds = new Set(placementIds);
+      const isExactMatch =
+        placementIds.length === existing.length &&
+        providedIds.size === placementIds.length &&
+        [...existingIds].every((id) => providedIds.has(id));
+      if (!isExactMatch) throw highlightPlacementReorderMismatchError();
+
+      const before = await transaction.homepageHighlightPlacement.findMany({
+        orderBy: { position: 'asc' },
+      });
+      await reassignHighlightPlacementPositions(transaction, placementIds, actor);
+      const after = await transaction.homepageHighlightPlacement.findMany({
+        orderBy: { position: 'asc' },
+      });
+      await createAudit(
+        transaction,
+        actor,
+        'HOMEPAGE_HIGHLIGHTS_REORDERED',
+        'HOMEPAGE_HIGHLIGHT_PLACEMENT',
+        null,
+        before,
+        after,
+      );
+      return after;
+    });
+  }
+
+  async getHighlightSettings(): Promise<HomepageHighlightSettingsRecord> {
+    const row = await this.prisma.homepageHighlightSettings.findFirst();
+    return row ?? { displayLimit: 5, fillWithAutomatic: true };
+  }
+
+  updateHighlightSettings(
+    input: UpdateHighlightSettingsInput,
+    actor: AuditActor,
+  ): Promise<HomepageHighlightSettingsRecord> {
+    return this.prisma.$transaction(async (transaction) => {
+      const before = await transaction.homepageHighlightSettings.findFirst();
+      const data = {
+        ...(input.displayLimit === undefined ? {} : { displayLimit: input.displayLimit }),
+        ...(input.fillWithAutomatic === undefined
+          ? {}
+          : { fillWithAutomatic: input.fillWithAutomatic }),
+        updatedById: actor.userId,
+        updatedBySnapshot: actor.emailSnapshot,
+      };
+      const after =
+        before === null
+          ? await transaction.homepageHighlightSettings.create({
+              data: {
+                displayLimit: input.displayLimit ?? 5,
+                fillWithAutomatic: input.fillWithAutomatic ?? true,
+                updatedById: actor.userId,
+                updatedBySnapshot: actor.emailSnapshot,
+              },
+            })
+          : await transaction.homepageHighlightSettings.update({
+              where: { id: before.id },
+              data,
+            });
+      await createAudit(
+        transaction,
+        actor,
+        'HOMEPAGE_HIGHLIGHT_SETTINGS_UPDATED',
+        'HOMEPAGE_HIGHLIGHT_SETTINGS',
+        after.id,
+        before,
+        after,
+      );
+      return after;
+    });
+  }
+
+  findGameHighlightSource(id: string): Promise<{ readonly gameId: string } | null> {
+    return this.prisma.gameHighlight.findUnique({ where: { id }, select: { gameId: true } });
+  }
+
+  findCuratedVideoSource(id: string): Promise<{ readonly gameId: string } | null> {
+    return this.prisma.gameCuratedVideo.findUnique({ where: { id }, select: { gameId: true } });
+  }
+
+  findGamesWithTeamsByIds(gameIds: readonly string[]): Promise<readonly GameWithTeams[]> {
+    if (gameIds.length === 0) return Promise.resolve([]);
+    return this.prisma.game.findMany({
+      where: { id: { in: [...gameIds] } },
+      include: publicGameInclude,
+    });
+  }
+
+  async listHighlightCandidates(
+    query: HighlightCandidatesQuery,
+  ): Promise<HomepageHighlightCandidateListResult> {
+    const takePerType = query.limit + 1;
+    const dateWhere =
+      query.dateFrom === undefined && query.dateTo === undefined
+        ? {}
+        : {
+            startTime: {
+              ...(query.dateFrom === undefined ? {} : { gte: query.dateFrom }),
+              ...(query.dateTo === undefined ? {} : { lte: query.dateTo }),
+            },
+          };
+    const gameWhere = { ...(query.gameId === undefined ? {} : { id: query.gameId }), ...dateWhere };
+
+    const [highlightRows, curatedRows] = await Promise.all([
+      query.mediaType === 'CURATED_GAME_VIDEO'
+        ? Promise.resolve([])
+        : this.prisma.gameHighlight.findMany({
+            where: { game: gameWhere },
+            include: { game: { include: publicGameInclude } },
+            orderBy: [{ publishedAt: 'desc' }, { firstSeenAt: 'desc' }],
+            take: takePerType,
+          }),
+      query.mediaType === 'GAME_HIGHLIGHT'
+        ? Promise.resolve([])
+        : this.prisma.gameCuratedVideo.findMany({
+            where: { game: gameWhere },
+            include: { game: { include: publicGameInclude } },
+            orderBy: [{ createdAt: 'desc' }],
+            take: takePerType,
+          }),
+    ]);
+
+    const candidates: HomepageHighlightCandidateRecord[] = [
+      ...highlightRows.map((row): HomepageHighlightCandidateRecord => ({
+        sourceType: 'GAME_HIGHLIGHT',
+        sourceId: row.id,
+        gameId: row.gameId,
+        title: row.title,
+        thumbnailUrl: row.thumbnailUrl,
+        game: row.game,
+      })),
+      ...curatedRows.map((row): HomepageHighlightCandidateRecord => ({
+        sourceType: 'CURATED_GAME_VIDEO',
+        sourceId: row.id,
+        gameId: row.gameId,
+        title: row.title,
+        thumbnailUrl: row.thumbnailUrl,
+        game: row.game,
+      })),
+    ].sort(
+      (left, right) =>
+        (right.game.startTime?.getTime() ?? 0) - (left.game.startTime?.getTime() ?? 0) ||
+        left.sourceId.localeCompare(right.sourceId),
+    );
+
+    const cursorKey = (candidate: HomepageHighlightCandidateRecord): string =>
+      `${candidate.sourceType}:${candidate.sourceId}`;
+    const startIndex =
+      query.cursor === undefined
+        ? 0
+        : candidates.findIndex((candidate) => cursorKey(candidate) === query.cursor) + 1;
+    const page = candidates.slice(startIndex, startIndex + query.limit);
+    const hasMore = candidates.length > startIndex + query.limit;
+    const last = page.at(-1);
+    return { candidates: page, nextCursor: hasMore && last !== undefined ? cursorKey(last) : null };
+  }
+
+  async findCurrentWeekContext(): Promise<HomepageCurrentWeekContext | null> {
+    const upcoming = await this.prisma.game.findFirst({
+      where: {
+        status: { in: ['SCHEDULED', 'PREGAME', 'IN_PROGRESS', 'HALFTIME'] },
+        week: { not: null },
+      },
+      orderBy: [{ startTime: 'asc' }],
+      select: { season: true, week: true, seasonType: true },
+    });
+    if (upcoming?.week != null) {
+      return { season: upcoming.season, week: upcoming.week, seasonType: upcoming.seasonType };
+    }
+
+    const recentFinal = await this.prisma.game.findFirst({
+      where: { status: 'FINAL', week: { not: null } },
+      orderBy: [{ startTime: 'desc' }],
+      select: { season: true, week: true, seasonType: true },
+    });
+    if (recentFinal?.week != null) {
+      return {
+        season: recentFinal.season,
+        week: recentFinal.week,
+        seasonType: recentFinal.seasonType,
+      };
+    }
+
+    return null;
+  }
 }
 
 /** Same two-phase (negative-then-final) reassignment as
@@ -569,6 +957,25 @@ async function reassignTopStoryPositions(
   }
   for (const [index, id] of orderedIds.entries()) {
     await transaction.homepageTopStory.update({
+      where: { id },
+      data: { position: index, updatedById: actor.userId, updatedBySnapshot: actor.emailSnapshot },
+    });
+  }
+}
+
+async function reassignHighlightPlacementPositions(
+  transaction: Prisma.TransactionClient,
+  orderedIds: readonly string[],
+  actor: AuditActor,
+): Promise<void> {
+  for (const [index, id] of orderedIds.entries()) {
+    await transaction.homepageHighlightPlacement.update({
+      where: { id },
+      data: { position: -(index + 1) },
+    });
+  }
+  for (const [index, id] of orderedIds.entries()) {
+    await transaction.homepageHighlightPlacement.update({
       where: { id },
       data: { position: index, updatedById: actor.userId, updatedBySnapshot: actor.emailSnapshot },
     });

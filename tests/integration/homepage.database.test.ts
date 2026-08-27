@@ -16,6 +16,8 @@ import { HomepageService } from '../../src/modules/homepage/homepage.service.js'
 import type { HomepageGameMediaReader } from '../../src/modules/homepage/homepage.service.js';
 import { PrismaStatsHubRepository } from '../../src/modules/stats-hub/stats.repository.js';
 import { StatsHubService } from '../../src/modules/stats-hub/stats.service.js';
+import { AiHubWeeklyInsightsService } from '../../src/modules/ai-hub/weekly-insights.service.js';
+import { PrismaPredictionRepository } from '../../src/modules/ai-hub/prediction.repository.js';
 
 const databaseTestsEnabled = process.env.RUN_DATABASE_TESTS === 'true';
 
@@ -29,6 +31,10 @@ function requirePrisma(client: PrismaClient | undefined): PrismaClient {
  * DB-backed reads are exercised). This dev DB already has real curated/
  * automatic media from earlier milestones' verification, so the Highlights
  * section is exercised against real data rather than a stub. */
+function realAiHub(client: PrismaClient): AiHubWeeklyInsightsService {
+  return new AiHubWeeklyInsightsService(new PrismaPredictionRepository(client));
+}
+
 function realGameMedia(client: PrismaClient): HomepageGameMediaReader {
   const highlightsService = new GameHighlightsService(new PrismaGameHighlightsRepository(client));
   return new GameMediaCurationService(
@@ -75,6 +81,7 @@ describe.skipIf(!databaseTestsEnabled)('homepage database integration (M35A)', (
       repository,
       gameMedia: realGameMedia(client),
       stats: new StatsHubService(new PrismaStatsHubRepository(client)),
+      aiHub: realAiHub(client),
       fallbackSeason: 2026,
     });
 
@@ -240,6 +247,7 @@ describe.skipIf(!databaseTestsEnabled)('homepage database integration (M35A)', (
       repository,
       gameMedia: realGameMedia(client),
       stats: new StatsHubService(new PrismaStatsHubRepository(client)),
+      aiHub: realAiHub(client),
       fallbackSeason: 2026,
     });
 
@@ -276,6 +284,7 @@ describe.skipIf(!databaseTestsEnabled)('homepage database integration (M35A)', (
       repository,
       gameMedia: realGameMedia(client),
       stats: new StatsHubService(new PrismaStatsHubRepository(client)),
+      aiHub: realAiHub(client),
       fallbackSeason: 2026,
     });
 
