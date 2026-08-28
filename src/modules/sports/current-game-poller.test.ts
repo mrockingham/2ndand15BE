@@ -10,6 +10,7 @@ import type {
   CurrentGameDetailsApplyInput,
   CurrentGameDetailsRepository,
   CurrentGameDetailsTarget,
+  CurrentGamePlayerApplyInput,
 } from './current-game-details.repository.js';
 import type {
   CurrentGamePlayApplyInput,
@@ -26,8 +27,14 @@ import type {
   PollStateOutcomeUpdate,
   PollStateRow,
 } from './current-game-poll-state.repository.js';
-import type { HighlightlyDetailedMatch } from './evaluation/highlightly/highlightly-schemas.js';
-import { highlightlyDetailedMatchSchema } from './evaluation/highlightly/highlightly-schemas.js';
+import type {
+  HighlightlyBoxScoreResponse,
+  HighlightlyDetailedMatch,
+} from './evaluation/highlightly/highlightly-schemas.js';
+import {
+  highlightlyBoxScoreResponseSchema,
+  highlightlyDetailedMatchSchema,
+} from './evaluation/highlightly/highlightly-schemas.js';
 import type { MatchDetailFetcher } from './live-game-validation.js';
 import type { NormalizedGame } from './normalized-game.js';
 import {
@@ -155,6 +162,39 @@ function rawDetail(options: {
   });
 }
 
+function rawBoxScore(): HighlightlyBoxScoreResponse {
+  return highlightlyBoxScoreResponseSchema.parse([
+    {
+      team: {
+        id: 'ne-provider',
+        name: 'Patriots',
+        boxScores: [
+          {
+            player: { id: 'player-1', name: 'Mapped Quarterback' },
+            statistics: [
+              { name: 'Total Successful Passes', value: 10 },
+              { name: 'Total Passes', value: 15 },
+              { name: 'Total Passing Yards', value: 120 },
+            ],
+          },
+        ],
+      },
+    },
+    {
+      team: {
+        id: 'phi-provider',
+        name: 'Eagles',
+        boxScores: [
+          {
+            player: { id: 'player-unresolved', name: 'Unresolved Player' },
+            statistics: [{ name: 'Total Rushing Attempts', value: 2 }],
+          },
+        ],
+      },
+    },
+  ]);
+}
+
 type MutableState = { -readonly [Key in keyof PollStateRow]: PollStateRow[Key] } & {
   lockedAt: Date | null;
   lockedBy: string | null;
@@ -171,6 +211,7 @@ function createFakePollStateRepository(games: readonly PollCandidateGame[]) {
 
   const repository: CurrentGamePollStateRepository = {
     discoverCandidates: () => Promise.resolve(games),
+    findCandidateGameById: (id) => Promise.resolve(gameById.get(id) ?? null),
     ensurePollStates: (gameIds, now) => {
       for (const id of gameIds) {
         if (findByGameId(id) !== undefined) continue;
@@ -214,6 +255,20 @@ function createFakePollStateRepository(games: readonly PollCandidateGame[]) {
         claimed.push({ pollState: { ...state }, game });
       }
       return Promise.resolve(claimed);
+    },
+    claimForRecovery: (recoveryGameId, now, workerId, leaseMs) => {
+      const staleBefore = new Date(now.getTime() - leaseMs);
+      const state = findByGameId(recoveryGameId);
+      if (state === undefined) return Promise.resolve(null);
+      if (state.lockedAt !== null && state.lockedAt.getTime() >= staleBefore.getTime()) {
+        return Promise.resolve(null);
+      }
+      const game = gameById.get(state.gameId);
+      if (game === undefined) return Promise.resolve(null);
+      state.lockedAt = now;
+      state.lockedBy = workerId;
+      state.lastAttemptAt = now;
+      return Promise.resolve({ pollState: { ...state }, game });
     },
     recordSuccess: (id, now, update: PollStateOutcomeUpdate) => {
       const state = states.get(id);
@@ -292,8 +347,13 @@ function harness(options: {
   readonly manualFeatured?: boolean | null;
   readonly broadcastNetwork?: string | null;
   readonly rateLimitRemaining?: number | null;
-  readonly highlightResults?: readonly { readonly coverage: string; readonly errorCode: string | null }[];
+  readonly highlightResults?: readonly {
+    readonly coverage: string;
+    readonly errorCode: string | null;
+  }[];
   readonly highlightSyncThrows?: boolean;
+  readonly boxScore?: HighlightlyBoxScoreResponse;
+  readonly playerMappings?: ReadonlyMap<string, string>;
 }) {
   const gameRecord: CurrentGameRecord = {
     id: gameId,
@@ -341,6 +401,7 @@ function harness(options: {
   };
 
   let storedTeamStats: CurrentGameDetailsApplyInput['rows'] = [];
+  let playerCoverage: CurrentGameDetailsTarget['playerCoverage'] = null;
   const detailsTarget: CurrentGameDetailsTarget = {
     id: gameId,
     homeTeamId,
@@ -352,18 +413,34 @@ function harness(options: {
     playerStats: [],
     playerCoverage: null,
   };
+  const applyPlayerStats = vi.fn((input: CurrentGamePlayerApplyInput) => {
+    playerCoverage = {
+      id: 'coverage-1',
+      gameId,
+      providerRows: input.providerPlayerCount,
+      resolvedRows: input.resolvedPlayerCount,
+      unresolvedRows: input.unresolvedPlayerCount,
+      sourceProvider: input.provider,
+      sourceUpdatedAt: input.sourceUpdatedAt,
+      createdAt: input.sourceUpdatedAt,
+      updatedAt: input.sourceUpdatedAt,
+    };
+    return Promise.resolve();
+  });
   const detailsRepository: CurrentGameDetailsRepository = {
     findTarget: vi.fn(() =>
       Promise.resolve({
         ...detailsTarget,
         teamStats: storedTeamStats as unknown as CurrentGameDetailsTarget['teamStats'],
+        playerCoverage,
       }),
     ),
-    findPlayerMappings: vi.fn(() => Promise.resolve(new Map())),
+    findPlayerMappings: vi.fn(() => Promise.resolve(options.playerMappings ?? new Map())),
     applyStats: vi.fn((input: CurrentGameDetailsApplyInput) => {
       storedTeamStats = input.rows;
       return Promise.resolve();
     }),
+    applyPlayerStats,
   };
 
   let storedPlays: GamePlay[] = [...(options.initiallyStoredPlays ?? [])];
@@ -427,6 +504,17 @@ function harness(options: {
     return Promise.resolve({ detail: rawDetail({ plays: options.plays }), failureReason: null });
   });
   const matchDetailFetcher: MatchDetailFetcher = { fetch: fetchMatchDetail };
+  const fetchBoxScore = vi.fn(() => {
+    if (options.boxScore === undefined) {
+      return Promise.resolve({
+        boxScore: null,
+        failureReason: 'not configured in harness',
+        requestsUsed: 0,
+      });
+    }
+    countRequest();
+    return Promise.resolve({ boxScore: options.boxScore, failureReason: null, requestsUsed: 1 });
+  });
 
   const candidate: PollCandidateGame = {
     gameId,
@@ -457,7 +545,10 @@ function harness(options: {
   }[] = [];
   const syncGame = vi.fn(
     (syncGameId: string, syncOptions?: { readonly exhaustiveCheck?: boolean }) => {
-      highlightSyncCalls.push({ gameId: syncGameId, exhaustiveCheck: syncOptions?.exhaustiveCheck });
+      highlightSyncCalls.push({
+        gameId: syncGameId,
+        exhaustiveCheck: syncOptions?.exhaustiveCheck,
+      });
       if (options.highlightSyncThrows) {
         return Promise.reject(new Error('Highlight provider unavailable.'));
       }
@@ -478,6 +569,7 @@ function harness(options: {
     playRepository,
     finalPlaySnapshotService,
     matchDetailFetcher,
+    boxScoreFetcher: { fetch: fetchBoxScore },
     highlightsService,
     pollStateRepository,
     requestCounter: { getRequestCount: () => requestCount },
@@ -505,6 +597,7 @@ function harness(options: {
     lockLeaseSeconds: 120,
     batchSize: 10,
     rateLimitDegradeThreshold: 500,
+    playerStatsPollSeconds: 120,
   };
 
   return {
@@ -519,6 +612,8 @@ function harness(options: {
     pollStateRepository,
     setRateLimitRemaining,
     fetchMatchDetail,
+    fetchBoxScore,
+    applyPlayerStats,
     setNow,
     highlightsService,
     highlightSyncCalls,
@@ -709,6 +804,14 @@ describe('CurrentGamePoller', () => {
             failureReason: null,
           }),
       },
+      boxScoreFetcher: {
+        fetch: () =>
+          Promise.resolve({
+            boxScore: null,
+            failureReason: 'not configured in harness',
+            requestsUsed: 0,
+          }),
+      },
       highlightsService: {
         syncGame: () => Promise.resolve({ coverage: 'AVAILABLE', errorCode: null }),
       },
@@ -732,6 +835,7 @@ describe('CurrentGamePoller', () => {
       lockLeaseSeconds: 120,
       batchSize: 10,
       rateLimitDegradeThreshold: 500,
+      playerStatsPollSeconds: 120,
     };
 
     const report = await poller.runCycle(options);
@@ -784,6 +888,67 @@ describe('CurrentGamePoller', () => {
     expect(report.ticks[0]?.plays.blocked).toBe(true);
     expect(applySnapshot).not.toHaveBeenCalled();
     expect(getStoredPlays()).toEqual([survivingPlay]);
+  });
+
+  it('fetches only one box score when live player stats are due and persists exact mapped identities without profile requests', async () => {
+    const { poller, options, fetchMatchDetail, fetchBoxScore, applyPlayerStats } = harness({
+      boxScore: rawBoxScore(),
+      playerMappings: new Map([['player-1', 'internal-player-1']]),
+    });
+    const report = await poller.runCycle(options);
+    const stats = report.ticks[0]?.playerStats;
+    expect(fetchMatchDetail).toHaveBeenCalledOnce();
+    expect(fetchBoxScore).toHaveBeenCalledOnce();
+    expect(stats).toMatchObject({
+      attempted: true,
+      ok: true,
+      received: 2,
+      persisted: 1,
+      unresolved: 1,
+      coverage: 'PARTIAL',
+      boxScoreRequests: 1,
+    });
+    expect(applyPlayerStats).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerPlayerCount: 2,
+        resolvedPlayerCount: 1,
+        unresolvedPlayerCount: 1,
+      }),
+    );
+  });
+
+  it('keeps player box scores on an independent 120-second cadence even when the game tick is due sooner', async () => {
+    const { poller, options, setNow, setNextPollAt, fetchBoxScore } = harness({
+      boxScore: rawBoxScore(),
+      playerMappings: new Map([['player-1', 'internal-player-1']]),
+    });
+    await poller.runCycle(options);
+    setNow(new Date('2026-08-23T00:01:00.000Z'));
+    setNextPollAt(gameId, new Date('2026-08-23T00:01:00.000Z'));
+    const early = await poller.runCycle(options);
+    expect(early.ticks[0]?.playerStats.attempted).toBe(false);
+    expect(early.ticks[0]?.playerStats.nextPollAt).toBe('2026-08-23T00:02:00.000Z');
+    expect(fetchBoxScore).toHaveBeenCalledTimes(1);
+
+    setNow(new Date('2026-08-23T00:02:00.000Z'));
+    setNextPollAt(gameId, new Date('2026-08-23T00:02:00.000Z'));
+    const due = await poller.runCycle(options);
+    expect(due.ticks[0]?.playerStats.attempted).toBe(true);
+    expect(fetchBoxScore).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not request a player box score during pregame', async () => {
+    const { poller, options, fetchBoxScore } = harness({
+      gameStatus: 'PREGAME',
+      boxScore: rawBoxScore(),
+    });
+    const report = await poller.runCycle(options);
+    expect(report.ticks[0]?.playerStats).toMatchObject({
+      attempted: false,
+      coverage: 'PENDING',
+      boxScoreRequests: 0,
+    });
+    expect(fetchBoxScore).not.toHaveBeenCalled();
   });
 
   it('persists a durable block via recordSuccess on first occurrence (a block never fails the cycle)', async () => {
@@ -1303,5 +1468,86 @@ describe('CurrentGamePoller', () => {
     expect(shouldPollWhileDegraded(asClaim('LIVE_NORMAL'))).toBe(false);
     expect(shouldPollWhileDegraded(asClaim('PREGAME'))).toBe(false);
     expect(shouldPollWhileDegraded(asClaim('HALFTIME'))).toBe(false);
+  });
+
+  describe('--gameId explicit recovery/debug mode (2026-08-27 production incident)', () => {
+    it('bypasses discovery entirely and resolves the target game directly, even far outside any normal scheduling window', async () => {
+      const { poller, options, pollStateRepository } = harness({ gameStatus: 'SCHEDULED' });
+      const discoverSpy = vi.spyOn(pollStateRepository, 'discoverCandidates');
+      const findSpy = vi.spyOn(pollStateRepository, 'findCandidateGameById');
+      const report = await poller.runCycle({ ...options, onlyGameId: gameId });
+      expect(discoverSpy).not.toHaveBeenCalled();
+      expect(findSpy).toHaveBeenCalledWith(gameId);
+      expect(report.candidatesDiscovered).toBe(1);
+      expect(report.claimed).toBe(1);
+      expect(report.ticks).toHaveLength(1);
+      expect(report.ticks[0]?.gameId).toBe(gameId);
+    });
+
+    it('throws a clear error when the requested game does not exist -- the pre-fix behavior silently reported zero candidates instead', async () => {
+      const { poller, options } = harness({});
+      await expect(poller.runCycle({ ...options, onlyGameId: 'does-not-exist' })).rejects.toThrow(
+        /was not found/,
+      );
+    });
+
+    it('throws a clear error when the requested game has no current-game provider mapping', async () => {
+      const { poller, options, pollStateRepository } = harness({});
+      vi.spyOn(pollStateRepository, 'findCandidateGameById').mockResolvedValueOnce({
+        gameId,
+        status: 'SCHEDULED',
+        startTime: new Date('2026-08-22T23:00:00.000Z'),
+        quarter: null,
+        homeScore: null,
+        awayScore: null,
+        manualFeatured: null,
+        broadcastNetwork: null,
+        homeAbbreviation: 'NE',
+        awayAbbreviation: 'PHI',
+        providerMapping: null,
+      });
+      await expect(poller.runCycle({ ...options, onlyGameId: gameId })).rejects.toThrow(
+        /no current-game provider mapping/,
+      );
+    });
+
+    it('does not create a duplicate claim: a game already locked by another in-flight worker is not re-claimed by an explicit recovery run', async () => {
+      const { poller, options, states, pollStateRepository } = harness({
+        gameStatus: 'SCHEDULED',
+      });
+      await pollStateRepository.ensurePollStates([gameId], new Date('2026-08-23T00:00:00.000Z'));
+      const [state] = [...states.values()];
+      if (state === undefined) throw new Error('expected a poll state to exist');
+      state.lockedAt = new Date('2026-08-23T00:00:00.000Z');
+      state.lockedBy = 'other-worker';
+      const report = await poller.runCycle({ ...options, onlyGameId: gameId });
+      expect(report.claimed).toBe(0);
+      expect(report.ticks).toHaveLength(0);
+    });
+
+    it('does claim a game whose lock has gone stale past the lease, same lock-safety semantics as normal broad claiming', async () => {
+      const { poller, options, states, setNow, pollStateRepository } = harness({
+        gameStatus: 'SCHEDULED',
+      });
+      await pollStateRepository.ensurePollStates([gameId], new Date('2026-08-23T00:00:00.000Z'));
+      const [state] = [...states.values()];
+      if (state === undefined) throw new Error('expected a poll state to exist');
+      state.lockedAt = new Date('2026-08-23T00:00:00.000Z');
+      state.lockedBy = 'other-worker';
+      setNow(new Date('2026-08-23T00:05:00.000Z')); // 5 minutes later, past the 120s lease
+      const report = await poller.runCycle({ ...options, onlyGameId: gameId });
+      expect(report.claimed).toBe(1);
+    });
+
+    it('leaves the normal broad-polling path unchanged: without --gameId, discovery is still used and the recovery lookup is never called', async () => {
+      const { poller, options, pollStateRepository } = harness({ gameStatus: 'IN_PROGRESS' });
+      const discoverSpy = vi.spyOn(pollStateRepository, 'discoverCandidates');
+      const findSpy = vi.spyOn(pollStateRepository, 'findCandidateGameById');
+      const report = await poller.runCycle(options);
+      expect(discoverSpy).toHaveBeenCalledTimes(1);
+      expect(findSpy).not.toHaveBeenCalled();
+      expect(report.claimed).toBe(1);
+      expect(report.ticks).toHaveLength(1);
+    });
   });
 });

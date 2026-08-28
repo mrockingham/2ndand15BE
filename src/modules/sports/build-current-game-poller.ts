@@ -15,6 +15,7 @@ import { HighlightlyCurrentGamePlayProvider } from './providers/highlightly/high
 import { PrismaCurrentGameSyncRepository } from './current-game-sync.repository.js';
 import { HighlightlyEvaluationHttpClient } from './evaluation/highlightly/highlightly-http-client.js';
 import { createHighlightlyMatchDetailFetcher } from './highlightly-match-detail-fetcher.js';
+import { createHighlightlyBoxScoreFetcher } from './highlightly-box-score-fetcher.js';
 import { createHighlightlyHighlightFetcher } from './highlightly-highlight-fetcher.js';
 import { createHighlightlyGeoRestrictionFetcher } from './highlightly-geo-restriction-fetcher.js';
 import { HighlightlyCurrentGameProvider } from './providers/highlightly/highlightly-current-game-provider.js';
@@ -61,6 +62,7 @@ export function buildCurrentGamePoller(
       playRepository,
     ),
     matchDetailFetcher: createHighlightlyMatchDetailFetcher(client),
+    boxScoreFetcher: createHighlightlyBoxScoreFetcher(client),
     highlightsService: new GameHighlightsService(new PrismaGameHighlightsRepository(prisma), {
       fetcher: createHighlightlyHighlightFetcher(client),
       client,

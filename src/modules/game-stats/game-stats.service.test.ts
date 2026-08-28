@@ -137,8 +137,15 @@ describe('GameStatsService', () => {
     });
     expect(response.data.playerStats.home.rushing[0]).toMatchObject({ attempts: 2, yards: -1 });
     expect(response.data.playerStats.away.passing).toEqual([]);
+    expect(response.data.gameLeaders.home.passer).toMatchObject({
+      player: { id: 'internal-player' },
+      attempts: 0,
+    });
+    expect(response.data.gameLeaders.home.rusher).toMatchObject({ yards: -1 });
+    expect(response.data.gameLeaders.home.receiver).toBeNull();
     expect(response.meta).toMatchObject({
       playerStatsAvailable: true,
+      playerStatsCoverageState: 'PARTIAL',
       playerStatsCoverage: { providerRows: 82, resolvedRows: 76, unresolvedRows: 6 },
     });
     expect(JSON.stringify(response)).not.toMatch(/highlightly|providerPlayerId|externalId/);

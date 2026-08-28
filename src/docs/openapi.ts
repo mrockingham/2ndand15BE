@@ -4512,13 +4512,22 @@ export const openApiDocument = {
           },
         },
       },
+      CurrentGameLeadersByTeam: {
+        type: 'object',
+        required: ['passer', 'rusher', 'receiver'],
+        properties: {
+          passer: { type: ['object', 'null'] },
+          rusher: { type: ['object', 'null'] },
+          receiver: { type: ['object', 'null'] },
+        },
+      },
       CurrentGameStatsResponse: {
         type: 'object',
         required: ['data', 'meta'],
         properties: {
           data: {
             type: 'object',
-            required: ['gameId', 'teamStats', 'playerStats'],
+            required: ['gameId', 'teamStats', 'playerStats', 'gameLeaders'],
             properties: {
               gameId: { type: 'string', format: 'uuid' },
               teamStats: {
@@ -4537,13 +4546,30 @@ export const openApiDocument = {
                   away: { $ref: '#/components/schemas/CurrentGamePlayerStatsByCategory' },
                 },
               },
+              gameLeaders: {
+                type: 'object',
+                required: ['home', 'away'],
+                properties: {
+                  home: { $ref: '#/components/schemas/CurrentGameLeadersByTeam' },
+                  away: { $ref: '#/components/schemas/CurrentGameLeadersByTeam' },
+                },
+              },
             },
           },
           meta: {
             type: 'object',
-            required: ['playerStatsAvailable', 'playerStatsCoverage', 'limitations'],
+            required: [
+              'playerStatsAvailable',
+              'playerStatsCoverageState',
+              'playerStatsCoverage',
+              'limitations',
+            ],
             properties: {
               playerStatsAvailable: { type: 'boolean' },
+              playerStatsCoverageState: {
+                type: 'string',
+                enum: ['COMPLETE', 'PARTIAL', 'PENDING', 'UNAVAILABLE'],
+              },
               playerStatsCoverage: {
                 type: ['object', 'null'],
                 required: ['providerRows', 'resolvedRows', 'unresolvedRows'],

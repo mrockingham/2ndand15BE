@@ -155,8 +155,10 @@ function harness(options: {
   let clearPlaysBlockCalls = 0;
   const pollStateRepository: CurrentGamePollStateRepository = {
     discoverCandidates: () => Promise.reject(new Error('not exercised')),
+    findCandidateGameById: () => Promise.resolve(null),
     ensurePollStates: () => Promise.reject(new Error('not exercised')),
     claimDue: () => Promise.resolve<readonly ClaimedPoll[]>([]),
+    claimForRecovery: () => Promise.resolve<ClaimedPoll | null>(null),
     recordSuccess: () => Promise.reject(new Error('not exercised')),
     recordFailure: () => Promise.reject(new Error('not exercised')),
     listPlaysReviewRequired: () => Promise.resolve([]),

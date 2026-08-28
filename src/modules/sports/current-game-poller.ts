@@ -6,6 +6,7 @@ import {
 import {
   toTeamStatWrite,
   type CurrentGameDetailsRepository,
+  type CurrentGameDetailsTarget,
   type CurrentGameTeamStatWrite,
 } from './current-game-details.repository.js';
 import type { CurrentGamePlayRepository } from './current-game-play.repository.js';
@@ -25,14 +26,20 @@ import type {
 } from './current-game-play-final-replacement.js';
 import { identifyPlays, reconcilePlays } from './sync-current-game-plays.js';
 import {
+  assertCurrentGameMutationAllowed,
   CurrentGameSyncError,
   type CurrentGameExecutionPolicy,
   type CurrentGameSyncService,
 } from './sync-current-games.js';
+import { planExistingMappedPlayerStats } from './sync-current-game-details.js';
 import { HighlightlyEvaluationError } from './evaluation/highlightly/highlightly-http-client.js';
 import type { MatchDetailFetcher } from './live-game-validation.js';
 import { normalizeHighlightlyCurrentGamePlays } from './providers/highlightly/highlightly-current-game-play-provider.js';
-import { normalizeHighlightlyCurrentGameDetails } from './providers/highlightly/highlightly-current-game-details-provider.js';
+import {
+  normalizeHighlightlyCurrentGameDetails,
+  normalizeHighlightlyCurrentGamePlayerStats,
+} from './providers/highlightly/highlightly-current-game-details-provider.js';
+import type { BoxScoreFetcher } from './highlightly-box-score-fetcher.js';
 import type {
   ClaimedPoll,
   CurrentGamePollStateRepository,
@@ -61,6 +68,7 @@ export interface CurrentGamePollerDependencies {
   readonly playRepository: CurrentGamePlayRepository;
   readonly finalPlaySnapshotService: FinalPlaySnapshotService;
   readonly matchDetailFetcher: MatchDetailFetcher;
+  readonly boxScoreFetcher: BoxScoreFetcher;
   readonly highlightsService: HighlightSyncPort;
   readonly pollStateRepository: CurrentGamePollStateRepository;
   readonly requestCounter: { getRequestCount(): number };
@@ -78,6 +86,20 @@ export interface CurrentGamePollerOptions {
   readonly lockLeaseSeconds: number;
   readonly batchSize: number;
   readonly rateLimitDegradeThreshold: number;
+  /** Independent box-score cadence; recurring live polling never calls player profiles. */
+  readonly playerStatsPollSeconds: number;
+  /**
+   * Explicit single-game recovery/debug mode. Bypasses ordinary discovery's
+   * scheduling-window eligibility (pregame lead time, live status, recent-
+   * FINAL lookback) entirely -- the reviewed game is attempted regardless of
+   * where it currently sits in the schedule. It does NOT bypass provider
+   * mapping/policy safety (`requireRecoveryCandidate` still validates the
+   * game exists and has a current-game provider mapping; `options.policy`
+   * still gates evaluation/publication the same as any other tick) and does
+   * NOT bypass claim/lock safety (`claimForRecovery` still refuses a game
+   * another worker currently holds an unexpired lock on, so this can never
+   * create a duplicate polling claim).
+   */
   readonly onlyGameId?: string;
   readonly dryRun?: boolean;
 }
@@ -98,6 +120,17 @@ export interface GameTickReport {
     readonly attempted: boolean;
     readonly ok: boolean;
     readonly classification: CurrentGameTeamStatCoverage['classification'] | null;
+    readonly errorMessage: string | null;
+  };
+  readonly playerStats: {
+    readonly attempted: boolean;
+    readonly ok: boolean;
+    readonly received: number;
+    readonly persisted: number;
+    readonly unresolved: number;
+    readonly coverage: 'COMPLETE' | 'PARTIAL' | 'PENDING' | 'UNAVAILABLE' | null;
+    readonly nextPollAt: string | null;
+    readonly boxScoreRequests: number;
     readonly errorMessage: string | null;
   };
   readonly plays: {
@@ -162,11 +195,13 @@ export class CurrentGamePoller {
   async runCycle(options: CurrentGamePollerOptions): Promise<PollerCycleReport> {
     const startedAt = this.deps.now();
     const cycleStarted = performance.now();
-    const discovered = await this.deps.pollStateRepository.discoverCandidates(startedAt);
     const inScope =
       options.onlyGameId === undefined
-        ? discovered
-        : discovered.filter((candidate) => candidate.gameId === options.onlyGameId);
+        ? await this.deps.pollStateRepository.discoverCandidates(startedAt)
+        : [await this.requireRecoveryCandidate(options.onlyGameId)];
+    if (options.dryRun !== true) {
+      assertCurrentGameMutationAllowed('highlightly', true, options.policy);
+    }
     let dryRunPreview: readonly DryRunCandidatePreview[] | null = null;
     if (options.dryRun !== true) {
       await this.deps.pollStateRepository.ensurePollStates(
@@ -210,12 +245,18 @@ export class CurrentGamePoller {
     const claimed =
       options.dryRun === true
         ? []
-        : await this.deps.pollStateRepository.claimDue(
-            startedAt,
-            this.deps.workerId,
-            options.lockLeaseSeconds * 1_000,
-            options.batchSize,
-          );
+        : options.onlyGameId === undefined
+          ? await this.deps.pollStateRepository.claimDue(
+              startedAt,
+              this.deps.workerId,
+              options.lockLeaseSeconds * 1_000,
+              options.batchSize,
+            )
+          : await this.claimRecoveryTarget(
+              options.onlyGameId,
+              startedAt,
+              options.lockLeaseSeconds * 1_000,
+            );
     const eligible = degraded ? claimed.filter((poll) => shouldPollWhileDegraded(poll)) : claimed;
 
     const ticks: GameTickReport[] = [];
@@ -248,6 +289,38 @@ export class CurrentGamePoller {
       degraded,
       dryRunPreview,
     };
+  }
+
+  /**
+   * Validates an explicit `--gameId` recovery target: the game must exist
+   * and must have a current-game provider mapping. Deliberately throws
+   * (rather than resolving to an empty candidate list, as the pre-incident
+   * behavior did) so a bad `--gameId` fails loudly instead of silently
+   * reporting zero candidates.
+   */
+  private async requireRecoveryCandidate(gameId: string): Promise<PollCandidateGame> {
+    const game = await this.deps.pollStateRepository.findCandidateGameById(gameId);
+    if (game === null) {
+      throw new Error(`Game ${gameId} was not found.`);
+    }
+    if (game.providerMapping === null) {
+      throw new Error(`Game ${gameId} has no current-game provider mapping; it cannot be polled.`);
+    }
+    return game;
+  }
+
+  private async claimRecoveryTarget(
+    gameId: string,
+    now: Date,
+    leaseMs: number,
+  ): Promise<readonly ClaimedPoll[]> {
+    const claim = await this.deps.pollStateRepository.claimForRecovery(
+      gameId,
+      now,
+      this.deps.workerId,
+      leaseMs,
+    );
+    return claim === null ? [] : [claim];
   }
 
   private async executeTick(
@@ -315,6 +388,17 @@ export class CurrentGamePoller {
       classification: null,
       errorMessage: null,
     };
+    const playerStats: Mutable<GameTickReport['playerStats']> = {
+      attempted: false,
+      ok: true,
+      received: 0,
+      persisted: 0,
+      unresolved: 0,
+      coverage: null,
+      nextPollAt: null,
+      boxScoreRequests: 0,
+      errorMessage: null,
+    };
     const plays: Mutable<GameTickReport['plays']> = {
       attempted: false,
       ok: true,
@@ -347,6 +431,7 @@ export class CurrentGamePoller {
         plays.errorMessage = reason;
       } else {
         const detail = detailFetch.detail;
+        let detailsTarget: CurrentGameDetailsTarget | null = null;
         teamStats.attempted = true;
         try {
           const normalized = normalizeHighlightlyCurrentGameDetails(
@@ -357,6 +442,7 @@ export class CurrentGamePoller {
           );
           const target = await this.deps.detailsRepository.findTarget(game.gameId, 'highlightly');
           if (target === null) throw new Error('Internal game was not found for team-stat write.');
+          detailsTarget = target;
           if (
             !sameAbbreviation(normalized.homeAbbreviation, target.homeAbbreviation) ||
             !sameAbbreviation(normalized.awayAbbreviation, target.awayAbbreviation)
@@ -404,6 +490,87 @@ export class CurrentGamePoller {
         } catch (error: unknown) {
           teamStats.ok = false;
           teamStats.errorMessage = errorMessage(error);
+        }
+
+        detailsTarget ??= await this.deps.detailsRepository.findTarget(game.gameId, 'highlightly');
+        const playerPoll = decidePlayerStatsPoll({
+          status: observedGame.status,
+          finalReplacementPhase,
+          lastSourceUpdatedAt: detailsTarget?.playerCoverage?.sourceUpdatedAt ?? null,
+          now,
+          intervalSeconds: options.playerStatsPollSeconds,
+        });
+        playerStats.nextPollAt = playerPoll.nextPollAt?.toISOString() ?? null;
+        playerStats.coverage = classifyPlayerCoverage(
+          observedGame.status,
+          detailsTarget?.playerCoverage ?? null,
+        );
+        if (playerPoll.due) {
+          playerStats.attempted = true;
+          try {
+            if (detailsTarget === null) {
+              throw new Error('Internal game was not found for player-stat write.');
+            }
+            const boxScoreFetch = await this.deps.boxScoreFetcher.fetch(providerGameId);
+            playerStats.boxScoreRequests = boxScoreFetch.requestsUsed;
+            if (boxScoreFetch.boxScore === null) {
+              throw new Error(boxScoreFetch.failureReason ?? 'Box score was unavailable.');
+            }
+            const rows = normalizeHighlightlyCurrentGamePlayerStats(
+              detail,
+              boxScoreFetch.boxScore,
+              providerGameId,
+            );
+            const mappings = await this.deps.detailsRepository.findPlayerMappings(
+              'highlightly',
+              rows.map((row) => row.providerPlayerId),
+            );
+            const plan = planExistingMappedPlayerStats({
+              rows,
+              mappings,
+              homeProviderTeamId: String(detail.homeTeam.id),
+              awayProviderTeamId: String(detail.awayTeam.id),
+              target: detailsTarget,
+              provider: 'highlightly',
+            });
+            const actionablePlans = plan.plans.filter((row) => row.changed);
+            const existingCoverage = detailsTarget.playerCoverage;
+            const coverageChanged = !samePlayerCoverage(existingCoverage, plan);
+            if (
+              options.dryRun !== true &&
+              (actionablePlans.length > 0 || coverageChanged) &&
+              this.deps.detailsRepository.applyPlayerStats !== undefined
+            ) {
+              await this.deps.detailsRepository.applyPlayerStats({
+                target: detailsTarget,
+                plans: actionablePlans,
+                provider: 'highlightly',
+                usageMode: options.policy.publicationApproved ? 'approved' : 'evaluation',
+                sourceUpdatedAt: now,
+                unresolvedPlayerCount: plan.unresolvedRows,
+                providerPlayerCount: plan.providerRows,
+                resolvedPlayerCount: plan.resolvedRows,
+                coverageChanged,
+              });
+            }
+            playerStats.received = plan.providerRows;
+            playerStats.persisted = plan.resolvedRows;
+            playerStats.unresolved = plan.unresolvedRows;
+            playerStats.coverage = classifyPlayerCoverage(observedGame.status, {
+              providerRows: plan.providerRows,
+              resolvedRows: plan.resolvedRows,
+              unresolvedRows: plan.unresolvedRows,
+            });
+            playerStats.nextPollAt =
+              nextPlayerStatsPollAt(
+                observedGame.status,
+                now,
+                options.playerStatsPollSeconds,
+              )?.toISOString() ?? null;
+          } catch (error: unknown) {
+            playerStats.ok = false;
+            playerStats.errorMessage = errorMessage(error);
+          }
         }
 
         plays.attempted = true;
@@ -586,12 +753,80 @@ export class CurrentGamePoller {
       requestUsageDelta: this.deps.requestCounter.getRequestCount() - requestsBefore,
       gameState: { ok: gameStateOk, outcome: gameStateOutcome, errorMessage: gameStateError },
       teamStats,
+      playerStats,
       plays,
       highlights,
       durationMs: rounded(performance.now() - started),
       degraded: false,
     };
   }
+}
+
+function decidePlayerStatsPoll(input: {
+  readonly status: SchedulingGameInput['status'];
+  readonly finalReplacementPhase: FinalReplacementPhase | null;
+  readonly lastSourceUpdatedAt: Date | null;
+  readonly now: Date;
+  readonly intervalSeconds: number;
+}): { readonly due: boolean; readonly nextPollAt: Date | null } {
+  if (input.status === 'FINAL') {
+    return { due: input.finalReplacementPhase !== null, nextPollAt: null };
+  }
+  if (input.status === 'HALFTIME') return { due: true, nextPollAt: input.now };
+  if (input.status !== 'IN_PROGRESS') return { due: false, nextPollAt: null };
+  const nextPollAt =
+    input.lastSourceUpdatedAt === null
+      ? input.now
+      : new Date(input.lastSourceUpdatedAt.getTime() + input.intervalSeconds * 1_000);
+  return { due: nextPollAt.getTime() <= input.now.getTime(), nextPollAt };
+}
+
+function nextPlayerStatsPollAt(
+  status: SchedulingGameInput['status'],
+  now: Date,
+  intervalSeconds: number,
+): Date | null {
+  return status === 'IN_PROGRESS' || status === 'HALFTIME'
+    ? new Date(now.getTime() + intervalSeconds * 1_000)
+    : null;
+}
+
+function classifyPlayerCoverage(
+  status: SchedulingGameInput['status'],
+  coverage: {
+    readonly providerRows: number;
+    readonly resolvedRows: number;
+    readonly unresolvedRows: number;
+  } | null,
+): GameTickReport['playerStats']['coverage'] {
+  if (coverage === null || coverage.providerRows === 0) {
+    return status === 'FINAL' ? 'UNAVAILABLE' : 'PENDING';
+  }
+  return coverage.resolvedRows === coverage.providerRows && coverage.unresolvedRows === 0
+    ? 'COMPLETE'
+    : 'PARTIAL';
+}
+
+function samePlayerCoverage(
+  existing: {
+    readonly providerRows: number;
+    readonly resolvedRows: number;
+    readonly unresolvedRows: number;
+    readonly sourceProvider: string;
+  } | null,
+  desired: {
+    readonly providerRows: number;
+    readonly resolvedRows: number;
+    readonly unresolvedRows: number;
+  },
+): boolean {
+  return (
+    existing !== null &&
+    existing.providerRows === desired.providerRows &&
+    existing.resolvedRows === desired.resolvedRows &&
+    existing.unresolvedRows === desired.unresolvedRows &&
+    existing.sourceProvider === 'highlightly'
+  );
 }
 
 function computeFinalTransition(

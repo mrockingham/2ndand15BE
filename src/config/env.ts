@@ -199,6 +199,7 @@ const currentGameEnvironmentSchema = databaseEnvironmentSchema
     CURRENT_GAME_LIVE_POLL_SECONDS: z.coerce.number().int().min(30).max(1_800).default(120),
     CURRENT_GAME_FEATURED_POLL_SECONDS: z.coerce.number().int().min(15).max(1_800).default(60),
     CURRENT_GAME_HALFTIME_POLL_SECONDS: z.coerce.number().int().min(30).max(1_800).default(180),
+    CURRENT_GAME_PLAYER_STATS_POLL_SECONDS: z.coerce.number().int().min(60).max(600).default(120),
     CURRENT_GAME_FINAL_RECONCILE_10_MINUTES: z.coerce.number().int().min(1).max(120).default(10),
     CURRENT_GAME_FINAL_RECONCILE_60_MINUTES: z.coerce.number().int().min(1).max(360).default(60),
     CURRENT_GAME_RATE_LIMIT_DEGRADE_THRESHOLD: z.coerce
@@ -484,6 +485,7 @@ export interface CurrentGamePollerConfig {
   readonly livePollSeconds: number;
   readonly featuredPollSeconds: number;
   readonly halftimePollSeconds: number;
+  readonly playerStatsPollSeconds: number;
   readonly finalReconcile10Minutes: number;
   readonly finalReconcile60Minutes: number;
   readonly rateLimitDegradeThreshold: number;
@@ -609,6 +611,7 @@ export function loadCurrentGameSyncConfig(
         livePollSeconds: data.CURRENT_GAME_LIVE_POLL_SECONDS,
         featuredPollSeconds: data.CURRENT_GAME_FEATURED_POLL_SECONDS,
         halftimePollSeconds: data.CURRENT_GAME_HALFTIME_POLL_SECONDS,
+        playerStatsPollSeconds: data.CURRENT_GAME_PLAYER_STATS_POLL_SECONDS,
         finalReconcile10Minutes: data.CURRENT_GAME_FINAL_RECONCILE_10_MINUTES,
         finalReconcile60Minutes: data.CURRENT_GAME_FINAL_RECONCILE_60_MINUTES,
         rateLimitDegradeThreshold: data.CURRENT_GAME_RATE_LIMIT_DEGRADE_THRESHOLD,

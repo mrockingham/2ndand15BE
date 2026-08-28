@@ -3,6 +3,7 @@ import type { GameReader } from '../games/game.service.js';
 import type { GameDto } from '../games/game.dto.js';
 import {
   toCurrentGamePlayerStatsDto,
+  toCurrentGameLeadersDto,
   toGameTeamStatsDto,
   type CurrentGameStatsResponse,
   type CurrentGameStatsListResponse,
@@ -138,9 +139,11 @@ export class GameStatsService implements GameStatsReader {
         gameId,
         teamStats: { home: toGameTeamStatsDto(home), away: toGameTeamStatsDto(away) },
         playerStats,
+        gameLeaders: toCurrentGameLeadersDto(playerStats),
       },
       meta: {
         playerStatsAvailable: playerBoxScore.rows.length > 0,
+        playerStatsCoverageState: classifyPublicPlayerStats(game.status, playerBoxScore.coverage),
         playerStatsCoverage: playerBoxScore.coverage,
         limitations:
           playerBoxScore.coverage === null
@@ -155,6 +158,22 @@ export class GameStatsService implements GameStatsReader {
       },
     };
   }
+}
+
+function classifyPublicPlayerStats(
+  status: GameDto['status'],
+  coverage: {
+    readonly providerRows: number;
+    readonly resolvedRows: number;
+    readonly unresolvedRows: number;
+  } | null,
+): 'COMPLETE' | 'PARTIAL' | 'PENDING' | 'UNAVAILABLE' {
+  if (coverage === null || coverage.providerRows === 0) {
+    return status === 'FINAL' ? 'UNAVAILABLE' : 'PENDING';
+  }
+  return coverage.resolvedRows === coverage.providerRows && coverage.unresolvedRows === 0
+    ? 'COMPLETE'
+    : 'PARTIAL';
 }
 
 function isStartedContext(row: {

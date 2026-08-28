@@ -30,6 +30,53 @@ interface Statistic {
   readonly value: StatisticValue;
 }
 
+/** Provider field allowlist used by the sanitized audit to surface schema expansion. */
+export const HIGHLIGHTLY_PLAYER_STATISTIC_NAMES = new Set([
+  'Total Successful Passes',
+  'Total Passes',
+  'Total Passing Yards',
+  'Total Passing Touchdowns',
+  'Total Passing Interceptions',
+  'Total Sacks',
+  'Total Sack Yards Lost',
+  'Total Rushing Attempts',
+  'Total Rushing Yards',
+  'Total Rushing Touchdowns',
+  'Long Rushing',
+  'Total Receiving Targets',
+  'Total Receptions',
+  'Total Receiving Yards',
+  'Total Receiving Touchdowns',
+  'Total Long Receptions',
+  'Total Fumbles',
+  'Total Recovered Fumbles',
+  'Total Defensive Tackles',
+  'Total Defensive Solo Tackles',
+  'Total Defensive Sacks',
+  'Total Defensive Tackles For Loss',
+  'Total Defended Passes',
+  'Total Defensive Touchdowns',
+  'Successful Field Goals Kicks',
+  'Attempted Field Goal Kicks',
+  'Long Field Goals Kicks Made',
+  'Total Extra Kicking Points Made',
+  'Total Extra Kicking Point Attempts',
+  'Total Punts',
+  'Total Punting Yards',
+  'Average Gross Punting Yards',
+  'Punts Inside 20 Yards',
+  'Punting Touchbacks',
+  'Longest Punt Yardage',
+  'Total Kick Returns',
+  'Total Kick Return Yards',
+  'Total Kick Return Touchdowns',
+  'Longest Kick Return',
+  'Total Punt Returns',
+  'Total Punt Return Yards',
+  'Total Punt Return Touchdowns',
+  'Longest Punt Return',
+]);
+
 export class HighlightlyCurrentGameDetailsProvider
   implements CurrentGameDetailsProvider, CurrentPlayerIdentityProvider
 {
@@ -256,15 +303,39 @@ export function normalizeHighlightlyCurrentGameDetails(
     awayTeamStats: normalizeTeamStats(awayStatistics),
     homePeriodScores: homePeriods,
     awayPeriodScores: awayPeriods,
-    playerStats: boxScore.flatMap(({ team }) =>
-      team.boxScores.map((row) =>
-        normalizePlayerStats(String(team.id), row.player, row.statistics),
-      ),
-    ),
+    playerStats: requireBoxScore
+      ? normalizeHighlightlyCurrentGamePlayerStats(detail, boxScore, expectedProviderGameId)
+      : [],
     scoringEventCount: (detail.events ?? []).filter((event) => event.isScoringPlay === true).length,
     playCount: plays.length,
     structuredPlayCount: plays.filter((play) => typeof play !== 'string').length,
   };
+}
+
+/**
+ * Normalizes the standalone Highlightly box-score response against identity from the already
+ * fetched match detail. The live poller uses this narrower entry point so a due player-stat
+ * refresh costs only one additional `/box-score/{id}` request and never repeats `/matches/{id}`.
+ */
+export function normalizeHighlightlyCurrentGamePlayerStats(
+  detail: HighlightlyDetailedMatch,
+  boxScore: HighlightlyBoxScoreResponse,
+  expectedProviderGameId = String(detail.id),
+): readonly NormalizedCurrentGamePlayerStats[] {
+  if (String(detail.id) !== expectedProviderGameId) throw new Error('Provider game ID mismatch.');
+  const homeProviderTeamId = String(detail.homeTeam.id);
+  const awayProviderTeamId = String(detail.awayTeam.id);
+  const boxTeams = new Map(boxScore.map(({ team }) => [String(team.id), team]));
+  if (
+    boxTeams.size !== 2 ||
+    !boxTeams.has(homeProviderTeamId) ||
+    !boxTeams.has(awayProviderTeamId)
+  ) {
+    throw new Error('Box-score teams do not match the detailed game.');
+  }
+  return boxScore.flatMap(({ team }) =>
+    team.boxScores.map((row) => normalizePlayerStats(String(team.id), row.player, row.statistics)),
+  );
 }
 
 function normalizeTeamStats(statistics: readonly Statistic[]): NormalizedCurrentGameTeamStats {
