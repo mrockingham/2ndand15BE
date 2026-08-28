@@ -4,6 +4,8 @@
 
 The `api-sports` adapter implements `SportsDataProvider`. It uses API-Sports' NFL v1 service at `https://v1.american-football.api-sports.io` by default and sends the credential only in the `x-apisports-key` request header.
 
+API-Sports advertises an NFL standings endpoint and a 2024 real response was validated, but the configured plan rejects 2025-2026 and the response does not identify preseason. M40A standings ingestion therefore uses the already-evaluated Highlightly integration; public reads remain provider-neutral and PostgreSQL-only. See `docs/standings.md`.
+
 One team synchronization calls `GET /teams?league=1&season=<season>`. One game synchronization calls `GET /games?league=1&season=<season>`. Supported provider lookups may also send `team`, `date`, or `id`. Public HTTP handlers never call API-Sports; they read normalized PostgreSQL records.
 
 The response envelope, error collection, result count, paging, teams, games, league/season, dates, venues, statuses, and scores are validated with Zod. Malformed records and unknown statuses are excluded and included in safe synchronization summaries. Provider response bodies and credentials are never returned by public endpoints.

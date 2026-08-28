@@ -28,6 +28,7 @@
     "sports:verify:live": "tsx src/commands/sports-sync.ts verify",
     "sports:evaluate:api-sports": "tsx src/commands/evaluate-api-sports.ts",
     "sports:evaluate:highlightly": "tsx src/commands/evaluate-highlightly.ts",
+    "standings:sync": "tsx src/commands/standings-sync.ts",
     "games:current:verify": "tsx src/commands/current-games.ts verify",
     "games:current:sync": "tsx src/commands/current-games.ts sync",
     "games:current:details:verify": "tsx src/commands/current-game-details.ts verify",

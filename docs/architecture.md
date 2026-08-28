@@ -2,7 +2,7 @@
 
 ## Status
 
-This document defines the backend architecture through the Team Hub CMS foundation. The service foundation, normalized team/game catalogs, authentication lifecycle, favorite-team personalization, schedule maintenance, editorial content and candidate workflows, local 2020-2025 nflverse player data, Stats Hub, Team Hub with team-scoped CMS composition, and deterministic versioned game predictions are implemented.
+This document defines the backend architecture through public NFL standings. The service foundation, normalized team/game catalogs, authentication lifecycle, favorite-team personalization, schedule maintenance, editorial content and candidate workflows, local 2020-2025 nflverse player data, Stats Hub, Team Hub with team-scoped CMS composition, deterministic versioned game predictions, and provider-backed standings snapshots are implemented.
 
 ## System context
 

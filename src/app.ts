@@ -38,6 +38,7 @@ import type { EditorialAiServiceContract } from './modules/editorial-ai/editoria
 import type { PredictionService } from './modules/ai-hub/prediction.service.js';
 import type { AiHubWeeklyInsightsService } from './modules/ai-hub/weekly-insights.service.js';
 import type { ContactServiceContract } from './modules/contact/contact.service.js';
+import type { StandingsReader } from './modules/standings/standings.service.js';
 
 export interface CreateAppOptions {
   readonly config: AppConfig;
@@ -68,6 +69,7 @@ export interface CreateAppOptions {
   readonly predictionService?: PredictionService;
   readonly weeklyInsightsService?: AiHubWeeklyInsightsService;
   readonly contactService?: ContactServiceContract;
+  readonly standingsReader?: StandingsReader;
 }
 
 export function createApp(options: CreateAppOptions): Express {
@@ -130,6 +132,9 @@ export function createApp(options: CreateAppOptions): Express {
         : { newsInboxService: options.newsInboxService }),
       ...(options.playerReader === undefined ? {} : { playerReader: options.playerReader }),
       ...(options.statsHubReader === undefined ? {} : { statsHubReader: options.statsHubReader }),
+      ...(options.standingsReader === undefined
+        ? {}
+        : { standingsReader: options.standingsReader }),
       ...(options.teamHubReader === undefined ? {} : { teamHubReader: options.teamHubReader }),
       ...(options.teamHomepageService === undefined
         ? {}
