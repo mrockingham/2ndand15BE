@@ -52,6 +52,8 @@ The intentionally fictional 2099 import and other development fixtures remain st
 
 Source and candidate changes reuse `AdminAuditEvent` with compact snapshots. Audits include source creation/update/test, ingestion initiation, pause/resume, manual submission, review transitions, dismissal, and conversion. They never contain raw XML, source descriptions, article bodies, validators, credentials, cookies, or authorization headers. See [news-source ingestion](news-source-ingestion.md).
 
+Team Homepage CMS routes live under `/api/v1/admin/teams/:teamId/homepage` and reuse the Homepage CMS view/manage capabilities for editors and administrators. Banner, editorial, lead-replacement, and highlight mutations create compact `AdminAuditEvent` rows. Candidate and public reads use stored articles/media only; see [Team Homepage CMS](team-hub/team-homepage-cms.md).
+
 ## Data health
 
 `EDITOR` and `ADMIN` receive `VIEW_DATA_HEALTH` (DB-only coverage of current-season game data); `ADMIN` additionally receives `PROBE_GAME_DATA` (an explicit, bounded Highlightly diagnostic). See [administration/data-health.md](administration/data-health.md).

@@ -275,45 +275,51 @@ enum PredictionConfidence {
 }
 
 model User {
-  id                          String                       @id @default(uuid()) @db.Uuid
-  email                       String                       @db.VarChar(254)
-  normalizedEmail             String                       @unique(map: "users_normalized_email_key") @map("normalized_email") @db.VarChar(254)
-  passwordHash                String                       @map("password_hash") @db.VarChar(255)
-  displayName                 String?                      @map("display_name") @db.VarChar(80)
-  isActive                    Boolean                      @default(true) @map("is_active")
-  role                        UserRole                     @default(USER)
-  favoriteTeamId              String?                      @map("favorite_team_id") @db.Uuid
-  createdAt                   DateTime                     @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt                   DateTime                     @updatedAt @map("updated_at") @db.Timestamptz(3)
-  sessions                    Session[]
-  passwordResetTokens         PasswordResetToken[]
-  favoriteTeam                Team?                        @relation("UserFavoriteTeam", fields: [favoriteTeamId], references: [id], onDelete: SetNull)
-  verifiedProvenances         GameProvenance[]             @relation("GameProvenanceVerifier")
-  createdOverrides            GameEditorialOverride[]      @relation("GameOverrideCreator")
-  updatedOverrides            GameEditorialOverride[]      @relation("GameOverrideUpdater")
-  manualFeaturedGames         Game[]                       @relation("GameManualFeaturedBy")
-  auditEvents                 AdminAuditEvent[]            @relation("AdminAuditActor")
-  createdArticles             Article[]                    @relation("ArticleCreator")
-  updatedArticles             Article[]                    @relation("ArticleUpdater")
-  articleRevisions            ArticleRevision[]            @relation("ArticleRevisionEditor")
-  createdNewsSources          NewsSource[]                 @relation("NewsSourceCreator")
-  updatedNewsSources          NewsSource[]                 @relation("NewsSourceUpdater")
-  createdCuratedVideos        GameCuratedVideo[]           @relation("GameCuratedVideoCreator")
-  updatedCuratedVideos        GameCuratedVideo[]           @relation("GameCuratedVideoUpdater")
-  createdGlobalGameVideos     GlobalGameCenterVideo[]      @relation("GlobalGameCenterVideoCreator")
-  updatedGlobalGameVideos     GlobalGameCenterVideo[]      @relation("GlobalGameCenterVideoUpdater")
-  createdHeroSlides           HomepageHeroSlide[]          @relation("HomepageHeroSlideCreator")
-  updatedHeroSlides           HomepageHeroSlide[]          @relation("HomepageHeroSlideUpdater")
-  createdTopStories           HomepageTopStory[]           @relation("HomepageTopStoryCreator")
-  updatedTopStories           HomepageTopStory[]           @relation("HomepageTopStoryUpdater")
-  createdHighlightPlacements  HomepageHighlightPlacement[] @relation("HomepageHighlightPlacementCreator")
-  updatedHighlightPlacements  HomepageHighlightPlacement[] @relation("HomepageHighlightPlacementUpdater")
-  updatedHighlightSettings    HomepageHighlightSettings[]  @relation("HomepageHighlightSettingsUpdater")
-  reviewedCandidates          NewsCandidate[]              @relation("NewsCandidateReviewer")
-  newsIngestionRuns           NewsIngestionRun[]           @relation("NewsIngestionInitiator")
-  reviewedSourceRights        SourceRightsProfile[]        @relation("SourceRightsReviewer")
-  evaluatedCandidateQualities CandidateQualityEvaluation[]
-  generatedPredictions        GamePrediction[]             @relation("PredictionGenerator")
+  id                                     String                           @id @default(uuid()) @db.Uuid
+  email                                  String                           @db.VarChar(254)
+  normalizedEmail                        String                           @unique(map: "users_normalized_email_key") @map("normalized_email") @db.VarChar(254)
+  passwordHash                           String                           @map("password_hash") @db.VarChar(255)
+  displayName                            String?                          @map("display_name") @db.VarChar(80)
+  isActive                               Boolean                          @default(true) @map("is_active")
+  role                                   UserRole                         @default(USER)
+  favoriteTeamId                         String?                          @map("favorite_team_id") @db.Uuid
+  createdAt                              DateTime                         @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt                              DateTime                         @updatedAt @map("updated_at") @db.Timestamptz(3)
+  sessions                               Session[]
+  passwordResetTokens                    PasswordResetToken[]
+  favoriteTeam                           Team?                            @relation("UserFavoriteTeam", fields: [favoriteTeamId], references: [id], onDelete: SetNull)
+  verifiedProvenances                    GameProvenance[]                 @relation("GameProvenanceVerifier")
+  createdOverrides                       GameEditorialOverride[]          @relation("GameOverrideCreator")
+  updatedOverrides                       GameEditorialOverride[]          @relation("GameOverrideUpdater")
+  manualFeaturedGames                    Game[]                           @relation("GameManualFeaturedBy")
+  auditEvents                            AdminAuditEvent[]                @relation("AdminAuditActor")
+  createdArticles                        Article[]                        @relation("ArticleCreator")
+  updatedArticles                        Article[]                        @relation("ArticleUpdater")
+  articleRevisions                       ArticleRevision[]                @relation("ArticleRevisionEditor")
+  createdNewsSources                     NewsSource[]                     @relation("NewsSourceCreator")
+  updatedNewsSources                     NewsSource[]                     @relation("NewsSourceUpdater")
+  createdCuratedVideos                   GameCuratedVideo[]               @relation("GameCuratedVideoCreator")
+  updatedCuratedVideos                   GameCuratedVideo[]               @relation("GameCuratedVideoUpdater")
+  createdGlobalGameVideos                GlobalGameCenterVideo[]          @relation("GlobalGameCenterVideoCreator")
+  updatedGlobalGameVideos                GlobalGameCenterVideo[]          @relation("GlobalGameCenterVideoUpdater")
+  createdHeroSlides                      HomepageHeroSlide[]              @relation("HomepageHeroSlideCreator")
+  updatedHeroSlides                      HomepageHeroSlide[]              @relation("HomepageHeroSlideUpdater")
+  createdTopStories                      HomepageTopStory[]               @relation("HomepageTopStoryCreator")
+  updatedTopStories                      HomepageTopStory[]               @relation("HomepageTopStoryUpdater")
+  createdHighlightPlacements             HomepageHighlightPlacement[]     @relation("HomepageHighlightPlacementCreator")
+  updatedHighlightPlacements             HomepageHighlightPlacement[]     @relation("HomepageHighlightPlacementUpdater")
+  updatedHighlightSettings               HomepageHighlightSettings[]      @relation("HomepageHighlightSettingsUpdater")
+  createdTeamHomepageEditorialPlacements TeamHomepageEditorialPlacement[] @relation("TeamHomepageEditorialPlacementCreator")
+  updatedTeamHomepageEditorialPlacements TeamHomepageEditorialPlacement[] @relation("TeamHomepageEditorialPlacementUpdater")
+  createdTeamHomepageHighlightPlacements TeamHomepageHighlightPlacement[] @relation("TeamHomepageHighlightPlacementCreator")
+  updatedTeamHomepageHighlightPlacements TeamHomepageHighlightPlacement[] @relation("TeamHomepageHighlightPlacementUpdater")
+  updatedTeamHomepageConfigs             TeamHomepageConfig[]             @relation("TeamHomepageConfigUpdater")
+  updatedTeamHomepageHighlightSettings   TeamHomepageHighlightSettings[]  @relation("TeamHomepageHighlightSettingsUpdater")
+  reviewedCandidates                     NewsCandidate[]                  @relation("NewsCandidateReviewer")
+  newsIngestionRuns                      NewsIngestionRun[]               @relation("NewsIngestionInitiator")
+  reviewedSourceRights                   SourceRightsProfile[]            @relation("SourceRightsReviewer")
+  evaluatedCandidateQualities            CandidateQualityEvaluation[]
+  generatedPredictions                   GamePrediction[]                 @relation("PredictionGenerator")
 
   @@index([isActive], map: "users_active_idx")
   @@index([favoriteTeamId], map: "users_favorite_team_id_idx")
@@ -355,41 +361,45 @@ model PasswordResetToken {
 }
 
 model Team {
-  id                         String                  @id @default(uuid()) @db.Uuid
-  league                     League
-  city                       String                  @db.VarChar(64)
-  name                       String                  @db.VarChar(64)
-  fullName                   String                  @map("full_name") @db.VarChar(128)
-  abbreviation               String                  @db.VarChar(8)
-  conference                 Conference
-  division                   Division
-  primaryColor               String                  @map("primary_color") @db.VarChar(7)
-  secondaryColor             String                  @map("secondary_color") @db.VarChar(7)
-  logoUrl                    String?                 @map("logo_url") @db.Text
-  logoSource                 String?                 @map("logo_source") @db.VarChar(128)
-  isActive                   Boolean                 @default(true) @map("is_active")
-  createdAt                  DateTime                @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt                  DateTime                @updatedAt @map("updated_at") @db.Timestamptz(3)
-  providerMaps               TeamProviderMapping[]
-  homeGames                  Game[]                  @relation("HomeTeamGames")
-  awayGames                  Game[]                  @relation("AwayTeamGames")
-  favoritedBy                User[]                  @relation("UserFavoriteTeam")
-  articles                   ArticleTeam[]
-  defaultNewsSources         NewsSource[]
-  newsCandidateSuggestions   NewsCandidateTeam[]
-  latestPlayers              Player[]                @relation("PlayerLatestTeam")
-  draftedPlayers             Player[]                @relation("PlayerDraftTeam")
-  weeklyPlayerRosters        PlayerWeekRoster[]
-  playerGameStats            PlayerGameStat[]        @relation("PlayerStatTeam")
-  opponentPlayerGameStats    PlayerGameStat[]        @relation("PlayerStatOpponent")
-  currentGameTeamStats       CurrentGameTeamStat[]
-  currentPlayerGameStats     CurrentGamePlayerStat[] @relation("TeamCurrentGamePlayerStats")
-  possessedGamePlays         GamePlay[]              @relation("GamePlayPossessionTeam")
-  primaryEditorialDrafts     ArticleAiMetadata[]     @relation("EditorialPrimaryTeam")
-  homePredictions            GamePrediction[]        @relation("PredictionHomeTeam")
-  awayPredictions            GamePrediction[]        @relation("PredictionAwayTeam")
-  predictedWinnerPredictions GamePrediction[]        @relation("PredictionWinnerTeam")
-  actualWinnerPredictions    GamePrediction[]        @relation("PredictionActualWinnerTeam")
+  id                          String                           @id @default(uuid()) @db.Uuid
+  league                      League
+  city                        String                           @db.VarChar(64)
+  name                        String                           @db.VarChar(64)
+  fullName                    String                           @map("full_name") @db.VarChar(128)
+  abbreviation                String                           @db.VarChar(8)
+  conference                  Conference
+  division                    Division
+  primaryColor                String                           @map("primary_color") @db.VarChar(7)
+  secondaryColor              String                           @map("secondary_color") @db.VarChar(7)
+  logoUrl                     String?                          @map("logo_url") @db.Text
+  logoSource                  String?                          @map("logo_source") @db.VarChar(128)
+  isActive                    Boolean                          @default(true) @map("is_active")
+  createdAt                   DateTime                         @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt                   DateTime                         @updatedAt @map("updated_at") @db.Timestamptz(3)
+  providerMaps                TeamProviderMapping[]
+  homeGames                   Game[]                           @relation("HomeTeamGames")
+  awayGames                   Game[]                           @relation("AwayTeamGames")
+  favoritedBy                 User[]                           @relation("UserFavoriteTeam")
+  articles                    ArticleTeam[]
+  defaultNewsSources          NewsSource[]
+  newsCandidateSuggestions    NewsCandidateTeam[]
+  latestPlayers               Player[]                         @relation("PlayerLatestTeam")
+  draftedPlayers              Player[]                         @relation("PlayerDraftTeam")
+  weeklyPlayerRosters         PlayerWeekRoster[]
+  playerGameStats             PlayerGameStat[]                 @relation("PlayerStatTeam")
+  opponentPlayerGameStats     PlayerGameStat[]                 @relation("PlayerStatOpponent")
+  currentGameTeamStats        CurrentGameTeamStat[]
+  currentPlayerGameStats      CurrentGamePlayerStat[]          @relation("TeamCurrentGamePlayerStats")
+  possessedGamePlays          GamePlay[]                       @relation("GamePlayPossessionTeam")
+  primaryEditorialDrafts      ArticleAiMetadata[]              @relation("EditorialPrimaryTeam")
+  homePredictions             GamePrediction[]                 @relation("PredictionHomeTeam")
+  awayPredictions             GamePrediction[]                 @relation("PredictionAwayTeam")
+  predictedWinnerPredictions  GamePrediction[]                 @relation("PredictionWinnerTeam")
+  actualWinnerPredictions     GamePrediction[]                 @relation("PredictionActualWinnerTeam")
+  homepageConfig              TeamHomepageConfig?
+  homepageEditorialPlacements TeamHomepageEditorialPlacement[]
+  homepageHighlightPlacements TeamHomepageHighlightPlacement[]
+  homepageHighlightSettings   TeamHomepageHighlightSettings?
 
   @@unique([league, abbreviation], map: "teams_league_abbreviation_key")
   @@index([league, isActive, conference, division, fullName], map: "teams_catalog_order_idx")
@@ -397,48 +407,50 @@ model Team {
 }
 
 model Game {
-  id                    String                         @id @default(uuid()) @db.Uuid
-  league                League
-  season                Int
-  seasonType            SeasonType                     @map("season_type")
-  week                  Int?
-  startTime             DateTime?                      @map("start_time") @db.Timestamptz(3)
-  status                GameStatus
-  homeTeamId            String                         @map("home_team_id") @db.Uuid
-  awayTeamId            String                         @map("away_team_id") @db.Uuid
-  homeScore             Int?                           @map("home_score")
-  awayScore             Int?                           @map("away_score")
-  quarter               Int?
-  clock                 String?                        @db.VarChar(16)
-  venueName             String?                        @map("venue_name") @db.VarChar(160)
-  venueCity             String?                        @map("venue_city") @db.VarChar(128)
-  broadcastNetwork      String?                        @map("broadcast_network") @db.VarChar(64)
-  isNeutralSite         Boolean                        @default(false) @map("is_neutral_site")
-  providerLastUpdatedAt DateTime?                      @map("provider_last_updated_at") @db.Timestamptz(3)
-  manualFeatured        Boolean?                       @map("manual_featured")
-  manualFeaturedReason  String?                        @map("manual_featured_reason") @db.VarChar(500)
-  manualFeaturedById    String?                        @map("manual_featured_by_id") @db.Uuid
-  manualFeaturedAt      DateTime?                      @map("manual_featured_at") @db.Timestamptz(3)
-  createdAt             DateTime                       @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt             DateTime                       @updatedAt @map("updated_at") @db.Timestamptz(3)
-  homeTeam              Team                           @relation("HomeTeamGames", fields: [homeTeamId], references: [id], onDelete: Restrict)
-  awayTeam              Team                           @relation("AwayTeamGames", fields: [awayTeamId], references: [id], onDelete: Restrict)
-  manualFeaturedBy      User?                          @relation("GameManualFeaturedBy", fields: [manualFeaturedById], references: [id], onDelete: SetNull)
-  providerMaps          GameProviderMapping[]
-  provenance            GameProvenance?
-  editorialOverride     GameEditorialOverride?
-  pollState             CurrentGamePollState?
-  playerStats           PlayerGameStat[]
-  currentTeamStats      CurrentGameTeamStat[]
-  currentPlayerStats    CurrentGamePlayerStat[]
-  currentPlayerCoverage CurrentGamePlayerStatCoverage?
-  plays                 GamePlay[]
-  predictions           GamePrediction[]
-  dataHealthProbes      GameDataHealthProbe[]
-  highlights            GameHighlight[]
-  highlightSyncState    GameHighlightSyncState?
-  curatedVideos         GameCuratedVideo[]
-  homepageHighlights    HomepageHighlightPlacement[]
+  id                              String                           @id @default(uuid()) @db.Uuid
+  league                          League
+  season                          Int
+  seasonType                      SeasonType                       @map("season_type")
+  week                            Int?
+  startTime                       DateTime?                        @map("start_time") @db.Timestamptz(3)
+  status                          GameStatus
+  homeTeamId                      String                           @map("home_team_id") @db.Uuid
+  awayTeamId                      String                           @map("away_team_id") @db.Uuid
+  homeScore                       Int?                             @map("home_score")
+  awayScore                       Int?                             @map("away_score")
+  quarter                         Int?
+  clock                           String?                          @db.VarChar(16)
+  venueName                       String?                          @map("venue_name") @db.VarChar(160)
+  venueCity                       String?                          @map("venue_city") @db.VarChar(128)
+  broadcastNetwork                String?                          @map("broadcast_network") @db.VarChar(64)
+  isNeutralSite                   Boolean                          @default(false) @map("is_neutral_site")
+  providerLastUpdatedAt           DateTime?                        @map("provider_last_updated_at") @db.Timestamptz(3)
+  manualFeatured                  Boolean?                         @map("manual_featured")
+  manualFeaturedReason            String?                          @map("manual_featured_reason") @db.VarChar(500)
+  manualFeaturedById              String?                          @map("manual_featured_by_id") @db.Uuid
+  manualFeaturedAt                DateTime?                        @map("manual_featured_at") @db.Timestamptz(3)
+  createdAt                       DateTime                         @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt                       DateTime                         @updatedAt @map("updated_at") @db.Timestamptz(3)
+  homeTeam                        Team                             @relation("HomeTeamGames", fields: [homeTeamId], references: [id], onDelete: Restrict)
+  awayTeam                        Team                             @relation("AwayTeamGames", fields: [awayTeamId], references: [id], onDelete: Restrict)
+  manualFeaturedBy                User?                            @relation("GameManualFeaturedBy", fields: [manualFeaturedById], references: [id], onDelete: SetNull)
+  providerMaps                    GameProviderMapping[]
+  provenance                      GameProvenance?
+  editorialOverride               GameEditorialOverride?
+  pollState                       CurrentGamePollState?
+  playerStats                     PlayerGameStat[]
+  currentTeamStats                CurrentGameTeamStat[]
+  currentPlayerStats              CurrentGamePlayerStat[]
+  currentPlayerCoverage           CurrentGamePlayerStatCoverage?
+  plays                           GamePlay[]
+  predictions                     GamePrediction[]
+  dataHealthProbes                GameDataHealthProbe[]
+  highlights                      GameHighlight[]
+  highlightSyncState              GameHighlightSyncState?
+  curatedVideos                   GameCuratedVideo[]
+  homepageHighlights              HomepageHighlightPlacement[]
+  teamHomepageEditorialPlacements TeamHomepageEditorialPlacement[]
+  teamHomepageHighlightPlacements TeamHomepageHighlightPlacement[]
 
   @@index([league, season, seasonType, week, startTime], map: "games_schedule_idx")
   @@index([status, startTime], map: "games_status_start_time_idx")
@@ -1822,20 +1834,20 @@ enum HomepageHighlightSourceType {
 /// can show matchup context. Row presence = active (no `isActive` column,
 /// matching `HomepageTopStory`'s convention) -- `DELETE` removes the row.
 model HomepageHighlightPlacement {
-  id                String                       @id @default(uuid()) @db.Uuid
-  sourceType        HomepageHighlightSourceType  @map("source_type")
-  sourceId          String                       @map("source_id") @db.Uuid
-  gameId            String                       @map("game_id") @db.Uuid
+  id                String                      @id @default(uuid()) @db.Uuid
+  sourceType        HomepageHighlightSourceType @map("source_type")
+  sourceId          String                      @map("source_id") @db.Uuid
+  gameId            String                      @map("game_id") @db.Uuid
   position          Int
-  createdById       String?                      @map("created_by_id") @db.Uuid
-  updatedById       String?                      @map("updated_by_id") @db.Uuid
-  createdBySnapshot String                       @map("created_by_snapshot") @db.VarChar(254)
-  updatedBySnapshot String                       @map("updated_by_snapshot") @db.VarChar(254)
-  createdAt         DateTime                     @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt         DateTime                     @updatedAt @map("updated_at") @db.Timestamptz(3)
-  game              Game                         @relation(fields: [gameId], references: [id], onDelete: Cascade)
-  createdBy         User?                        @relation("HomepageHighlightPlacementCreator", fields: [createdById], references: [id], onDelete: SetNull)
-  updatedBy         User?                        @relation("HomepageHighlightPlacementUpdater", fields: [updatedById], references: [id], onDelete: SetNull)
+  createdById       String?                     @map("created_by_id") @db.Uuid
+  updatedById       String?                     @map("updated_by_id") @db.Uuid
+  createdBySnapshot String                      @map("created_by_snapshot") @db.VarChar(254)
+  updatedBySnapshot String                      @map("updated_by_snapshot") @db.VarChar(254)
+  createdAt         DateTime                    @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime                    @updatedAt @map("updated_at") @db.Timestamptz(3)
+  game              Game                        @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  createdBy         User?                       @relation("HomepageHighlightPlacementCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedBy         User?                       @relation("HomepageHighlightPlacementUpdater", fields: [updatedById], references: [id], onDelete: SetNull)
 
   @@unique([sourceType, sourceId], map: "homepage_highlight_placements_source_key")
   @@unique([position], map: "homepage_highlight_placements_position_key")
@@ -1857,4 +1869,97 @@ model HomepageHighlightSettings {
   updatedBy         User?    @relation("HomepageHighlightSettingsUpdater", fields: [updatedById], references: [id], onDelete: SetNull)
 
   @@map("homepage_highlight_settings")
+}
+
+enum TeamHomepageEditorialSourceType {
+  ARTICLE
+  VIDEO
+}
+
+/// M39A: URL-based, per-team banner presentation. Team colors remain owned by
+/// Team and are never copied here. Null imageUrl means the existing frontend
+/// fallback remains authoritative.
+model TeamHomepageConfig {
+  id                   String   @id @default(uuid()) @db.Uuid
+  teamId               String   @unique(map: "team_homepage_configs_team_key") @map("team_id") @db.Uuid
+  bannerImageUrl       String?  @map("banner_image_url") @db.Text
+  bannerFocalX         Int      @default(50) @map("banner_focal_x")
+  bannerFocalY         Int      @default(50) @map("banner_focal_y")
+  bannerOverlayOpacity Int      @default(35) @map("banner_overlay_opacity")
+  updatedById          String?  @map("updated_by_id") @db.Uuid
+  updatedBySnapshot    String   @map("updated_by_snapshot") @db.VarChar(254)
+  createdAt            DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt            DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  team                 Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  updatedBy            User?    @relation("TeamHomepageConfigUpdater", fields: [updatedById], references: [id], onDelete: SetNull)
+
+  @@map("team_homepage_configs")
+}
+
+/// M39A: ordered pointers to team articles or approved stored game media. For
+/// VIDEO rows gameId and mediaSourceType identify the internal source table;
+/// ARTICLE rows keep both null. Source records are intentionally not copied.
+model TeamHomepageEditorialPlacement {
+  id                String                          @id @default(uuid()) @db.Uuid
+  teamId            String                          @map("team_id") @db.Uuid
+  sourceType        TeamHomepageEditorialSourceType @map("source_type")
+  sourceId          String                          @map("source_id") @db.Uuid
+  mediaSourceType   HomepageHighlightSourceType?    @map("media_source_type")
+  gameId            String?                         @map("game_id") @db.Uuid
+  position          Int
+  isLeadReplacement Boolean                         @default(false) @map("is_lead_replacement")
+  createdById       String?                         @map("created_by_id") @db.Uuid
+  updatedById       String?                         @map("updated_by_id") @db.Uuid
+  createdBySnapshot String                          @map("created_by_snapshot") @db.VarChar(254)
+  updatedBySnapshot String                          @map("updated_by_snapshot") @db.VarChar(254)
+  createdAt         DateTime                        @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime                        @updatedAt @map("updated_at") @db.Timestamptz(3)
+  team              Team                            @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  game              Game?                           @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  createdBy         User?                           @relation("TeamHomepageEditorialPlacementCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedBy         User?                           @relation("TeamHomepageEditorialPlacementUpdater", fields: [updatedById], references: [id], onDelete: SetNull)
+
+  @@unique([teamId, position], map: "team_homepage_editorial_position_key")
+  @@index([teamId, sourceType, sourceId], map: "team_homepage_editorial_source_idx")
+  @@index([gameId], map: "team_homepage_editorial_game_id_idx")
+  @@map("team_homepage_editorial_placements")
+}
+
+model TeamHomepageHighlightPlacement {
+  id                String                      @id @default(uuid()) @db.Uuid
+  teamId            String                      @map("team_id") @db.Uuid
+  sourceType        HomepageHighlightSourceType @map("source_type")
+  sourceId          String                      @map("source_id") @db.Uuid
+  gameId            String                      @map("game_id") @db.Uuid
+  position          Int
+  createdById       String?                     @map("created_by_id") @db.Uuid
+  updatedById       String?                     @map("updated_by_id") @db.Uuid
+  createdBySnapshot String                      @map("created_by_snapshot") @db.VarChar(254)
+  updatedBySnapshot String                      @map("updated_by_snapshot") @db.VarChar(254)
+  createdAt         DateTime                    @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime                    @updatedAt @map("updated_at") @db.Timestamptz(3)
+  team              Team                        @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  game              Game                        @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  createdBy         User?                       @relation("TeamHomepageHighlightPlacementCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedBy         User?                       @relation("TeamHomepageHighlightPlacementUpdater", fields: [updatedById], references: [id], onDelete: SetNull)
+
+  @@unique([teamId, sourceType, sourceId], map: "team_homepage_highlight_source_key")
+  @@unique([teamId, position], map: "team_homepage_highlight_position_key")
+  @@index([gameId], map: "team_homepage_highlight_game_id_idx")
+  @@map("team_homepage_highlight_placements")
+}
+
+model TeamHomepageHighlightSettings {
+  id                String   @id @default(uuid()) @db.Uuid
+  teamId            String   @unique(map: "team_homepage_highlight_settings_team_key") @map("team_id") @db.Uuid
+  displayLimit      Int      @default(5) @map("display_limit")
+  fillWithAutomatic Boolean  @default(true) @map("fill_with_automatic")
+  updatedById       String?  @map("updated_by_id") @db.Uuid
+  updatedBySnapshot String   @map("updated_by_snapshot") @db.VarChar(254)
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  team              Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  updatedBy         User?    @relation("TeamHomepageHighlightSettingsUpdater", fields: [updatedById], references: [id], onDelete: SetNull)
+
+  @@map("team_homepage_highlight_settings")
 }

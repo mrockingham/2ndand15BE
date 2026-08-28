@@ -6,6 +6,7 @@ import { NFLVERSE_PUBLIC_ATTRIBUTION } from '../players/player.dto.js';
 import type { SeasonLeadersQuery } from '../stats-hub/stats.schemas.js';
 import type { StatsHubReader } from '../stats-hub/stats.service.js';
 import type { TeamReader } from '../teams/team.service.js';
+import type { PublicTeamHomepageDto } from '../team-homepage/team-homepage.dto.js';
 import {
   decodeTeamRosterCursor,
   encodeTeamRosterCursor,
@@ -43,25 +44,29 @@ export interface TeamHubServiceOptions {
   readonly articles: PublicArticleReader;
   readonly stats: Pick<StatsHubReader, 'getSeasonLeaders'>;
   readonly currentNflSeason: number;
+  readonly homepage?: { getPublicHomepage(teamId: string): Promise<PublicTeamHomepageDto> };
 }
 
 export class TeamHubService implements TeamHubReader {
   constructor(private readonly options: TeamHubServiceOptions) {}
 
   async getOverview(teamId: string): Promise<TeamHubOverviewResponse> {
-    const [teamResult, gameResult, articleResult, coverageResult] = await Promise.allSettled([
-      this.options.teams.getActiveTeam(teamId),
-      this.options.games.listTeamGames(teamId, {
-        season: this.options.currentNflSeason,
-        limit: TEAM_GAME_CANDIDATE_LIMIT,
-      }),
-      this.options.articles.listForTeam(teamId, { limit: OVERVIEW_ARTICLE_LIMIT }),
-      this.options.repository.findCoverage(teamId),
-    ]);
+    const [teamResult, gameResult, articleResult, coverageResult, homepageResult] =
+      await Promise.allSettled([
+        this.options.teams.getActiveTeam(teamId),
+        this.options.games.listTeamGames(teamId, {
+          season: this.options.currentNflSeason,
+          limit: TEAM_GAME_CANDIDATE_LIMIT,
+        }),
+        this.options.articles.listForTeam(teamId, { limit: OVERVIEW_ARTICLE_LIMIT }),
+        this.options.repository.findCoverage(teamId),
+        this.options.homepage?.getPublicHomepage(teamId) ?? Promise.resolve(defaultHomepage()),
+      ]);
     if (teamResult.status === 'rejected') throw teamResult.reason;
     if (gameResult.status === 'rejected') throw gameResult.reason;
     if (articleResult.status === 'rejected') throw articleResult.reason;
     if (coverageResult.status === 'rejected') throw coverageResult.reason;
+    if (homepageResult.status === 'rejected') throw homepageResult.reason;
     const team = teamResult.value;
     const gamePage = gameResult.value;
     const articlePage = articleResult.value;
@@ -76,6 +81,7 @@ export class TeamHubService implements TeamHubReader {
           recent: selectRecent(gamePage.games),
         },
         news: { articles: articlePage.articles },
+        homepage: homepageResult.value,
         historicalData: {
           defaultSeason: defaultHistoricalSeason(coverage.rosterSeasons, coverage.statSeasons),
           rosterSeasons: coverage.rosterSeasons,
@@ -160,6 +166,14 @@ export class TeamHubService implements TeamHubReader {
     const statsQuery: SeasonLeadersQuery = { ...query, teamId };
     return this.options.stats.getSeasonLeaders(statsQuery);
   }
+}
+
+function defaultHomepage(): PublicTeamHomepageDto {
+  return {
+    banner: { imageUrl: null, focalX: 50, focalY: 50, overlayOpacity: 35 },
+    editorial: { featuredItem: null, supportingItems: [] },
+    highlights: [],
+  };
 }
 
 function selectUpcoming(games: readonly GameDto[]): readonly GameDto[] {
