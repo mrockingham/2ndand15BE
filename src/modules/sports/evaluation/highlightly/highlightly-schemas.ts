@@ -72,6 +72,31 @@ export const highlightlyRawMatchListResponseSchema = highlightlyMatchListRespons
   data: z.array(z.unknown()),
 });
 
+const highlightlyStandingStatisticSchema = z.object({
+  displayName: z.string().min(1).max(128),
+  value: z.union([z.string(), z.number()]).nullable(),
+});
+
+export const highlightlyStandingsResponseSchema = z.object({
+  data: z.array(
+    z.object({
+      leagueName: z.string().min(1).max(128),
+      abbreviation: z.enum(['AFC', 'NFC']),
+      year: z.number().int().min(1920).max(2100),
+      seasonType: z.string().min(1).max(64),
+      leagueType: z.string().min(1).max(64),
+      data: z.array(
+        z.object({
+          team: highlightlyTeamSchema,
+          statistics: z.array(highlightlyStandingStatisticSchema),
+        }),
+      ),
+    }),
+  ),
+  pagination: highlightlyPaginationSchema,
+  plan: highlightlyPlanSchema.optional(),
+});
+
 const highlightlyVenueSchema = z.object({
   city: nullableString,
   name: nullableString,

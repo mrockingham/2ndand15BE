@@ -400,10 +400,64 @@ model Team {
   homepageEditorialPlacements TeamHomepageEditorialPlacement[]
   homepageHighlightPlacements TeamHomepageHighlightPlacement[]
   homepageHighlightSettings   TeamHomepageHighlightSettings?
+  standingRows                TeamStanding[]
 
   @@unique([league, abbreviation], map: "teams_league_abbreviation_key")
   @@index([league, isActive, conference, division, fullName], map: "teams_catalog_order_idx")
   @@map("teams")
+}
+
+/// Provider-backed NFL standings snapshot. Public reads are DB-only and never expose provider IDs.
+model StandingsSnapshot {
+  id         String         @id @default(uuid()) @db.Uuid
+  provider   String         @db.VarChar(64)
+  season     Int
+  seasonType SeasonType     @map("season_type")
+  updatedAt  DateTime       @map("updated_at") @db.Timestamptz(3)
+  createdAt  DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  rows       TeamStanding[]
+
+  @@unique([provider, season, seasonType], map: "standings_snapshots_provider_season_type_key")
+  @@index([season, seasonType, updatedAt], map: "standings_snapshots_public_lookup_idx")
+  @@map("standings_snapshots")
+}
+
+model TeamStanding {
+  id                String            @id @default(uuid()) @db.Uuid
+  snapshotId        String            @map("snapshot_id") @db.Uuid
+  teamId            String            @map("team_id") @db.Uuid
+  providerOrder     Int               @map("provider_order")
+  conferenceRank    Int?              @map("conference_rank")
+  playoffSeed       Int?              @map("playoff_seed")
+  wins              Int?
+  losses            Int?
+  ties              Int?
+  winPercentage     Float?            @map("win_percentage")
+  homeWins          Int?              @map("home_wins")
+  homeLosses        Int?              @map("home_losses")
+  homeTies          Int?              @map("home_ties")
+  awayWins          Int?              @map("away_wins")
+  awayLosses        Int?              @map("away_losses")
+  awayTies          Int?              @map("away_ties")
+  divisionWins      Int?              @map("division_wins")
+  divisionLosses    Int?              @map("division_losses")
+  divisionTies      Int?              @map("division_ties")
+  conferenceWins    Int?              @map("conference_wins")
+  conferenceLosses  Int?              @map("conference_losses")
+  conferenceTies    Int?              @map("conference_ties")
+  pointsFor         Int?              @map("points_for")
+  pointsAgainst     Int?              @map("points_against")
+  pointDifferential Int?              @map("point_differential")
+  streakType        String?           @map("streak_type") @db.VarChar(4)
+  streakLength      Int?              @map("streak_length")
+  streakDisplay     String?           @map("streak_display") @db.VarChar(16)
+  snapshot          StandingsSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Cascade)
+  team              Team              @relation(fields: [teamId], references: [id], onDelete: Restrict)
+
+  @@unique([snapshotId, teamId], map: "team_standings_snapshot_team_key")
+  @@index([snapshotId, providerOrder], map: "team_standings_snapshot_order_idx")
+  @@index([teamId], map: "team_standings_team_idx")
+  @@map("team_standings")
 }
 
 model Game {

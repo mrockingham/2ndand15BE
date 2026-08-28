@@ -594,11 +594,29 @@ Boundaries:
 
 - No frontend work, upload service, media download/rehosting/proxying, provider-ID exposure, Highlightly/OpenAI call on public reads, or Next Game/Baseline Model redesign
 
+## Milestone 40A — NFL standings backend
+
+Goal: expose frontend-ready, provider-backed NFL standings without deriving official standings from game rows or making provider calls from public requests.
+
+**Status:** Implemented on August 28, 2026. Highlightly was selected after real-data review because it supplies 2025/2026 preseason and regular-season conference standings; API-Sports coverage under the configured plan stops at 2024. Hosted write/read verification is recorded in `docs/standings.md` when run.
+
+Deliverables:
+
+- Strict Highlightly standings validation and normalization with deterministic duplicate-snapshot selection
+- Transactional, idempotent complete-snapshot storage using internal team IDs and durable provider mappings
+- Public `GET /api/v1/standings` with division, conference, and league views plus bounded filters
+- Explicit nulls for unsupported non-conference, last-five, clinch, elimination, and official division/league rank fields
+- OpenAPI, focused tests, sync CLI, and provider/field limitation documentation
+
+Boundaries:
+
+- No game-derived standings, public provider calls, postseason fabrication, provider IDs/raw rows, polling, cron, queues, workers, or frontend work
+
 ## Later roadmap themes
 
 After the first slice is stable, define separate milestones for:
 
-- Standings and additional team-statistics normalization
+- Additional team-statistics normalization
 - Additional sports-provider adapters, distributed caching, quotas, and failover
 - News ingestion, attribution, deduplication, and AI summaries
 - Predictions, model/version provenance, calibration, and historical accuracy

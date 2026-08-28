@@ -70,6 +70,8 @@ import {
   createPublicContactRouter,
 } from '../modules/contact/contact.routes.js';
 import type { ContactServiceContract } from '../modules/contact/contact.service.js';
+import { createStandingsRouter } from '../modules/standings/standings.routes.js';
+import type { StandingsReader } from '../modules/standings/standings.service.js';
 
 export interface ApiRouterOptions {
   readonly rateLimit: AppConfig['rateLimit'];
@@ -102,6 +104,7 @@ export interface ApiRouterOptions {
   readonly weeklyInsightsService?: AiHubWeeklyInsightsService;
   readonly contactService?: ContactServiceContract;
   readonly contactRateLimit?: AppConfig['contact']['rateLimit'];
+  readonly standingsReader?: StandingsReader;
 }
 
 export function createApiRouter(options: ApiRouterOptions): Router {
@@ -255,6 +258,8 @@ export function createApiRouter(options: ApiRouterOptions): Router {
     router.use('/players', createPlayerRouter(options.playerReader));
   if (options.statsHubReader !== undefined)
     router.use('/stats', createStatsHubRouter(options.statsHubReader));
+  if (options.standingsReader !== undefined)
+    router.use('/standings', createStandingsRouter(options.standingsReader));
   if (options.gameStatsReader !== undefined)
     router.use('/games', createGameStatsRouter(options.gameStatsReader));
   if (options.gamePlayReader !== undefined)
