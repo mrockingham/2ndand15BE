@@ -107,6 +107,57 @@ const articleIdParameter = {
   schema: { type: 'string', format: 'uuid' },
 } as const;
 
+const teamHomepageTeamIdParameter = {
+  name: 'teamId',
+  in: 'path',
+  required: true,
+  schema: { type: 'string', format: 'uuid' },
+} as const;
+
+const teamHomepagePlacementIdParameter = {
+  name: 'placementId',
+  in: 'path',
+  required: true,
+  schema: { type: 'string', format: 'uuid' },
+} as const;
+
+function adminTeamHomepageOperation(
+  operationId: string,
+  summary: string,
+  parameters: readonly Record<string, unknown>[],
+  requestSchema?: Record<string, unknown>,
+  successStatus = '200',
+) {
+  return {
+    operationId,
+    summary,
+    tags: ['Admin Team Homepage'],
+    security: [{ bearerAuth: [] }],
+    parameters,
+    ...(requestSchema === undefined
+      ? {}
+      : {
+          requestBody: {
+            required: true,
+            content: { 'application/json': { schema: requestSchema } },
+          },
+        }),
+    responses: {
+      [successStatus]: {
+        description: 'The Team Homepage CMS operation completed.',
+        ...(successStatus === '204'
+          ? {}
+          : { content: { 'application/json': { schema: { type: 'object' } } } }),
+      },
+      '400': { $ref: '#/components/responses/ValidationError' },
+      '401': { $ref: '#/components/responses/UnauthorizedError' },
+      '403': { $ref: '#/components/responses/ForbiddenError' },
+      '404': { $ref: '#/components/responses/NotFoundError' },
+      '409': { $ref: '#/components/responses/ConflictError' },
+    },
+  };
+}
+
 const articleVersionActionBody = {
   required: true,
   content: {
@@ -2317,6 +2368,127 @@ export const openApiDocument = {
         },
       },
     },
+    '/admin/teams/{teamId}/homepage': {
+      get: adminTeamHomepageOperation(
+        'getAdminTeamHomepage',
+        'Get the composed Team Homepage CMS state',
+        [teamHomepageTeamIdParameter],
+      ),
+    },
+    '/admin/teams/{teamId}/homepage/banner': {
+      put: adminTeamHomepageOperation(
+        'updateTeamHomepageBanner',
+        'Set, replace, clear, or position a team banner image',
+        [teamHomepageTeamIdParameter],
+        { $ref: '#/components/schemas/UpdateTeamHomepageBannerRequest' },
+      ),
+    },
+    '/admin/teams/{teamId}/homepage/editorial': {
+      get: adminTeamHomepageOperation(
+        'listTeamHomepageEditorial',
+        'List team editorial placements',
+        [teamHomepageTeamIdParameter],
+      ),
+      post: adminTeamHomepageOperation(
+        'addTeamHomepageEditorial',
+        'Add an article or video editorial placement',
+        [teamHomepageTeamIdParameter],
+        { $ref: '#/components/schemas/AddTeamHomepageEditorialRequest' },
+        '201',
+      ),
+    },
+    '/admin/teams/{teamId}/homepage/editorial-candidates': {
+      get: adminTeamHomepageOperation(
+        'listTeamHomepageEditorialCandidates',
+        'List bounded team-related article and stored-media candidates',
+        [
+          teamHomepageTeamIdParameter,
+          {
+            name: 'limit',
+            in: 'query',
+            schema: { type: 'integer', minimum: 1, maximum: 50, default: 25 },
+          },
+          { name: 'cursor', in: 'query', schema: { type: 'integer', minimum: 0 } },
+        ],
+      ),
+    },
+    '/admin/teams/{teamId}/homepage/editorial/order': {
+      put: adminTeamHomepageOperation(
+        'reorderTeamHomepageEditorial',
+        'Reorder all team editorial placements',
+        [teamHomepageTeamIdParameter],
+        { $ref: '#/components/schemas/ReorderTeamHomepagePlacementsRequest' },
+      ),
+    },
+    '/admin/teams/{teamId}/homepage/editorial/{placementId}': {
+      put: adminTeamHomepageOperation(
+        'updateTeamHomepageEditorial',
+        'Atomically set or clear a lead-replacement video',
+        [teamHomepageTeamIdParameter, teamHomepagePlacementIdParameter],
+        { $ref: '#/components/schemas/UpdateTeamHomepageEditorialRequest' },
+      ),
+      delete: adminTeamHomepageOperation(
+        'removeTeamHomepageEditorial',
+        'Remove a team editorial placement',
+        [teamHomepageTeamIdParameter, teamHomepagePlacementIdParameter],
+        undefined,
+        '204',
+      ),
+    },
+    '/admin/teams/{teamId}/homepage/highlights': {
+      get: adminTeamHomepageOperation(
+        'listTeamHomepageHighlights',
+        'List team highlight placements and settings',
+        [teamHomepageTeamIdParameter],
+      ),
+      post: adminTeamHomepageOperation(
+        'addTeamHomepageHighlight',
+        'Add a team-scoped stored-media highlight',
+        [teamHomepageTeamIdParameter],
+        { $ref: '#/components/schemas/AddTeamHomepageHighlightRequest' },
+        '201',
+      ),
+    },
+    '/admin/teams/{teamId}/homepage/highlight-candidates': {
+      get: adminTeamHomepageOperation(
+        'listTeamHomepageHighlightCandidates',
+        'List bounded team-scoped stored-media candidates',
+        [
+          teamHomepageTeamIdParameter,
+          {
+            name: 'limit',
+            in: 'query',
+            schema: { type: 'integer', minimum: 1, maximum: 50, default: 25 },
+          },
+          { name: 'cursor', in: 'query', schema: { type: 'integer', minimum: 0 } },
+        ],
+      ),
+    },
+    '/admin/teams/{teamId}/homepage/highlights/order': {
+      put: adminTeamHomepageOperation(
+        'reorderTeamHomepageHighlights',
+        'Reorder all curated team highlights',
+        [teamHomepageTeamIdParameter],
+        { $ref: '#/components/schemas/ReorderTeamHomepagePlacementsRequest' },
+      ),
+    },
+    '/admin/teams/{teamId}/homepage/highlights/settings': {
+      put: adminTeamHomepageOperation(
+        'updateTeamHomepageHighlightSettings',
+        'Update team highlight display limit and automatic fill',
+        [teamHomepageTeamIdParameter],
+        { $ref: '#/components/schemas/UpdateTeamHomepageHighlightSettingsRequest' },
+      ),
+    },
+    '/admin/teams/{teamId}/homepage/highlights/{placementId}': {
+      delete: adminTeamHomepageOperation(
+        'removeTeamHomepageHighlight',
+        'Remove a curated team highlight placement',
+        [teamHomepageTeamIdParameter, teamHomepagePlacementIdParameter],
+        undefined,
+        '204',
+      ),
+    },
     '/teams/{teamId}/hub': {
       get: {
         operationId: 'getTeamHubOverview',
@@ -3955,13 +4127,78 @@ export const openApiDocument = {
           fullName: { type: 'string' },
         },
       },
+      UpdateTeamHomepageBannerRequest: {
+        type: 'object',
+        additionalProperties: false,
+        minProperties: 1,
+        properties: {
+          imageUrl: { type: ['string', 'null'], format: 'uri', maxLength: 2048 },
+          focalX: { type: 'integer', minimum: 0, maximum: 100 },
+          focalY: { type: 'integer', minimum: 0, maximum: 100 },
+          overlayOpacity: { type: 'integer', minimum: 0, maximum: 100 },
+        },
+      },
+      AddTeamHomepageEditorialRequest: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['sourceType', 'sourceId'],
+        properties: {
+          sourceType: { type: 'string', enum: ['ARTICLE', 'VIDEO'] },
+          sourceId: { type: 'string', format: 'uuid' },
+          mediaSourceType: {
+            type: 'string',
+            enum: ['GAME_HIGHLIGHT', 'CURATED_GAME_VIDEO'],
+          },
+          isLeadReplacement: { type: 'boolean', default: false },
+        },
+      },
+      UpdateTeamHomepageEditorialRequest: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['isLeadReplacement'],
+        properties: { isLeadReplacement: { type: 'boolean' } },
+      },
+      ReorderTeamHomepagePlacementsRequest: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['placementIds'],
+        properties: {
+          placementIds: {
+            type: 'array',
+            maxItems: 10,
+            uniqueItems: true,
+            items: { type: 'string', format: 'uuid' },
+          },
+        },
+      },
+      AddTeamHomepageHighlightRequest: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['sourceType', 'sourceId'],
+        properties: {
+          sourceType: {
+            type: 'string',
+            enum: ['GAME_HIGHLIGHT', 'CURATED_GAME_VIDEO'],
+          },
+          sourceId: { type: 'string', format: 'uuid' },
+        },
+      },
+      UpdateTeamHomepageHighlightSettingsRequest: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['displayLimit', 'fillWithAutomatic'],
+        properties: {
+          displayLimit: { type: 'integer', minimum: 3, maximum: 10, default: 5 },
+          fillWithAutomatic: { type: 'boolean', default: true },
+        },
+      },
       TeamHubResponse: {
         type: 'object',
         required: ['data', 'meta'],
         properties: {
           data: {
             type: 'object',
-            required: ['team', 'schedule', 'news', 'historicalData'],
+            required: ['team', 'schedule', 'news', 'homepage', 'historicalData'],
             properties: {
               team: { $ref: '#/components/schemas/Team' },
               schedule: {
@@ -3996,6 +4233,7 @@ export const openApiDocument = {
                   },
                 },
               },
+              homepage: { $ref: '#/components/schemas/PublicTeamHomepage' },
               historicalData: {
                 type: 'object',
                 required: [
@@ -4021,6 +4259,90 @@ export const openApiDocument = {
             type: 'object',
             required: ['attribution'],
             properties: { attribution: { $ref: '#/components/schemas/NflverseAttribution' } },
+          },
+        },
+      },
+      TeamHomepageBanner: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['imageUrl', 'focalX', 'focalY', 'overlayOpacity'],
+        properties: {
+          imageUrl: { type: ['string', 'null'], format: 'uri' },
+          focalX: { type: 'integer', minimum: 0, maximum: 100, default: 50 },
+          focalY: { type: 'integer', minimum: 0, maximum: 100, default: 50 },
+          overlayOpacity: { type: 'integer', minimum: 0, maximum: 100, default: 35 },
+        },
+      },
+      TeamHomepageArticleItem: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['type', 'article'],
+        properties: {
+          type: { type: 'string', enum: ['ARTICLE'] },
+          article: { $ref: '#/components/schemas/PublicArticleListItem' },
+        },
+      },
+      TeamHomepageVideoItem: {
+        type: 'object',
+        additionalProperties: false,
+        required: [
+          'type',
+          'id',
+          'gameId',
+          'title',
+          'thumbnailUrl',
+          'canonicalUrl',
+          'embedUrl',
+          'canEmbed',
+          'publishedAt',
+        ],
+        properties: {
+          type: { type: 'string', enum: ['VIDEO'] },
+          id: { type: 'string', format: 'uuid' },
+          gameId: { type: 'string', format: 'uuid' },
+          title: { type: 'string' },
+          thumbnailUrl: { type: ['string', 'null'], format: 'uri' },
+          canonicalUrl: { type: ['string', 'null'], format: 'uri' },
+          embedUrl: { type: ['string', 'null'], format: 'uri' },
+          canEmbed: { type: 'boolean' },
+          publishedAt: { type: ['string', 'null'], format: 'date-time' },
+        },
+      },
+      TeamHomepageEditorialItem: {
+        oneOf: [
+          { $ref: '#/components/schemas/TeamHomepageArticleItem' },
+          { $ref: '#/components/schemas/TeamHomepageVideoItem' },
+        ],
+        discriminator: { propertyName: 'type' },
+      },
+      PublicTeamHomepage: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['banner', 'editorial', 'highlights'],
+        properties: {
+          banner: { $ref: '#/components/schemas/TeamHomepageBanner' },
+          editorial: {
+            type: 'object',
+            required: ['featuredItem', 'supportingItems'],
+            properties: {
+              featuredItem: {
+                oneOf: [
+                  { $ref: '#/components/schemas/TeamHomepageEditorialItem' },
+                  { type: 'null' },
+                ],
+              },
+              supportingItems: {
+                type: 'array',
+                maxItems: 8,
+                items: { $ref: '#/components/schemas/TeamHomepageEditorialItem' },
+              },
+            },
+          },
+          highlights: {
+            type: 'array',
+            minItems: 0,
+            maxItems: 10,
+            items: { $ref: '#/components/schemas/TeamHomepageVideoItem' },
           },
         },
       },

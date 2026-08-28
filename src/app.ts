@@ -33,6 +33,7 @@ import type { NewsInboxServiceContract } from './modules/news-inbox/news.service
 import type { PlayerReader } from './modules/players/player.service.js';
 import type { StatsHubReader } from './modules/stats-hub/stats.service.js';
 import type { TeamHubReader } from './modules/team-hub/team-hub.service.js';
+import type { TeamHomepageServiceContract } from './modules/team-homepage/team-homepage.service.js';
 import type { EditorialAiServiceContract } from './modules/editorial-ai/editorial-ai.service.js';
 import type { PredictionService } from './modules/ai-hub/prediction.service.js';
 import type { AiHubWeeklyInsightsService } from './modules/ai-hub/weekly-insights.service.js';
@@ -62,6 +63,7 @@ export interface CreateAppOptions {
   readonly playerReader?: PlayerReader;
   readonly statsHubReader?: StatsHubReader;
   readonly teamHubReader?: TeamHubReader;
+  readonly teamHomepageService?: TeamHomepageServiceContract;
   readonly editorialAiService?: EditorialAiServiceContract;
   readonly predictionService?: PredictionService;
   readonly weeklyInsightsService?: AiHubWeeklyInsightsService;
@@ -129,6 +131,9 @@ export function createApp(options: CreateAppOptions): Express {
       ...(options.playerReader === undefined ? {} : { playerReader: options.playerReader }),
       ...(options.statsHubReader === undefined ? {} : { statsHubReader: options.statsHubReader }),
       ...(options.teamHubReader === undefined ? {} : { teamHubReader: options.teamHubReader }),
+      ...(options.teamHomepageService === undefined
+        ? {}
+        : { teamHomepageService: options.teamHomepageService }),
       ...(options.editorialAiService === undefined
         ? {}
         : { editorialAiService: options.editorialAiService }),

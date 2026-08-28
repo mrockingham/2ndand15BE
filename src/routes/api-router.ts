@@ -58,6 +58,8 @@ import { createStatsHubRouter } from '../modules/stats-hub/stats.routes.js';
 import type { StatsHubReader } from '../modules/stats-hub/stats.service.js';
 import { createTeamHubRouter } from '../modules/team-hub/team-hub.routes.js';
 import type { TeamHubReader } from '../modules/team-hub/team-hub.service.js';
+import { createAdminTeamHomepageRouter } from '../modules/team-homepage/team-homepage.routes.js';
+import type { TeamHomepageServiceContract } from '../modules/team-homepage/team-homepage.service.js';
 import { createEditorialAiRouters } from '../modules/editorial-ai/editorial-ai.routes.js';
 import type { EditorialAiServiceContract } from '../modules/editorial-ai/editorial-ai.service.js';
 import { createPredictionRouters } from '../modules/ai-hub/prediction.routes.js';
@@ -94,6 +96,7 @@ export interface ApiRouterOptions {
   readonly playerReader?: PlayerReader;
   readonly statsHubReader?: StatsHubReader;
   readonly teamHubReader?: TeamHubReader;
+  readonly teamHomepageService?: TeamHomepageServiceContract;
   readonly editorialAiService?: EditorialAiServiceContract;
   readonly predictionService?: PredictionService;
   readonly weeklyInsightsService?: AiHubWeeklyInsightsService;
@@ -221,6 +224,16 @@ export function createApiRouter(options: ApiRouterOptions): Router {
         authenticate: options.authenticate,
         identities: options.adminIdentities,
         service: options.homepageService,
+      }),
+    );
+  }
+  if (options.teamHomepageService !== undefined && options.adminIdentities !== undefined) {
+    router.use(
+      '/admin/teams',
+      createAdminTeamHomepageRouter({
+        authenticate: options.authenticate,
+        identities: options.adminIdentities,
+        service: options.teamHomepageService,
       }),
     );
   }

@@ -2,7 +2,7 @@
 
 ## Status
 
-This document defines the backend architecture through the AI Hub weekly-predictions foundation. The service foundation, normalized team/game catalogs, authentication lifecycle, favorite-team personalization, schedule maintenance, editorial content and candidate workflows, local 2020-2025 nflverse player data, Stats Hub, Team Hub, and deterministic versioned game predictions are implemented.
+This document defines the backend architecture through the Team Hub CMS foundation. The service foundation, normalized team/game catalogs, authentication lifecycle, favorite-team personalization, schedule maintenance, editorial content and candidate workflows, local 2020-2025 nflverse player data, Stats Hub, Team Hub with team-scoped CMS composition, and deterministic versioned game predictions are implemented.
 
 ## System context
 
@@ -234,6 +234,8 @@ The Team Hub is a read-only composition module. Its overview calls the existing 
 Historical roster pages group `PlayerWeekRoster` by internal player, team, and selected season. Membership means at least one stored weekly roster row, not full-season/final/current membership or stat participation. Historical team, historical position/jersey/status, and the separately labeled latest-known profile team remain distinct. The query groups to one player row, caps a team-season at 500 candidates, then applies deterministic position-group/position/name/UUID ordering and a context-bound opaque cursor.
 
 The team stat-leader path injects its internal path `teamId` into the existing Stats Hub season-leader service. Metric allowlisting, team-only aggregation, competition ranks, null/zero semantics, tie ordering, errors, cursor behavior, DTO privacy, and nflverse attribution are therefore shared rather than reimplemented. See `docs/team-hub/` for the API contract, semantics, and query-plan review.
+
+M39A adds durable per-team banner presentation, ordered ARTICLE/VIDEO editorial pointers, and team-scoped highlight placement/settings. Public composition stays inside the existing Team Hub response. Video eligibility is resolved through Game Center's backend-authored `displayVideos`; stale placements are skipped, a stale lead video falls back to the normal team article, and automatic highlights use stored recent team games only. No public Team Hub read invokes Highlightly, OpenAI, or another external source. See `docs/team-hub/team-homepage-cms.md`.
 
 ## HTTP API
 

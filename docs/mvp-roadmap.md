@@ -575,6 +575,25 @@ Boundaries:
 - No frontend redesign, PBP-derived authoritative player totals, drive inference, win probability,
   injuries, weather, provider-ID exposure, video-rights change, betting, or historical-stat mutation
 
+## Milestone 39A — Team Hub CMS and team-scoped curation
+
+Goal: let each Team Hub compose a custom banner, authoritative ARTICLE/VIDEO opening, and team-scoped highlight rail without frontend fan-out or public provider/AI calls.
+
+**Status:** Implemented on August 28, 2026. The additive migration, public Team Hub composition, protected admin APIs, audit coverage, rights-preserving media resolution, OpenAPI, and focused regression tests are complete. Hosted migration and contrasting-team verification are recorded in the completion report when run.
+
+Deliverables:
+
+- URL-based per-team banner with focal/overlay controls and existing fallback preservation
+- Ordered internal article/video placements with one atomic-replacement `isLeadReplacement` video
+- Mixed supporting stories, safe article fallback, duplicate removal, and stale-reference resilience
+- Team-scoped highlights with 3-10 display limit, maximum ten curated placements, and deterministic stored-media automatic fill
+- Existing Team Hub response extended with one authoritative `homepage` object
+- Editor/admin routes reusing Homepage CMS capabilities, bounded candidates, compact audits, OpenAPI, tests, and `docs/team-hub/team-homepage-cms.md`
+
+Boundaries:
+
+- No frontend work, upload service, media download/rehosting/proxying, provider-ID exposure, Highlightly/OpenAI call on public reads, or Next Game/Baseline Model redesign
+
 ## Later roadmap themes
 
 After the first slice is stable, define separate milestones for:

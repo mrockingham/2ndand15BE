@@ -2,6 +2,7 @@ import type { Team } from '../../generated/prisma/client.js';
 import type { PublicArticleListDto } from '../articles/article.dto.js';
 import type { GameDto } from '../games/game.dto.js';
 import type { TeamDto } from '../teams/team.dto.js';
+import type { PublicTeamHomepageDto } from '../team-homepage/team-homepage.dto.js';
 
 export const ROSTER_POSITIONS = [
   'DB',
@@ -76,6 +77,7 @@ export interface TeamHubOverviewResponse {
       readonly recent: readonly GameDto[];
     };
     readonly news: { readonly articles: readonly PublicArticleListDto[] };
+    readonly homepage: PublicTeamHomepageDto;
     readonly historicalData: {
       readonly defaultSeason: number | null;
       readonly rosterSeasons: readonly number[];

@@ -63,6 +63,8 @@ import { PrismaStatsHubRepository } from './modules/stats-hub/stats.repository.j
 import { StatsHubService } from './modules/stats-hub/stats.service.js';
 import { PrismaTeamHubRepository } from './modules/team-hub/team-hub.repository.js';
 import { TeamHubService } from './modules/team-hub/team-hub.service.js';
+import { PrismaTeamHomepageRepository } from './modules/team-homepage/team-homepage.repository.js';
+import { TeamHomepageService } from './modules/team-homepage/team-homepage.service.js';
 import { PrismaEditorialAiRepository } from './modules/editorial-ai/editorial-ai.repository.js';
 import { EditorialAiService } from './modules/editorial-ai/editorial-ai.service.js';
 import {
@@ -259,6 +261,11 @@ const homepageService = new HomepageService({
   aiHub: weeklyInsightsService,
   fallbackSeason: config.sports.currentNflSeason,
 });
+const teamHomepageService = new TeamHomepageService({
+  repository: new PrismaTeamHomepageRepository(prisma),
+  articles: articleService,
+  gameMedia: gameMediaCurationService,
+});
 const teamHubReader = new TeamHubService({
   repository: new PrismaTeamHubRepository(prisma),
   teams: teamReader,
@@ -266,6 +273,7 @@ const teamHubReader = new TeamHubService({
   articles: articleService,
   stats: statsHubReader,
   currentNflSeason: config.sports.currentNflSeason,
+  homepage: teamHomepageService,
 });
 const accessTokens = new JwtAccessTokenService({
   secret: config.auth.accessTokenSecret,
@@ -324,6 +332,7 @@ const app = createApp({
   playerReader,
   statsHubReader,
   teamHubReader,
+  teamHomepageService,
   predictionService,
   weeklyInsightsService,
   contactService,
