@@ -9,6 +9,18 @@ import type {
  * window plus a long game/delay margin. */
 const RECENT_FINAL_DISCOVERY_HOURS = 24;
 const PREGAME_DISCOVERY_LEAD_MINUTES = 10;
+/**
+ * Recovery incident (2026-08-27): the SCHEDULED/PREGAME discovery branch only ever looked
+ * *forward* from `now` (`startTime >= now`), so a game whose kickoff already passed while a
+ * worker was down/restarting was invisible to broad discovery -- provider state could never
+ * correct SCHEDULED -> IN_PROGRESS/FINAL for it, and even `--gameId` couldn't rescue it, since
+ * that flag only filters an already-discovered list (see `CurrentGamePoller.runCycle`). This
+ * bounds how far *past* a missed kickoff broad discovery still recovers a SCHEDULED/PREGAME
+ * game -- long enough to cover a worker outage/restart, short enough that a genuinely stale
+ * historical SCHEDULED row (never played, provider never resolved) does not become a permanent
+ * poll candidate.
+ */
+const SCHEDULED_RECOVERY_LOOKBACK_HOURS = 4;
 
 export interface PollCandidateGame {
   readonly gameId: string;
@@ -74,6 +86,10 @@ export interface PlaysReviewQueueEntry {
 
 export interface CurrentGamePollStateRepository {
   discoverCandidates(now: Date): Promise<readonly PollCandidateGame[]>;
+  /** Unwindowed lookup for explicit `--gameId` recovery/debug polling --
+   * bypasses discovery's scheduling-window eligibility entirely, but still
+   * surfaces `providerMapping` so the caller can validate it exists. */
+  findCandidateGameById(gameId: string): Promise<PollCandidateGame | null>;
   ensurePollStates(gameIds: readonly string[], now: Date): Promise<void>;
   claimDue(
     now: Date,
@@ -81,6 +97,16 @@ export interface CurrentGamePollStateRepository {
     leaseMs: number,
     limit: number,
   ): Promise<readonly ClaimedPoll[]>;
+  /** Claims one game's poll state for explicit `--gameId` recovery, ignoring
+   * `nextPollAt` due-ness (unlike `claimDue`) but still respecting the same
+   * lock/lease safety -- returns `null` if another worker currently holds an
+   * unexpired lock on it, so a recovery run never double-claims. */
+  claimForRecovery(
+    gameId: string,
+    now: Date,
+    workerId: string,
+    leaseMs: number,
+  ): Promise<ClaimedPoll | null>;
   recordSuccess(id: string, now: Date, update: PollStateOutcomeUpdate): Promise<void>;
   recordFailure(
     id: string,
@@ -107,6 +133,9 @@ export class PrismaCurrentGamePollStateRepository implements CurrentGamePollStat
 
   async discoverCandidates(now: Date): Promise<readonly PollCandidateGame[]> {
     const pregameWindowEnd = new Date(now.getTime() + PREGAME_DISCOVERY_LEAD_MINUTES * 60_000);
+    const scheduledRecoveryStart = new Date(
+      now.getTime() - SCHEDULED_RECOVERY_LOOKBACK_HOURS * 60 * 60_000,
+    );
     const recentFinalSince = new Date(now.getTime() - RECENT_FINAL_DISCOVERY_HOURS * 60 * 60_000);
     const games = await this.prisma.game.findMany({
       where: {
@@ -114,8 +143,14 @@ export class PrismaCurrentGamePollStateRepository implements CurrentGamePollStat
         OR: [
           { status: { in: ['IN_PROGRESS', 'HALFTIME'] } },
           {
+            // Covers both the normal upcoming pregame window and an overdue
+            // recovery window -- a SCHEDULED/PREGAME game whose kickoff
+            // already passed (provider status never corrected because a
+            // worker was down) is still discovered, bounded by
+            // SCHEDULED_RECOVERY_LOOKBACK_HOURS so old, never-played rows
+            // don't become permanent candidates.
             status: { in: ['SCHEDULED', 'PREGAME'] },
-            startTime: { gte: now, lte: pregameWindowEnd },
+            startTime: { gte: scheduledRecoveryStart, lte: pregameWindowEnd },
           },
           {
             status: 'FINAL',
@@ -128,6 +163,48 @@ export class PrismaCurrentGamePollStateRepository implements CurrentGamePollStat
       take: this.discoveryLimit,
     });
     return games.map(toCandidateGame);
+  }
+
+  findCandidateGameById(gameId: string): Promise<PollCandidateGame | null> {
+    return this.prisma.game
+      .findUnique({ where: { id: gameId }, include: candidateInclude })
+      .then((game) => (game === null ? null : toCandidateGame(game)));
+  }
+
+  async claimForRecovery(
+    gameId: string,
+    now: Date,
+    workerId: string,
+    leaseMs: number,
+  ): Promise<ClaimedPoll | null> {
+    const staleLockBefore = new Date(now.getTime() - leaseMs);
+    const state = await this.prisma.currentGamePollState.findUnique({
+      where: { gameId },
+      select: { id: true },
+    });
+    if (state === null) return null;
+
+    // Same conditional-claim pattern as `claimDue` (still refuses a game
+    // currently locked by another live worker, so two concurrent recovery
+    // attempts -- or a recovery attempt racing the broad poller -- never
+    // both win it) but deliberately does not require `nextPollAt <= now`:
+    // an explicit `--gameId` recovery run must attempt the reviewed game
+    // regardless of ordinary scheduling cadence.
+    const result = await this.prisma.currentGamePollState.updateMany({
+      where: {
+        id: state.id,
+        OR: [{ lockedAt: null }, { lockedAt: { lt: staleLockBefore } }],
+      },
+      data: { lockedAt: now, lockedBy: workerId, lastAttemptAt: now },
+    });
+    if (result.count !== 1) return null;
+
+    const row = await this.prisma.currentGamePollState.findUnique({
+      where: { id: state.id },
+      include: { game: { include: candidateInclude } },
+    });
+    if (row === null) return null;
+    return { pollState: toPollStateRow(row), game: toCandidateGame(row.game) };
   }
 
   async ensurePollStates(gameIds: readonly string[], now: Date): Promise<void> {

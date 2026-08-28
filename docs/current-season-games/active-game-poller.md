@@ -123,13 +123,34 @@ have `nextPollAt <= now`" — it never calls Highlightly.
 `CurrentGamePollStateRepository.discoverCandidates` reads only PostgreSQL, bounded, every cycle:
 
 - `status IN (IN_PROGRESS, HALFTIME)`, or
-- `status IN (SCHEDULED, PREGAME)` and `startTime` within the next 10 minutes, or
+- `status IN (SCHEDULED, PREGAME)` and `startTime` within the next 10 minutes **or up to 4 hours
+  in the past**, or
 - `status = FINAL`, `startTime` within the last 24 hours, and (`no poll state row yet` or
   `final60CompletedAt IS NULL`).
 
 The 24-hour bound on the FINAL branch is a discovery-query safety limit distinct from the +60
 minute reconciliation deadline — without it, `pollState IS NULL` would match every historical
 completed game ever imported and rescan the archive on every cycle.
+
+The 4-hour backward bound on the SCHEDULED/PREGAME branch (`SCHEDULED_RECOVERY_LOOKBACK_HOURS`)
+was added after a 2026-08-27 production incident: a worker started after a game's kickoff could
+never discover it, because the branch originally only looked forward (`startTime >= now`). A game
+whose provider status was never corrected past `SCHEDULED` — because no worker was running yet —
+was invisible to discovery, and would have stayed that way forever without an operator manually
+correcting it. This bound recovers it automatically on the next cycle after a worker (re)starts,
+while still excluding genuinely stale/never-played historical `SCHEDULED` rows.
+
+### Explicit `--gameId` recovery/debug polling
+
+`--gameId=<uuid>` (see [Manual runs](#manual-runs)) does **not** filter discovery's output — it
+bypasses `discoverCandidates` entirely and resolves the requested game directly via
+`findCandidateGameById` (an unwindowed lookup), then claims it via `claimForRecovery` (the same
+lock/lease safety as `claimDue`, but without requiring `nextPollAt <= now`). It still validates
+the game exists and has a current-game provider mapping (throwing a clear error otherwise — a
+regression from before this fix, when a `--gameId` outside discovery's window silently produced
+zero candidates with no explanation) and still runs through the same
+policy/evaluation/publication gate as every other tick. It cannot create a duplicate claim: a game
+another worker currently holds an unexpired lock on is left alone, same as `claimDue`.
 
 ## Durable state
 
@@ -166,9 +187,14 @@ this scale. `recordSuccess`/`recordFailure` always clear `lockedAt`/`lockedBy`, 
 
 ## Provider request strategy and budget
 
-Each detailed live poll makes at most two Highlightly HTTP requests: one current-state/schedule
+Each detailed live poll makes two baseline Highlightly HTTP requests: one current-state/schedule
 lookup (M25) and one match-detail lookup shared by both team-stat and play observation (M22.5 +
-M26) — the same request is never issued twice for the two surfaces. This reuses the exact
+M26) — the same request is never issued twice for those surfaces. When the independent
+player-stat cadence is due, it adds exactly one `/box-score/{id}` request and reuses the match
+detail for identity/orientation; it never repeats the match request. PREGAME makes no box-score
+request, LIVE defaults to 120 seconds even when featured, HALFTIME refreshes on its normal tick,
+and every FINAL reconciliation stage refreshes once. See
+[the M38A report](m38a-live-box-score-and-recovery.md). This reuses the exact
 optimization proven in the M26.2 live-validation harness (`src/modules/sports/highlightly-match-detail-fetcher.ts`
 is the shared fetcher factory used by both the harness and the poller).
 
@@ -192,6 +218,10 @@ See `shouldPollWhileDegraded` in `current-game-poller.ts`.
   directly (bypassing `CurrentGameDetailsSyncService.sync`'s own separate fetch, which is exactly
   what keeps this at one shared match-detail request). Absence during part of a live game is not
   treated as an error, and null is never replaced with zero.
+- **Player stats**: a due refresh calls only the narrow box-score fetcher, reuses the already
+  fetched match detail, batch-resolves existing provider mappings, and writes only safely mapped
+  `CurrentGamePlayerStat` rows plus neutral coverage. Recurring polling makes no player-profile
+  requests and performs no name-only reconciliation. Missing fields remain null.
 - **Live `GamePlay` (before FINAL only)**: the poller **may persist plays before FINAL** — this is
   the intended production path (superseding the diagnostic-only `--applyPlays` flag on the
   live-validation harness). It reuses `identifyPlays`, `reconcilePlays`, and
@@ -283,6 +313,9 @@ npm run current-games:poller -- --once --gameId=<uuid>
 npm run current-games:poller -- --once
 npm run current-games:poller -- --durationMinutes=180
 
+# Sanitized read-only recent-game match + box-score audit
+npm run current-games:box-score-audit -- --hours=24 --limit=2
+
 # Read-only reconciliation diagnostic (the default — no flag needed for safe inspection)
 npm run current-games:plays:reconcile -- --gameId=<uuid>
 
@@ -300,7 +333,6 @@ npm run current-games:plays:reconcile -- --gameId=<uuid> --apply --mode=final-re
   [--phase=final-immediate|final-10|final-60] [--operatorEmail=ops@example.com]
 ```
 
-There is no background daemon/cron in this milestone — the CLI is the only runner. Each cycle's
-JSON report is written to stdout; it includes per-game scheduling transitions, provider request
-counts, and the degradation flag, which is sufficient operator visibility for this milestone
-without a separate admin HTTP status endpoint.
+The long-running Render worker and bounded CLI share the same composition. Each cycle logs
+provider request counts plus player-stat attempt/health/coverage/next-poll fields without provider
+payloads or IDs. There is no separate scheduler, queue, or admin status endpoint.

@@ -48,6 +48,7 @@ try {
     lockLeaseSeconds: config.currentGame.poller.lockLeaseSeconds,
     batchSize: config.currentGame.poller.batchSize,
     rateLimitDegradeThreshold: config.currentGame.poller.rateLimitDegradeThreshold,
+    playerStatsPollSeconds: config.currentGame.poller.playerStatsPollSeconds,
     ...(args.gameId === null ? {} : { onlyGameId: args.gameId }),
     dryRun: args.dryRun,
   };
@@ -81,6 +82,14 @@ try {
           gameStateOk: tick.gameState.ok,
           teamStatsOk: tick.teamStats.ok,
           teamStatsClassification: tick.teamStats.classification,
+          playerStatsAttempted: tick.playerStats.attempted,
+          playerStatsOk: tick.playerStats.ok,
+          playerStatsReceived: tick.playerStats.received,
+          playerStatsPersisted: tick.playerStats.persisted,
+          playerStatsUnresolved: tick.playerStats.unresolved,
+          playerStatsCoverage: tick.playerStats.coverage,
+          playerStatsNextPollAt: tick.playerStats.nextPollAt,
+          boxScoreRequests: tick.playerStats.boxScoreRequests,
           playsOk: tick.plays.ok,
           playsInsertedUpdatedUnchanged: [
             tick.plays.inserted,

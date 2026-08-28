@@ -11,6 +11,7 @@ import {
 import {
   toTeamStatWrite,
   type CurrentGameDetailsRepository,
+  type CurrentGameDetailsTarget,
   type CurrentGamePlayerStatPlan,
   type CurrentGamePlayerStatValues,
   type CurrentGameTeamStatWrite,
@@ -653,6 +654,64 @@ function planPlayerStats(
       },
     ];
   });
+}
+
+export interface ExistingMappedPlayerStatPlanResult {
+  readonly plans: readonly CurrentGamePlayerStatPlan[];
+  readonly providerRows: number;
+  readonly resolvedRows: number;
+  readonly unresolvedRows: number;
+  readonly ambiguousRows: number;
+}
+
+/**
+ * Live-safe player reconciliation: reuse exact provider mappings in one batch and deliberately
+ * leave every unmapped or conflicting identity unresolved. No profile endpoint is called and no
+ * name-only binding is attempted during recurring polling.
+ */
+export function planExistingMappedPlayerStats(input: {
+  readonly rows: readonly NormalizedCurrentGamePlayerStats[];
+  readonly mappings: ReadonlyMap<string, string>;
+  readonly homeProviderTeamId: string;
+  readonly awayProviderTeamId: string;
+  readonly target: Pick<CurrentGameDetailsTarget, 'homeTeamId' | 'awayTeamId' | 'playerStats'>;
+  readonly provider: string;
+}): ExistingMappedPlayerStatPlanResult {
+  const identities = classifyPlayerIdentities(input.rows);
+  const allowedIds = new Set(identities.uniqueIds);
+  const resolutions = rejectDuplicateBindings(
+    input.rows
+      .filter((row) => allowedIds.has(row.providerPlayerId))
+      .map((row): CurrentPlayerResolution => {
+        const playerId = input.mappings.get(row.providerPlayerId) ?? null;
+        return {
+          providerPlayerId: row.providerPlayerId,
+          method: playerId === null ? 'UNRESOLVED' : 'EXISTING_MAPPING',
+          playerId,
+          profile: null,
+          teamId: teamIdForProviderTeam(
+            {
+              homeProviderTeamId: input.homeProviderTeamId,
+              awayProviderTeamId: input.awayProviderTeamId,
+            },
+            row.teamProviderId,
+            input.target,
+          ),
+          evidence: playerId === null ? [] : ['providerPlayerId'],
+          candidates: [],
+        };
+      }),
+  );
+  const plans = planPlayerStats(input.rows, resolutions, input.target.playerStats, input.provider);
+  const resolvedRows = plans.length;
+  return {
+    plans,
+    providerRows: input.rows.length,
+    resolvedRows,
+    unresolvedRows: input.rows.length - resolvedRows,
+    ambiguousRows:
+      identities.ambiguous + resolutions.filter((row) => row.method === 'AMBIGUOUS').length,
+  };
 }
 
 function resolutionMethodCounts(

@@ -50,9 +50,11 @@ export interface CurrentGameStatsResponse {
       readonly away: GameTeamStatsDto;
     };
     readonly playerStats: CurrentGamePlayerStatsSides;
+    readonly gameLeaders: CurrentGameLeadersSides;
   };
   readonly meta: {
     readonly playerStatsAvailable: boolean;
+    readonly playerStatsCoverageState: CurrentGamePlayerStatsCoverage;
     readonly playerStatsCoverage: {
       readonly providerRows: number;
       readonly resolvedRows: number;
@@ -60,6 +62,19 @@ export interface CurrentGameStatsResponse {
     } | null;
     readonly limitations: readonly string[];
   };
+}
+
+export type CurrentGamePlayerStatsCoverage = 'COMPLETE' | 'PARTIAL' | 'PENDING' | 'UNAVAILABLE';
+
+export interface CurrentGameLeadersByTeam {
+  readonly passer: Record<string, unknown> | null;
+  readonly rusher: Record<string, unknown> | null;
+  readonly receiver: Record<string, unknown> | null;
+}
+
+export interface CurrentGameLeadersSides {
+  readonly home: CurrentGameLeadersByTeam;
+  readonly away: CurrentGameLeadersByTeam;
 }
 
 export type CurrentGameTeamStatsCoverage = 'PENDING' | 'COMPLETE' | 'PARTIAL' | 'UNAVAILABLE';
@@ -158,6 +173,51 @@ export function toCurrentGamePlayerStatsDto(
     home: categoryRows(rows.filter((row) => row.teamId === homeTeamId)),
     away: categoryRows(rows.filter((row) => row.teamId === awayTeamId)),
   };
+}
+
+export function toCurrentGameLeadersDto(
+  playerStats: CurrentGamePlayerStatsSides,
+): CurrentGameLeadersSides {
+  return {
+    home: leadersForTeam(playerStats.home),
+    away: leadersForTeam(playerStats.away),
+  };
+}
+
+function leadersForTeam(stats: CurrentGamePlayerStatsByCategory): CurrentGameLeadersByTeam {
+  return {
+    passer: selectLeader(stats.passing, ['yards', 'touchdowns', 'attempts']),
+    rusher: selectLeader(stats.rushing, ['yards', 'touchdowns', 'attempts']),
+    receiver: selectLeader(stats.receiving, ['yards', 'touchdowns', 'receptions']),
+  };
+}
+
+function selectLeader(
+  rows: readonly Record<string, unknown>[],
+  fields: readonly string[],
+): Record<string, unknown> | null {
+  return (
+    [...rows].sort((left, right) => {
+      for (const field of fields) {
+        const rightValue = numericValue(right[field]);
+        const leftValue = numericValue(left[field]);
+        if (rightValue !== leftValue) return rightValue > leftValue ? 1 : -1;
+      }
+      const leftId = playerId(left);
+      const rightId = playerId(right);
+      return leftId.localeCompare(rightId);
+    })[0] ?? null
+  );
+}
+
+function numericValue(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : Number.NEGATIVE_INFINITY;
+}
+
+function playerId(row: Record<string, unknown>): string {
+  const player = row.player;
+  if (typeof player !== 'object' || player === null || !('id' in player)) return '';
+  return typeof player.id === 'string' ? player.id : '';
 }
 
 function categoryRows(

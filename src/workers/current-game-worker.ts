@@ -72,6 +72,20 @@ function summarizeCycle(report: PollerCycleReport): Record<string, unknown> {
     claimed: report.claimed,
     degraded: report.degraded,
     providerRequests,
+    boxScoreRequests: report.ticks.reduce(
+      (sum, tick) => sum + tick.playerStats.boxScoreRequests,
+      0,
+    ),
+    playerStats: report.ticks.map((tick) => ({
+      gameId: tick.gameId,
+      attempted: tick.playerStats.attempted,
+      ok: tick.playerStats.ok,
+      received: tick.playerStats.received,
+      persisted: tick.playerStats.persisted,
+      unresolved: tick.playerStats.unresolved,
+      coverage: tick.playerStats.coverage,
+      nextPollAt: tick.playerStats.nextPollAt,
+    })),
   };
 }
 
@@ -112,6 +126,7 @@ export async function main(): Promise<void> {
       lockLeaseSeconds: config.currentGame.poller.lockLeaseSeconds,
       batchSize: config.currentGame.poller.batchSize,
       rateLimitDegradeThreshold: config.currentGame.poller.rateLimitDegradeThreshold,
+      playerStatsPollSeconds: config.currentGame.poller.playerStatsPollSeconds,
     };
     const heartbeatMs = config.currentGame.poller.heartbeatSeconds * 1_000;
 

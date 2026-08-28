@@ -549,6 +549,32 @@ Boundaries:
 - No external player/provider IDs, raw rows, source paths, checksums, import actors, editorial internals, or invented kickoff times
 - Existing independently paginated team games and team articles remain available and unchanged
 
+## Milestone 38A — Live game box score and poller recovery
+
+Goal: recover stale scheduled games after worker restarts and ingest current-game player box
+scores on a bounded provider-neutral cadence without profile-request fan-out.
+
+**Status:** Implemented and real-data verified on August 27–28, 2026. Two live games passed the
+sanitized match/box-score audit. One production-safe explicit NE@CLE tick persisted 46 exactly
+mapped player rows, retained 11 unresolved rows as omitted/partial coverage, preserved complete
+team stats and non-destructive PBP behavior, and produced public leaders for both teams.
+
+Deliverables:
+
+- Four-hour overdue `SCHEDULED`/`PREGAME` discovery plus unwindowed, mapping/policy/lease-safe
+  explicit `--gameId` recovery
+- One-request box-score-only live refresh at an independent default 120-second cadence, with
+  HALFTIME and all three FINAL reconciliation refreshes
+- Existing-mapping-only recurring identity resolution with no player-profile calls or name binding
+- Durable null-aware current-game player rows/coverage and private health/request reporting
+- Existing stats endpoint extended with neutral coverage state and deterministic per-team leaders
+- Sanitized two-game real-data audit, request-budget analysis, and Game Center capability matrix
+
+Boundaries:
+
+- No frontend redesign, PBP-derived authoritative player totals, drive inference, win probability,
+  injuries, weather, provider-ID exposure, video-rights change, betting, or historical-stat mutation
+
 ## Later roadmap themes
 
 After the first slice is stable, define separate milestones for:
