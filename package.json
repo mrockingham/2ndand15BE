@@ -52,6 +52,7 @@
     "schedule:review": "tsx src/commands/schedule-review.ts",
     "admin:set-role": "tsx src/commands/admin-set-role.ts",
     "news:ingest": "tsx src/commands/news-ingest.ts",
+    "news:ingest:production": "node dist/commands/news-ingest.js",
     "predictions": "tsx src/commands/predictions.ts",
     "historical:download": "tsx src/commands/historical-download.ts",
     "historical:review": "tsx src/commands/historical-review.ts",

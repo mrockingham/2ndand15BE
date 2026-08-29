@@ -9,10 +9,9 @@ import { SafeFeedClient } from '../modules/news-inbox/feed-client.js';
 import { PrismaNewsInboxRepository } from '../modules/news-inbox/news.repository.js';
 import { NewsInboxService } from '../modules/news-inbox/news.service.js';
 
-// M30D: raised from the original 5 to comfortably cover Wave 1 (10 official-team
-// sources) plus headroom for the next wave, while still keeping `--all` a bounded,
-// single explicit run rather than an unbounded background sweep.
-const MAXIMUM_BULK_SOURCES = 20;
+// Production currently has 23 active sources. Keep `--all` bounded above that
+// reviewed registry size so an accidental mass activation still fails closed.
+const MAXIMUM_BULK_SOURCES = 32;
 
 async function main(): Promise<void> {
   const arguments_ = parseArguments(process.argv.slice(2));
@@ -32,11 +31,7 @@ async function main(): Promise<void> {
       role: user.role,
     };
     const repository = new PrismaNewsInboxRepository(prisma);
-    const service = new NewsInboxService(
-      repository,
-      new SafeFeedClient(),
-      config.newsIngestion,
-    );
+    const service = new NewsInboxService(repository, new SafeFeedClient(), config.newsIngestion);
     const sources = arguments_.all
       ? await listBoundedActiveSources(repository)
       : [await requireSource(repository, arguments_.sourceSlug)];

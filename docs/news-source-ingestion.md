@@ -69,7 +69,34 @@ The CLI runs one source by default and requires an auditable active editor/admin
 npm run news:ingest -- --source=nfl-news --actor=editor@example.com
 ```
 
-`--all` processes at most twenty active non-manual sources sequentially (raised from five in Milestone 30D to cover Wave 1's ten activated sources with headroom). There is still no cron, recurring scheduler, background worker, queue, webhook, or continuous process in this codebase; an external, ordinary scheduler is expected to invoke the CLI on a 15-30 minute cadence. See [the activation record](news/official-team-source-activation.md) for the bounded initial-ingest policy this CLI's real ingestion now applies.
+`--all` processes at most 32 active non-manual sources sequentially. The bound covers the 23
+production-active sources verified during Render Cron setup while still failing closed on an
+unexpected mass activation.
+
+Production ingestion is triggered by one Render Cron Job. Create it from the same backend
+repository and production branch with this exact configuration:
+
+- Service type: `Cron Job`
+- Name: `2ndand15-news-ingestion`
+- Branch: the production backend branch
+- Schedule: `*/15 * * * *`
+- Build command: `npm ci --include=dev && npm run build`
+- Command: `npm run news:ingest:production -- --all --actor="$NEWS_INGESTION_ACTOR_EMAIL"`
+
+Render evaluates cron schedules in UTC, but a run every 15 minutes is timezone-independent. Attach
+the same Render Environment Group used by the backend Web Service/Worker where practical. The job
+requires `NODE_ENV=production`, `DATABASE_URL`, and `NEWS_INGESTION_ACTOR_EMAIL`; the actor email
+must resolve to an active persisted `EDITOR` or `ADMIN`. The three `NEWS_*` ingestion-policy values
+are optional and retain their documented defaults when omitted.
+
+The production command uses the compiled `dist/commands/news-ingest.js` output and exits after its
+bounded sequential pass. Render prevents overlapping executions of one Cron Job, while the
+existing per-source database lease remains useful protection against a simultaneous manual/API
+ingestion. Use Render's **Trigger Run** action for manual verification, then confirm
+`NewsSource.lastCheckedAt` advances. No scheduler runs in GitHub Actions or inside the API process.
+The job fetches feed metadata into private candidates; it does not fetch article pages or publish
+candidates automatically. See [the activation record](news/official-team-source-activation.md) for
+the bounded initial-ingest policy this CLI's real ingestion applies.
 
 ## Candidate conversion and rights
 

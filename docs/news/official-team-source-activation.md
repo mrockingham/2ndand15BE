@@ -199,11 +199,11 @@ make it easy to notice if that external trigger stops running. The CLI already
 processes sources strictly one at a time in a sequential loop -- an inherently
 bounded concurrency of 1, well within the "modest, 4-8 at most" guidance, and
 simpler than adding a batching primitive that isn't needed at today's source
-count. The one code change here: `--all`'s bound was raised from 5 to **20**
-(`MAXIMUM_BULK_SOURCES` in `src/commands/news-ingest.ts`), since Wave 1 alone
-is 10 sources and the original cap would have made `--all` unusable the moment
-Wave 1 went live; 20 comfortably covers Wave 1 plus headroom for a Wave 2
-without turning `--all` into an unbounded sweep.
+count. The original milestone raised `--all`'s bound from 5 to **20** for Wave
+1. Render Cron setup later raised `MAXIMUM_BULK_SOURCES` to **32** after a
+read-only production check found 23 active sources. That covers the reviewed
+active registry with headroom while still failing closed on an unexpected mass
+activation rather than turning `--all` into an unbounded sweep.
 
 ## Operational rollback
 

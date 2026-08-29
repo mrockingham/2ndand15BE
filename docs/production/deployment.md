@@ -192,6 +192,48 @@ startup, shutdown, and multi-instance-safety behavior, and
 `docs/production/rollback.md` for what "never migrate backward" means for
 `prisma:deploy`.
 
+### News ingestion scheduler
+
+News ingestion remains outside the API and current-game worker processes. Add
+one Render service with this dashboard configuration:
+
+| Setting       | Value                                                                           |
+| ------------- | ------------------------------------------------------------------------------- |
+| Service type  | `Cron Job`                                                                      |
+| Name          | `2ndand15-news-ingestion`                                                       |
+| Repository    | Same repository as the backend Web Service                                      |
+| Branch        | Production backend branch                                                       |
+| Schedule      | `*/15 * * * *`                                                                  |
+| Build command | `npm ci --include=dev && npm run build`                                         |
+| Command       | `npm run news:ingest:production -- --all --actor="$NEWS_INGESTION_ACTOR_EMAIL"` |
+
+Render cron schedules use UTC. This every-15-minutes cadence is independent
+of timezone. The build deliberately includes development dependencies because
+the existing TypeScript build requires them; the runtime command itself uses
+the compiled `dist/commands/news-ingest.js` output and exits after one bounded
+pass.
+
+Attach the same Render Environment Group used by the backend Web Service and
+current-game Worker where practical. The Cron Job requires:
+
+- `NODE_ENV=production`;
+- `DATABASE_URL`, using the existing production PostgreSQL value; and
+- `NEWS_INGESTION_ACTOR_EMAIL`, set to an active persisted `EDITOR` or `ADMIN`
+  account whose identity is recorded on every ingestion run.
+
+`LOG_LEVEL` and `NEWS_INITIAL_INGEST_LOOKBACK_HOURS`,
+`NEWS_INITIAL_INGEST_MAX_ITEMS_PER_SOURCE`, and
+`NEWS_LATE_ITEM_TOLERANCE_HOURS` may be inherited from the shared group but
+have validated defaults. No separate GitHub database secret is needed.
+
+Render guarantees only one active execution for a given Cron Job. The existing
+per-source ingestion lease is retained because an editor can still trigger the
+same source through the admin API while the Cron Job is running; no additional
+scheduler lock is added. Use Render's **Trigger Run** action after creation,
+confirm a successful exit, and verify `NewsSource.lastCheckedAt` advances. Each
+run stores RSS/Atom metadata as private `NewsCandidate` rows. It never fetches
+article pages and never publishes candidates or articles automatically.
+
 ## Liveness vs. readiness, and the load-balancer probe caveat
 
 - `GET /api/v1/health` — **liveness**. Reports process health only (uptime,
