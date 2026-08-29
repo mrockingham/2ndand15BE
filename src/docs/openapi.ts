@@ -3489,6 +3489,7 @@ export const openApiDocument = {
           'isOfficialLeague',
           'isOfficialTeam',
           'allowsDescriptionUse',
+          'autoPublishArticles',
           'sourcePreference',
           'notes',
           'health',
@@ -3511,6 +3512,11 @@ export const openApiDocument = {
           isOfficialLeague: { type: 'boolean' },
           isOfficialTeam: { type: 'boolean' },
           allowsDescriptionUse: { type: 'boolean' },
+          autoPublishArticles: {
+            type: 'boolean',
+            description:
+              'M42B: automatically publish eligible ARTICLE candidates from this source. Independent of `status` -- an ACTIVE source with this false only ever produces candidates for human review. Videos and highlights are never auto-published. Also gated by the global NEWS_AUTO_PUBLISH_ENABLED kill switch. ADMIN only.',
+          },
           sourcePreference: {
             type: 'object',
             properties: {
@@ -3572,6 +3578,7 @@ export const openApiDocument = {
           isOfficialLeague: { type: 'boolean', default: false },
           isOfficialTeam: { type: 'boolean', default: false },
           allowsDescriptionUse: { type: 'boolean', default: false },
+          autoPublishArticles: { type: 'boolean', default: false },
           reliabilityWeight: { type: 'integer', minimum: 0, maximum: 100, default: 50 },
           metadataRichnessWeight: { type: 'integer', minimum: 0, maximum: 100, default: 50 },
           teamSpecificityWeight: { type: 'integer', minimum: 0, maximum: 100, default: 50 },
@@ -3598,6 +3605,7 @@ export const openApiDocument = {
           isOfficialLeague: { type: 'boolean' },
           isOfficialTeam: { type: 'boolean' },
           allowsDescriptionUse: { type: 'boolean' },
+          autoPublishArticles: { type: 'boolean' },
           reliabilityWeight: { type: 'integer', minimum: 0, maximum: 100 },
           metadataRichnessWeight: { type: 'integer', minimum: 0, maximum: 100 },
           teamSpecificityWeight: { type: 'integer', minimum: 0, maximum: 100 },

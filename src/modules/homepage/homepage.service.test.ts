@@ -61,6 +61,8 @@ class FakeHomepageRepository implements HomepageRepository {
   articlesById = new Map<string, ArticleRecord>();
   publicArticleIds = new Set<string>();
   gamesWithMedia: GameWithTeams[] = [];
+  // M42A: Top Stories automatic fallback pool
+  recentPublicArticles: ArticleRecord[] = [];
   // M37A: Homepage highlight curation
   placements: HomepageHighlightPlacementRecord[] = [];
   highlightSettings: HomepageHighlightSettingsRecord | null = null;
@@ -271,6 +273,10 @@ class FakeHomepageRepository implements HomepageRepository {
 
   findRecentGamesWithMedia(limit: number): Promise<readonly GameWithTeams[]> {
     return Promise.resolve(this.gamesWithMedia.slice(0, limit));
+  }
+
+  findRecentPublicArticles(limit: number): Promise<readonly ArticleRecord[]> {
+    return Promise.resolve(this.recentPublicArticles.slice(0, limit));
   }
 
   // -- M37A: Homepage highlight curation ------------------------------------
@@ -805,6 +811,115 @@ describe('HomepageService Top Stories', () => {
     // The curation row itself, and the article record, are both untouched.
     expect(await service.listTopStories()).toHaveLength(1);
     expect(repository.articlesById.get('a1')).toBeDefined();
+  });
+
+  // M42A: automatic fallback padding
+  it('pads a short curated list with automatic picks tagged AUTOMATIC, appended after curated rows', async () => {
+    const repository = new FakeHomepageRepository();
+    repository.articlesById.set('curated-1', article('curated-1'));
+    repository.publicArticleIds.add('curated-1');
+    const service = buildService(repository);
+    await service.markTopStory('curated-1', principal, null);
+
+    repository.recentPublicArticles = [
+      article('recent-1', { publishedAt: new Date('2026-08-29T10:00:00.000Z') }),
+      article('recent-2', { publishedAt: new Date('2026-08-29T09:00:00.000Z') }),
+    ];
+
+    const homepage = await service.getPublicHomepage();
+    expect(homepage.topStories.map((s) => s.article.id)).toEqual([
+      'curated-1',
+      'recent-1',
+      'recent-2',
+    ]);
+    expect(homepage.topStories.map((s) => s.homepageSelection)).toEqual([
+      'CURATED',
+      'AUTOMATIC',
+      'AUTOMATIC',
+    ]);
+  });
+
+  it('never re-shows an article already curated in the automatic pool', async () => {
+    const repository = new FakeHomepageRepository();
+    repository.articlesById.set('curated-1', article('curated-1'));
+    repository.publicArticleIds.add('curated-1');
+    const service = buildService(repository);
+    await service.markTopStory('curated-1', principal, null);
+
+    repository.recentPublicArticles = [article('curated-1'), article('recent-1')];
+
+    const homepage = await service.getPublicHomepage();
+    expect(homepage.topStories.map((s) => s.article.id)).toEqual(['curated-1', 'recent-1']);
+  });
+
+  it('does not pad when curation already meets the target', async () => {
+    const repository = new FakeHomepageRepository();
+    for (let i = 0; i < MAX_TOP_STORIES; i += 1) {
+      const id = `a${String(i)}`;
+      repository.articlesById.set(id, article(id));
+      repository.publicArticleIds.add(id);
+    }
+    const service = buildService(repository);
+    for (let i = 0; i < MAX_TOP_STORIES; i += 1) {
+      await service.markTopStory(`a${String(i)}`, principal, null);
+    }
+    repository.recentPublicArticles = [article('should-not-appear')];
+
+    const homepage = await service.getPublicHomepage();
+    expect(homepage.topStories).toHaveLength(MAX_TOP_STORIES);
+    expect(homepage.topStories.every((s) => s.homepageSelection === 'CURATED')).toBe(true);
+  });
+
+  it('prefers ARTICLE content and caps VIDEO/source repeats in the automatic pool when inventory allows', async () => {
+    const repository = new FakeHomepageRepository();
+    const service = buildService(repository);
+    repository.recentPublicArticles = [
+      article('v1', {
+        contentType: 'VIDEO',
+        sourceName: 'PFT',
+        publishedAt: new Date('2026-08-29T10:00:00.000Z'),
+      }),
+      article('v2', {
+        contentType: 'VIDEO',
+        sourceName: 'PFT',
+        publishedAt: new Date('2026-08-29T09:50:00.000Z'),
+      }),
+      article('v3', {
+        contentType: 'VIDEO',
+        sourceName: 'PFT',
+        publishedAt: new Date('2026-08-29T09:40:00.000Z'),
+      }),
+      article('a1', {
+        contentType: 'ARTICLE',
+        sourceName: 'CBS',
+        publishedAt: new Date('2026-08-29T09:30:00.000Z'),
+      }),
+      article('a2', {
+        contentType: 'ARTICLE',
+        sourceName: 'ESPN',
+        publishedAt: new Date('2026-08-29T09:20:00.000Z'),
+      }),
+      article('a3', {
+        contentType: 'ARTICLE',
+        sourceName: 'CBS',
+        publishedAt: new Date('2026-08-29T09:10:00.000Z'),
+      }),
+      article('a4', {
+        contentType: 'ARTICLE',
+        sourceName: 'AP',
+        publishedAt: new Date('2026-08-29T09:00:00.000Z'),
+      }),
+    ];
+    const homepage = await service.getPublicHomepage();
+    const ids = homepage.topStories.map((s) => s.article.id);
+    // v1/v2 (PFT, VIDEO) fit both soft caps (2 video max, 2/source max). v3
+    // hits the video cap and is skipped in the freshness walk -- it is never
+    // reconsidered once a1-a4 already fill the remaining slots, so a fresher
+    // VIDEO never displaces an older ARTICLE and an older VIDEO never comes
+    // back just because a slot was open.
+    expect(ids).toEqual(['v1', 'v2', 'a1', 'a2', 'a3', 'a4']);
+    const contentTypes = homepage.topStories.map((s) => s.article.contentType);
+    expect(contentTypes.filter((c) => c === 'VIDEO')).toHaveLength(2);
   });
 
   it('never mutates the Article record when marking/unmarking (Article preservation)', async () => {

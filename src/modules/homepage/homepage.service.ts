@@ -1,5 +1,7 @@
 import { AppError } from '../../common/errors/app-error.js';
 import type { AuditActor } from '../../common/audit/audit-actor.js';
+import { selectAutomaticTopStories } from './automatic-top-stories.js';
+import { MAX_TOP_STORIES } from './homepage.schemas.js';
 import type { AdministrativePrincipal } from '../admin/admin-authorization.js';
 import type { PublicGameMediaDto } from '../game-media-curation/game-media-curation.dto.js';
 import type { AiHubWeeklyInsightsService } from '../ai-hub/weekly-insights.service.js';
@@ -11,6 +13,7 @@ import {
   toAdminHomepageHighlightDto,
   toHomepageHighlightCandidateDto,
   toHomepageHighlightSettingsDto,
+  toAutomaticTopStoryDto,
   toPublicHeroSlideDto,
   toPublicHomepageHighlightDto,
   toPublicTopStoryDto,
@@ -100,6 +103,12 @@ export interface HomepageServiceOptions {
 // configurable knob for a bound this narrow.
 const HOMEPAGE_HIGHLIGHTS_LIMIT = 8;
 const HOMEPAGE_LEADER_LIMIT = 3;
+// M42A: soft target for the combined curated + automatic Top Stories list --
+// reuses the existing MAX_TOP_STORIES curation cap so the two numbers can
+// never drift apart -- and the bounded recent-article pool the automatic
+// pass selects from.
+const HOMEPAGE_TOP_STORIES_TARGET = MAX_TOP_STORIES;
+const HOMEPAGE_TOP_STORIES_AUTOMATIC_POOL_SIZE = 40;
 const WEEKLY_LEADERS_MAX_BACKWARD_STEPS = 4;
 
 export interface HomepageServiceContract {
@@ -460,22 +469,48 @@ export class HomepageService implements HomepageServiceContract {
     return slides.map(toPublicHeroSlideDto);
   }
 
+  /**
+   * M42A: curated rows remain authoritative, in `position` order, with
+   * ordering and content entirely untouched by this change (M35A spec §18
+   * still applies -- a curated article that has since become publicly
+   * ineligible is silently dropped, never rendered broken). Only when the
+   * curated list falls short of `HOMEPAGE_TOP_STORIES_TARGET` is it padded
+   * with automatic picks, appended after every curated row, drawn from a
+   * bounded recent-article pool and biased toward ARTICLE content and
+   * source diversity by `selectAutomaticTopStories` -- mirroring the same
+   * curated-first-then-automatic-fill pattern `getHighlights` already uses.
+   */
   private async getPublicTopStories() {
     const topStories = await this.options.repository.listTopStories();
-    if (topStories.length === 0) return [];
-    const articles = await this.options.repository.findPublicArticlesByIds(
-      topStories.map((row) => row.articleId),
-    );
+    const articles =
+      topStories.length === 0
+        ? []
+        : await this.options.repository.findPublicArticlesByIds(
+            topStories.map((row) => row.articleId),
+          );
     const articleById = new Map(articles.map((article) => [article.id, article]));
-    // A curated article that has since become publicly ineligible (archived,
-    // unpublished, rescheduled) is silently dropped here -- never rendered
-    // with a broken/invalid reference (M35A spec §18).
-    return topStories
+    const curated = topStories
       .map((topStory) => {
         const article = articleById.get(topStory.articleId);
         return article === undefined ? null : toPublicTopStoryDto(topStory, article);
       })
       .filter((dto): dto is NonNullable<typeof dto> => dto !== null);
+
+    if (curated.length >= HOMEPAGE_TOP_STORIES_TARGET) return curated;
+
+    const excludedArticleIds = new Set(curated.map((dto) => dto.article.id));
+    const pool = await this.options.repository.findRecentPublicArticles(
+      HOMEPAGE_TOP_STORIES_AUTOMATIC_POOL_SIZE,
+    );
+    const automaticPicks = selectAutomaticTopStories(
+      pool,
+      excludedArticleIds,
+      HOMEPAGE_TOP_STORIES_TARGET - curated.length,
+    );
+    const automatic = automaticPicks.map((article, index) =>
+      toAutomaticTopStoryDto(article, curated.length + index),
+    );
+    return [...curated, ...automatic];
   }
 
   /**

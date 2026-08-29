@@ -118,6 +118,26 @@ See `docs/production/contact.md` for the full contact-form design.
   `NEWS_LATE_ITEM_TOLERANCE_HOURS` — policy knobs, safe at defaults unless a
   specific ingestion behavior change is intended.
 
+### News trusted-source auto-publication (Milestone 42B)
+
+- `NEWS_AUTO_PUBLISH_ENABLED` — **global kill switch, defaults `false`.**
+  `true` is required for auto-publication to run at all, on top of each
+  source's own `autoPublishArticles` flag; do not set this `true` in
+  production without having run `npm run news:auto-publish:preview` against
+  production first and reviewed its output. Setting it `false` again stops
+  auto-publication immediately without touching any source's flag.
+- `NEWS_AUTO_PUBLISH_MAX_AGE_HOURS` (default `24`), `NEWS_AUTO_PUBLISH_MAX_PER_RUN`
+  (default `20`), `NEWS_AUTO_PUBLISH_MAX_PER_SOURCE_PER_RUN` (default `10`),
+  `NEWS_AUTO_PUBLISH_MIN_DESCRIPTION_LENGTH` (default `40`) — policy knobs,
+  safe at defaults. See `docs/news-source-ingestion.md`'s
+  "Trusted-source auto-publication" section for the full eligibility rules.
+- The auto-publish system account (email constant
+  `NEWS_AUTO_PUBLISH_SYSTEM_ACTOR_EMAIL` in `news.service.ts`) must exist in
+  the target database as an active `EDITOR`/`ADMIN` user before
+  `NEWS_AUTO_PUBLISH_ENABLED=true` is ever set — the CLI fails closed with a
+  clear error otherwise. It is a real database row provisioned once per
+  environment, not something these environment variables create.
+
 ### Game Center curated video embeds
 
 - `GAME_CURATED_VIDEO_EMBED_HOST_ALLOWLIST` — safe at the documented YouTube
@@ -191,6 +211,54 @@ independently. See `docs/production/live-game-worker.md` for the worker's
 startup, shutdown, and multi-instance-safety behavior, and
 `docs/production/rollback.md` for what "never migrate backward" means for
 `prisma:deploy`.
+
+### News ingestion scheduler
+
+News ingestion remains outside the API and current-game worker processes. Add
+one Render service with this dashboard configuration:
+
+| Setting       | Value                                                                           |
+| ------------- | ------------------------------------------------------------------------------- |
+| Service type  | `Cron Job`                                                                      |
+| Name          | `2ndand15-news-ingestion`                                                       |
+| Repository    | Same repository as the backend Web Service                                      |
+| Branch        | Production backend branch                                                       |
+| Schedule      | `*/15 * * * *`                                                                  |
+| Build command | `npm ci --include=dev && npm run build`                                         |
+| Command       | `npm run news:ingest:production -- --all --actor="$NEWS_INGESTION_ACTOR_EMAIL"` |
+
+Render cron schedules use UTC. This every-15-minutes cadence is independent
+of timezone. The build deliberately includes development dependencies because
+the existing TypeScript build requires them; the runtime command itself uses
+the compiled `dist/commands/news-ingest.js` output and exits after one bounded
+pass.
+
+Attach the same Render Environment Group used by the backend Web Service and
+current-game Worker where practical. The Cron Job requires:
+
+- `NODE_ENV=production`;
+- `DATABASE_URL`, using the existing production PostgreSQL value; and
+- `NEWS_INGESTION_ACTOR_EMAIL`, set to an active persisted `EDITOR` or `ADMIN`
+  account whose identity is recorded on every ingestion run.
+
+`LOG_LEVEL` and `NEWS_INITIAL_INGEST_LOOKBACK_HOURS`,
+`NEWS_INITIAL_INGEST_MAX_ITEMS_PER_SOURCE`, and
+`NEWS_LATE_ITEM_TOLERANCE_HOURS` may be inherited from the shared group but
+have validated defaults. No separate GitHub database secret is needed.
+
+This same `--all` invocation is also what runs the Milestone 42B
+auto-publish pass (bounded, after ingestion, in one process — no second
+cron). It stays a no-op until `NEWS_AUTO_PUBLISH_ENABLED=true` is explicitly
+set in this Cron Job's environment; see "News trusted-source
+auto-publication" above.
+
+Render guarantees only one active execution for a given Cron Job. The existing
+per-source ingestion lease is retained because an editor can still trigger the
+same source through the admin API while the Cron Job is running; no additional
+scheduler lock is added. Use Render's **Trigger Run** action after creation,
+confirm a successful exit, and verify `NewsSource.lastCheckedAt` advances. Each
+run stores RSS/Atom metadata as private `NewsCandidate` rows. It never fetches
+article pages and never publishes candidates or articles automatically.
 
 ## Liveness vs. readiness, and the load-balancer probe caveat
 

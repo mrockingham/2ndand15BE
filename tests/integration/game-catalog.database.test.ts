@@ -2,7 +2,7 @@ import 'dotenv/config';
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createPrismaClient } from '../../src/common/database/prisma.js';
-import { loadDatabaseConfig } from '../../src/config/env.js';
+import { resolveTestDatabaseUrl } from '../helpers/test-database.js';
 import type { PrismaClient } from '../../src/generated/prisma/client.js';
 import {
   PrismaGameRepository,
@@ -23,7 +23,7 @@ describe.skipIf(!databaseTestsEnabled)('game catalog database', () => {
   let prisma: PrismaClient | undefined;
 
   beforeAll(async () => {
-    prisma = createPrismaClient(loadDatabaseConfig().databaseUrl);
+    prisma = createPrismaClient(resolveTestDatabaseUrl());
     const provider = new MockSportsDataProvider();
     await syncTeams(provider, prisma);
     await syncGames(provider, prisma);

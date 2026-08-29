@@ -152,6 +152,15 @@ export interface HomepageRepository {
    * video alone, and never a season-wide scan. */
   findRecentGamesWithMedia(limit: number): Promise<readonly GameWithTeams[]>;
 
+  /** Bounded pool of the most recently updated, genuinely public articles
+   * (same visibility rule as `findPublicArticlesByIds`), used only as the
+   * candidate pool for Top Stories' automatic fallback (M42A) -- callers
+   * still compute `effectivePublishedAt` and re-sort themselves, matching
+   * `article.service.ts`'s existing `listPublic` pattern, since a SCHEDULED
+   * article's true publish moment lives in `scheduledFor` rather than
+   * `publishedAt`. */
+  findRecentPublicArticles(limit: number): Promise<readonly ArticleRecord[]>;
+
   // M37A: Homepage highlight curation
   listActiveHighlightPlacements(): Promise<readonly HomepageHighlightPlacementRecord[]>;
   findHighlightPlacement(placementId: string): Promise<HomepageHighlightPlacementRecord | null>;
@@ -624,6 +633,20 @@ export class PrismaHomepageRepository implements HomepageRepository {
           { status: 'SCHEDULED', scheduledFor: { lte: new Date() } },
         ],
       },
+      include: articleInclude,
+    });
+  }
+
+  findRecentPublicArticles(limit: number): Promise<readonly ArticleRecord[]> {
+    return this.prisma.article.findMany({
+      where: {
+        OR: [
+          { status: 'PUBLISHED', publishedAt: { lte: new Date() } },
+          { status: 'SCHEDULED', scheduledFor: { lte: new Date() } },
+        ],
+      },
+      orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
+      take: limit,
       include: articleInclude,
     });
   }

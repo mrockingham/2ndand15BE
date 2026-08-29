@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:media="http://search.yahoo.com/mrss/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+<channel>
+<title>Fictional National Outlet - NFL</title>
+<link>https://news.example.com/nfl</link>
+<description>Fictional national NFL reporting feed</description>
+<item>
+<title>Fictional article with an embedded video player</title>
+<link>https://news.example.com/nfl/story/fictional-embedded-video-article</link>
+<dc:creator>Fictional Reporter</dc:creator>
+<description>A short, one-sentence editorial summary of the fictional story.</description>
+<guid>https://news.example.com/nfl/story/fictional-embedded-video-article</guid>
+<pubDate>Sat, 29 Aug 2026 07:32:47 -0400</pubDate>
+<media:content type="image/jpeg" url="https://static.example.com/national/fictional-hero-image.jpg" />
+<media:content type="video/mp4" url="https://static.example.com/national/fictional-embedded-clip.mp4" />
+<content:encoded><![CDATA[<div class="VideoLead"><script>var playerConfig = {"videoPageUrl":"https://news.example.com/watch/fictional-clip"};</script><p>Full article body with an embedded video player -- never ingested by the parser.</p></div>]]></content:encoded>
+</item>
+<item>
+<title>   Fictional article with whitespace-padded title and description   </title>
+<link>
+    https://news.example.com/nfl/story/fictional-whitespace-article
+</link>
+<description>
+    A short summary padded with newlines and indentation, as some publishers emit.
+</description>
+<guid isPermalink="false">fictional-national-2</guid>
+<pubDate>Fri, 28 Aug 2026 23:11:00 +0000</pubDate>
+<media:content url="https://static.example.com/national/fictional-second-image.png" />
+</item>
+</channel>
+</rss>

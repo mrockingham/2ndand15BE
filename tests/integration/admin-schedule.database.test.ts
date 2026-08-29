@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { createPrismaClient } from '../../src/common/database/prisma.js';
-import { loadDatabaseConfig } from '../../src/config/env.js';
+import { resolveTestDatabaseUrl } from '../helpers/test-database.js';
 import type { PrismaClient } from '../../src/generated/prisma/client.js';
 import { PrismaAdminRepository } from '../../src/modules/admin/admin.repository.js';
 import { AdminService } from '../../src/modules/admin/admin.service.js';
@@ -19,7 +19,7 @@ describe.skipIf(!databaseTestsEnabled)('administrative schedule database integra
   const auditRequestPrefix = `admin-db-${randomUUID()}`;
 
   beforeAll(async () => {
-    prisma = createPrismaClient(loadDatabaseConfig().databaseUrl);
+    prisma = createPrismaClient(resolveTestDatabaseUrl());
     await prisma.game.deleteMany({
       where: {
         provenance: {

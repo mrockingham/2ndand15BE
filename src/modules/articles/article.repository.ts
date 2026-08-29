@@ -280,11 +280,21 @@ export async function createArticleInTransaction(
   principal: AdministrativePrincipal,
   changeSummary: string | null,
   requestId: string | null,
+  /** M42B: every existing caller (human candidate conversion, direct article
+   * creation) omits this and gets the original DRAFT-only behavior
+   * unchanged -- a human still takes a separate, distinct `publish()` action
+   * later. Only the auto-publish path passes `{ status: 'PUBLISHED',
+   * publishedAt }` so a trusted candidate becomes publicly visible in the
+   * same atomic transaction that creates it and marks the candidate
+   * CONVERTED, with no intermediate DRAFT state a human could stumble on
+   * half-published. */
+  publish: { readonly status: ArticleStatus; readonly publishedAt: Date } | null = null,
 ): Promise<ArticleRecord> {
   const article = await transaction.article.create({
     data: {
       ...fields,
-      status: 'DRAFT',
+      status: publish?.status ?? 'DRAFT',
+      publishedAt: publish?.publishedAt ?? null,
       createdById: principal.userId,
       updatedById: principal.userId,
       createdBySnapshot: principal.email,

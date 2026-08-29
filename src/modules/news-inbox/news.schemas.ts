@@ -59,6 +59,8 @@ export const newsSourceCreateSchema = z
     isOfficialLeague: z.boolean().default(false),
     isOfficialTeam: z.boolean().default(false),
     allowsDescriptionUse: z.boolean().default(false),
+    // M42B: independent of `status`. See the doc comment on the Prisma field.
+    autoPublishArticles: z.boolean().default(false),
     reliabilityWeight: z.number().int().min(0).max(100).default(50),
     metadataRichnessWeight: z.number().int().min(0).max(100).default(50),
     teamSpecificityWeight: z.number().int().min(0).max(100).default(50),
@@ -88,6 +90,7 @@ export const newsSourceUpdateSchema = z
     isOfficialLeague: z.boolean().optional(),
     isOfficialTeam: z.boolean().optional(),
     allowsDescriptionUse: z.boolean().optional(),
+    autoPublishArticles: z.boolean().optional(),
     reliabilityWeight: z.number().int().min(0).max(100).optional(),
     metadataRichnessWeight: z.number().int().min(0).max(100).optional(),
     teamSpecificityWeight: z.number().int().min(0).max(100).optional(),

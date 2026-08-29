@@ -154,7 +154,20 @@ const newsIngestionPolicyFields = {
   NEWS_LATE_ITEM_TOLERANCE_HOURS: z.coerce.number().int().min(1).max(168).default(48),
 } as const;
 
-const newsIngestionEnvironmentSchema = databaseEnvironmentSchema.extend(newsIngestionPolicyFields);
+const newsAutoPublishPolicyFields = {
+  // M42B: global kill switch -- false regardless of any source's
+  // autoPublishArticles flag. See docs/news-source-ingestion.md.
+  NEWS_AUTO_PUBLISH_ENABLED: booleanSchema(false),
+  NEWS_AUTO_PUBLISH_MAX_AGE_HOURS: z.coerce.number().int().min(1).max(72).default(24),
+  NEWS_AUTO_PUBLISH_MAX_PER_RUN: z.coerce.number().int().min(1).max(100).default(20),
+  NEWS_AUTO_PUBLISH_MAX_PER_SOURCE_PER_RUN: z.coerce.number().int().min(1).max(100).default(10),
+  // Evidence-backed default: see auto-publish-eligibility.ts's doc comment.
+  NEWS_AUTO_PUBLISH_MIN_DESCRIPTION_LENGTH: z.coerce.number().int().min(1).max(2_000).default(40),
+} as const;
+
+const newsIngestionEnvironmentSchema = databaseEnvironmentSchema
+  .extend(newsIngestionPolicyFields)
+  .extend(newsAutoPublishPolicyFields);
 
 const currentGameEnvironmentSchema = databaseEnvironmentSchema
   .extend({
@@ -230,6 +243,7 @@ const currentGameEnvironmentSchema = databaseEnvironmentSchema
 
 const baseEnvironmentSchema = databaseEnvironmentSchema.extend({
   ...newsIngestionPolicyFields,
+  ...newsAutoPublishPolicyFields,
   HOST: z.string().min(1).default('0.0.0.0'),
   PORT: z.coerce.number().int().min(1).max(65_535).default(3000),
   TRUST_PROXY: trustProxySchema,
@@ -431,6 +445,7 @@ export interface AppConfig extends DatabaseConfig {
     readonly timeoutMs: number;
   };
   readonly newsIngestion: NewsIngestionPolicy;
+  readonly newsAutoPublish: NewsAutoPublishConfig;
   readonly gameMediaCuration: {
     /** `null` disables embed-host allowlisting entirely. */
     readonly embedAllowedHosts: readonly string[] | null;
@@ -443,8 +458,19 @@ export interface NewsIngestionPolicy {
   readonly lateItemToleranceHours: number;
 }
 
+/** M42B. `enabled` is the global kill switch: false overrides every source's
+ * `autoPublishArticles` flag. */
+export interface NewsAutoPublishConfig {
+  readonly enabled: boolean;
+  readonly maxAgeHours: number;
+  readonly maxPerRun: number;
+  readonly maxPerSourcePerRun: number;
+  readonly minDescriptionLength: number;
+}
+
 export interface NewsIngestionConfig extends DatabaseConfig {
   readonly newsIngestion: NewsIngestionPolicy;
+  readonly newsAutoPublish: NewsAutoPublishConfig;
 }
 
 export interface SportsConfig {
@@ -545,6 +571,7 @@ export function loadNewsIngestionConfig(
     databaseUrl: data.DATABASE_URL,
     logLevel: data.LOG_LEVEL,
     newsIngestion: toNewsIngestionPolicy(data),
+    newsAutoPublish: toNewsAutoPublishConfig(data),
   };
 }
 
@@ -681,6 +708,7 @@ export function loadConfig(
       timeoutMs: data.EDITORIAL_AI_TIMEOUT_MS,
     },
     newsIngestion: toNewsIngestionPolicy(data),
+    newsAutoPublish: toNewsAutoPublishConfig(data),
     gameMediaCuration: {
       embedAllowedHosts:
         data.GAME_CURATED_VIDEO_EMBED_HOST_ALLOWLIST.length > 0
@@ -699,6 +727,22 @@ function toNewsIngestionPolicy(data: {
     initialLookbackHours: data.NEWS_INITIAL_INGEST_LOOKBACK_HOURS,
     initialMaxItemsPerSource: data.NEWS_INITIAL_INGEST_MAX_ITEMS_PER_SOURCE,
     lateItemToleranceHours: data.NEWS_LATE_ITEM_TOLERANCE_HOURS,
+  };
+}
+
+function toNewsAutoPublishConfig(data: {
+  readonly NEWS_AUTO_PUBLISH_ENABLED: boolean;
+  readonly NEWS_AUTO_PUBLISH_MAX_AGE_HOURS: number;
+  readonly NEWS_AUTO_PUBLISH_MAX_PER_RUN: number;
+  readonly NEWS_AUTO_PUBLISH_MAX_PER_SOURCE_PER_RUN: number;
+  readonly NEWS_AUTO_PUBLISH_MIN_DESCRIPTION_LENGTH: number;
+}): NewsAutoPublishConfig {
+  return {
+    enabled: data.NEWS_AUTO_PUBLISH_ENABLED,
+    maxAgeHours: data.NEWS_AUTO_PUBLISH_MAX_AGE_HOURS,
+    maxPerRun: data.NEWS_AUTO_PUBLISH_MAX_PER_RUN,
+    maxPerSourcePerRun: data.NEWS_AUTO_PUBLISH_MAX_PER_SOURCE_PER_RUN,
+    minDescriptionLength: data.NEWS_AUTO_PUBLISH_MIN_DESCRIPTION_LENGTH,
   };
 }
 

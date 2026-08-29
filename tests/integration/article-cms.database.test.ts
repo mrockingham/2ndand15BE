@@ -19,6 +19,7 @@ import { GameService } from '../../src/modules/games/game.service.js';
 import { PrismaTeamRepository } from '../../src/modules/teams/team.repository.js';
 import { TeamService } from '../../src/modules/teams/team.service.js';
 import { createTestAuthService, createTestUserService } from '../helpers/test-config.js';
+import { resolveTestDatabaseUrl } from '../helpers/test-database.js';
 
 const databaseTestsEnabled = process.env.RUN_DATABASE_TESTS === 'true';
 
@@ -29,7 +30,7 @@ describe.skipIf(!databaseTestsEnabled)('editorial CMS database and HTTP integrat
   const auditPrefix = `article-cms-${randomUUID()}`;
 
   beforeAll(() => {
-    prisma = createPrismaClient(loadConfig().databaseUrl);
+    prisma = createPrismaClient(resolveTestDatabaseUrl());
   });
 
   afterAll(async () => {

@@ -3,7 +3,7 @@ import 'dotenv/config';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { createPrismaClient } from '../../src/common/database/prisma.js';
-import { loadDatabaseConfig } from '../../src/config/env.js';
+import { resolveTestDatabaseUrl } from '../helpers/test-database.js';
 import type { PrismaClient } from '../../src/generated/prisma/client.js';
 import { PrismaStatsHubRepository } from '../../src/modules/stats-hub/stats.repository.js';
 import { StatsHubService } from '../../src/modules/stats-hub/stats.service.js';
@@ -15,7 +15,7 @@ describe.skipIf(!enabled)('Stats Hub database', () => {
   let service: StatsHubService | undefined;
 
   beforeAll(() => {
-    prisma = createPrismaClient(loadDatabaseConfig().databaseUrl);
+    prisma = createPrismaClient(resolveTestDatabaseUrl());
     service = new StatsHubService(new PrismaStatsHubRepository(prisma));
   });
 

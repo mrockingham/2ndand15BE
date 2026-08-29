@@ -27,6 +27,7 @@ import { GameService } from '../../src/modules/games/game.service.js';
 import { PrismaTeamRepository } from '../../src/modules/teams/team.repository.js';
 import { TeamService } from '../../src/modules/teams/team.service.js';
 import { createTestAuthService, createTestUserService } from '../helpers/test-config.js';
+import { resolveTestDatabaseUrl } from '../helpers/test-database.js';
 
 const databaseTestsEnabled = process.env.RUN_DATABASE_TESTS === 'true';
 
@@ -39,7 +40,7 @@ describe.skipIf(!databaseTestsEnabled)('news inbox database and HTTP integration
   const auditPrefix = `news-inbox-${randomUUID()}`;
 
   beforeAll(() => {
-    prisma = createPrismaClient(loadConfig().databaseUrl);
+    prisma = createPrismaClient(resolveTestDatabaseUrl());
   });
 
   afterAll(async () => {
@@ -562,7 +563,11 @@ describe.skipIf(!databaseTestsEnabled)('news inbox database and HTTP integration
       policy,
       () => now,
     );
-    const secondResult = await secondService.ingestSource(source.id, actor, `${auditPrefix}-m30d-2`);
+    const secondResult = await secondService.ingestSource(
+      source.id,
+      actor,
+      `${auditPrefix}-m30d-2`,
+    );
     expect(secondResult.initialIngest).toBe(false);
     expect(secondResult.run).toMatchObject({ fetchedCount: 5, createdCount: 2, skippedCount: 3 });
     expect(secondResult.diagnostics).toEqual({
@@ -659,9 +664,84 @@ describe.skipIf(!databaseTestsEnabled)('news inbox database and HTTP integration
     created.forEach(({ id }) => candidateIds.add(id));
     expect(created.map((c) => c.sourceExternalId)).toEqual(['m30d-regression-recent']);
   }, 30_000);
+
+  it('a testSource dry run never advances the persisted ETag, so the real ingest immediately after never 304s into zero candidates (M42A)', async () => {
+    const client = requirePrisma(prisma);
+    const admin = await createUser(client, 'ADMIN', userIds);
+    const now = new Date('2026-08-26T12:00:00.000Z');
+    const slug = `m42a-etag-regression-${randomUUID()}`;
+    const source = await client.newsSource.create({
+      data: {
+        name: 'M42A ETag Regression Source',
+        slug,
+        kind: 'RSS',
+        contentType: 'ARTICLE',
+        status: 'ACTIVE',
+        feedUrl: `https://${slug}.example.com/feed.xml`,
+        siteUrl: `https://${slug}.example.com/`,
+        publisherName: 'M42A Fictional Publisher',
+        createdById: admin.id,
+        updatedById: admin.id,
+        createdBySnapshot: admin.email,
+        updatedBySnapshot: admin.email,
+      },
+    });
+    sourceIds.add(source.id);
+    const feedItems = [
+      m30dItem('etag-recent', 'A fictional recent article', '2026-08-26T10:00:00.000Z'),
+    ];
+    const feedBody = m30dRss(feedItems);
+    const feedEtag = '"m42a-fixed-etag"';
+    // A real upstream server that always returns the same ETag for unchanged
+    // content, and honors If-None-Match with a 304 -- exactly what a dry run
+    // immediately followed by a real ingest would encounter in production if
+    // the feed hadn't changed in between.
+    const fetch = vi.fn<FeedFetch>().mockImplementation((_url, init) => {
+      const headers = init.headers as Record<string, string> | undefined;
+      if (headers?.['if-none-match'] === feedEtag) {
+        return Promise.resolve(new Response(null, { status: 304, headers: { etag: feedEtag } }));
+      }
+      return Promise.resolve(
+        new Response(feedBody, {
+          status: 200,
+          headers: { 'content-type': 'application/rss+xml; charset=utf-8', etag: feedEtag },
+        }),
+      );
+    });
+    const repository = new PrismaNewsInboxRepository(client);
+    const service = new NewsInboxService(
+      repository,
+      new SafeFeedClient(fetch, () => Promise.resolve(['93.184.216.34'])),
+      DEFAULT_NEWS_INGESTION_POLICY,
+      () => now,
+    );
+    const actor = { userId: admin.id, email: admin.email, role: admin.role };
+
+    const dryRun = await service.testSource(source.id, actor, `${auditPrefix}-m42a-dryrun`);
+    expect(dryRun.testedOnly).toBe(true);
+    expect(dryRun.notModified).toBe(false);
+    // The core regression guard: a dry run must not persist the ETag it just
+    // received, even though the fetch itself did see it.
+    const sourceAfterDryRun = await repository.findSource(source.id);
+    expect(sourceAfterDryRun?.responseEtag).toBeNull();
+
+    const realIngest = await service.ingestSource(source.id, actor, `${auditPrefix}-m42a-real`);
+    expect(realIngest.notModified).toBe(false);
+    expect(realIngest.run).toMatchObject({ fetchedCount: 1, createdCount: 1 });
+    const sourceAfterRealIngest = await repository.findSource(source.id);
+    expect(sourceAfterRealIngest?.responseEtag).toBe(feedEtag);
+
+    const created = await client.newsCandidate.findMany({ where: { sourceId: source.id } });
+    created.forEach(({ id }) => candidateIds.add(id));
+    expect(created).toHaveLength(1);
+  }, 30_000);
 });
 
-function m30dItem(id: string, title: string, publishedAtIso: string | null): {
+function m30dItem(
+  id: string,
+  title: string,
+  publishedAtIso: string | null,
+): {
   readonly id: string;
   readonly title: string;
   readonly publishedAtIso: string | null;
@@ -670,7 +750,11 @@ function m30dItem(id: string, title: string, publishedAtIso: string | null): {
 }
 
 function m30dRss(
-  items: readonly { readonly id: string; readonly title: string; readonly publishedAtIso: string | null }[],
+  items: readonly {
+    readonly id: string;
+    readonly title: string;
+    readonly publishedAtIso: string | null;
+  }[],
 ): string {
   const entries = items
     .map(
