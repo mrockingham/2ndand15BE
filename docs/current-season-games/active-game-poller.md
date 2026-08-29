@@ -232,6 +232,11 @@ See `shouldPollWhileDegraded` in `current-game-poller.ts`.
   unmatched-existing or collision blocks the entire write transactionally), and no raw provider
   payload is ever persisted. **Once the game is FINAL, plays no longer take this path at all** —
   see [Final reconciliation](#final-reconciliation) below.
+- The Highlightly play adapter removes exact whole-drive mirrors before assigning play order.
+  Highlightly can return the active drive both at index zero and again at its chronological tail
+  position; the adapter retains the later exact copy. It never deduplicates individual plays,
+  because repeated penalties, timeouts, and other factually distinct plays may share text or
+  structure.
 - The FINAL-gated manual command (`games:current:plays:sync`) is untouched — `CurrentGamePlaySyncService`'s
   FINAL-only gate was neither removed nor weakened. The poller never calls that service; it calls
   the repository/reconciliation functions directly, the same way the diagnostic harness already

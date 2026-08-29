@@ -97,4 +97,60 @@ describe('Highlightly current game play normalization', () => {
     expect(normalizeHighlightlyYardLine(null)).toBeNull();
     expect(normalizeHighlightlyYardLine(100)).toBe(0);
   });
+
+  it('removes a mirrored active drive while retaining its chronological tail copy', () => {
+    const mirroredDrive = event('BAL', '15:00', 'Opening kickoff');
+    const interveningDrive = event('WAS', '12:00', 'Washington possession');
+    const detail = {
+      id: 566554,
+      date: '2026-08-28T00:00:00Z',
+      league: 'NFL',
+      season: 2026,
+      round: 'Preseason 4',
+      state: { description: 'In progress', clock: '10:00', score: null },
+      homeTeam: { id: 1, name: 'Ravens', abbreviation: 'BAL' },
+      awayTeam: { id: 2, name: 'Commanders', abbreviation: 'WSH' },
+      events: [mirroredDrive, interveningDrive, mirroredDrive],
+    } as HighlightlyDetailedMatch;
+
+    const result = normalizeHighlightlyCurrentGamePlays(detail);
+
+    expect(result.plays).toHaveLength(2);
+    expect(result.plays.map((play) => play.description)).toEqual([
+      'Washington possession',
+      'Opening kickoff',
+    ]);
+    expect(result.plays.map((play) => play.providerOrder)).toEqual([0, 1]);
+  });
 });
+
+function event(team: string, clock: string, text: string) {
+  return {
+    result: null,
+    description: '1 play, 0 yards, 0:05',
+    team: { id: team === 'BAL' ? 1 : 2, name: team, abbreviation: team },
+    playDetails: [
+      {
+        start: {
+          down: 1,
+          distance: 10,
+          yardLine: 75,
+          possessionText: `${team} 25`,
+          yardsToEndzone: 75,
+        },
+        end: {
+          down: 2,
+          distance: 10,
+          yardLine: 75,
+          possessionText: `${team} 25`,
+          yardsToEndzone: 75,
+        },
+        text,
+        type: 'Rush',
+        clock,
+        period: 1,
+        isPenalty: false,
+      },
+    ],
+  };
+}

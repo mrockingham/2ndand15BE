@@ -56,12 +56,23 @@ export function normalizeHighlightlyCurrentGamePlays(
   expectedProviderGameId = String(detail.id),
 ): NormalizedCurrentGamePlaySnapshot {
   if (String(detail.id) !== expectedProviderGameId) throw new Error('Provider game ID mismatch.');
-  let providerOrder = 0;
-  const plays = (detail.events ?? []).flatMap((event) =>
-    (event.playDetails ?? []).map((play) =>
-      normalizePlay(play, providerOrder++, event.team === null ? null : event.team),
-    ),
-  );
+  const normalizedEvents = (detail.events ?? []).map((event) => {
+    const plays = (event.playDetails ?? []).map((play) =>
+      normalizePlay(play, 0, event.team === null ? null : event.team),
+    );
+    return { signature: eventSignature(event, plays), plays };
+  });
+  const seenEvents = new Set<string>();
+  const uniqueEvents: typeof normalizedEvents = [];
+  for (let index = normalizedEvents.length - 1; index >= 0; index -= 1) {
+    const event = normalizedEvents[index];
+    if (event === undefined || seenEvents.has(event.signature)) continue;
+    seenEvents.add(event.signature);
+    uniqueEvents.unshift(event);
+  }
+  const plays = uniqueEvents
+    .flatMap((event) => event.plays)
+    .map((play, providerOrder) => ({ ...play, providerOrder }));
   return {
     provider: HIGHLIGHTLY_PROVIDER_KEY,
     providerGameId: expectedProviderGameId,
@@ -72,6 +83,21 @@ export function normalizeHighlightlyCurrentGamePlays(
     plays,
     providerUpdatedAt: detail.updatedAt ?? null,
   };
+}
+
+function eventSignature(
+  event: NonNullable<HighlightlyDetailedMatch['events']>[number],
+  plays: readonly NormalizedCurrentGamePlay[],
+): string {
+  return JSON.stringify([
+    event.team === null || event.team === undefined ? null : String(event.team.id),
+    event.description ?? null,
+    event.result ?? null,
+    plays.map(({ providerOrder: _providerOrder, ...play }) => {
+      void _providerOrder;
+      return play;
+    }),
+  ]);
 }
 
 function normalizePlay(
