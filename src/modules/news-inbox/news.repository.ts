@@ -623,7 +623,21 @@ export class PrismaNewsInboxRepository implements NewsInboxRepository {
     return this.prisma.newsCandidate.findMany({
       where: {
         status: 'NEW',
-        source: { status: 'ACTIVE', contentType: 'ARTICLE', kind: { not: 'MANUAL_ONLY' } },
+        source: {
+          status: 'ACTIVE',
+          contentType: 'ARTICLE',
+          kind: { not: 'MANUAL_ONLY' },
+          // M42B starvation fix: a permanent backlog of NEW candidates from
+          // sources that can never auto-publish (official-team feeds
+          // pending manual review) sorts ahead of genuinely eligible
+          // trusted-source candidates under the oldest-first order below,
+          // and would otherwise consume the entire bounded pool before a
+          // real (non-preview) run ever reaches them. Filtering by the same
+          // source-level flags `evaluateAutoPublishEligibility` checks means
+          // only candidates that could ever be eligible occupy pool slots.
+          autoPublishArticles: true,
+          allowsDescriptionUse: true,
+        },
       },
       orderBy: [{ sourcePublishedAt: 'asc' }, { id: 'asc' }],
       take: limit,

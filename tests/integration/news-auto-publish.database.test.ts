@@ -5,7 +5,13 @@ import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { createPrismaClient } from '../../src/common/database/prisma.js';
-import type { PrismaClient, UserRole } from '../../src/generated/prisma/client.js';
+import type {
+  NewsContentType,
+  NewsSourceKind,
+  NewsSourceStatus,
+  PrismaClient,
+  UserRole,
+} from '../../src/generated/prisma/client.js';
 import { SafeFeedClient } from '../../src/modules/news-inbox/feed-client.js';
 import { PrismaNewsInboxRepository } from '../../src/modules/news-inbox/news.repository.js';
 import {
@@ -339,14 +345,20 @@ describe.skipIf(!databaseTestsEnabled)('news auto-publish database integration (
       systemPrincipal,
       `${auditPrefix}-no-rights`,
     );
+    // M42B starvation fix: `listAutoPublishCandidatePool` now excludes
+    // sources without `allowsDescriptionUse` at the query level (the same
+    // source-level flags `evaluateAutoPublishEligibility` checks), so this
+    // candidate never enters the real run's pool at all -- it no longer
+    // appears in `items` as a SKIPPED entry. `previewAutoPublish` reads the
+    // same pool, so it stays invisible there too.
     const item = result.items.find((entry) => entry.candidateId === candidate.id);
-    expect(item).toMatchObject({
-      outcome: 'SKIPPED',
-      reason: 'SOURCE_DESCRIPTION_USE_NOT_ALLOWED',
-    });
+    expect(item).toBeUndefined();
 
     const untouched = await client.newsCandidate.findUniqueOrThrow({ where: { id: candidate.id } });
     expect(untouched.status).toBe('NEW');
+
+    const preview = await service.previewAutoPublish();
+    expect(preview.items.find((entry) => entry.candidateId === candidate.id)).toBeUndefined();
   }, 30_000);
 
   it('respects the per-source cap across two trusted sources without starving either', async () => {
@@ -417,27 +429,193 @@ describe.skipIf(!databaseTestsEnabled)('news auto-publish database integration (
     const capped = relevant.filter((item) => item.reason === 'PER_SOURCE_CAP_REACHED');
     expect(capped).toHaveLength(2);
   }, 30_000);
+
+  it('listAutoPublishCandidatePool only ever returns candidates from sources eligible at the source level', async () => {
+    const client = requirePrisma(prisma);
+    const editor = await createUser(client, 'EDITOR', userIds);
+    const now = new Date('2026-08-29T12:00:00.000Z');
+    const repository = new PrismaNewsInboxRepository(client);
+
+    type SourceOverrides = NonNullable<Parameters<typeof createTrustedSource>[3]>;
+    const cases: readonly {
+      readonly name: string;
+      readonly overrides: SourceOverrides;
+      readonly shouldAppear: boolean;
+    }[] = [
+      { name: 'inactive', overrides: { status: 'PAUSED' }, shouldAppear: false },
+      { name: 'manualOnly', overrides: { kind: 'MANUAL_ONLY' }, shouldAppear: false },
+      { name: 'nonArticle', overrides: { contentType: 'VIDEO' }, shouldAppear: false },
+      {
+        name: 'autoPublishDisabled',
+        overrides: { autoPublishArticles: false },
+        shouldAppear: false,
+      },
+      {
+        name: 'descriptionUseDisallowed',
+        overrides: { allowsDescriptionUse: false },
+        shouldAppear: false,
+      },
+      { name: 'trusted', overrides: {}, shouldAppear: true },
+    ];
+
+    const candidateIdByCase = new Map<string, string>();
+    for (const { name, overrides } of cases) {
+      const source = await createTrustedSource(client, editor, sourceIds, overrides);
+      const candidate = await client.newsCandidate.create({
+        data: {
+          sourceId: source.id,
+          sourceNameSnapshot: source.publisherName,
+          sourceExternalId: `pool-filter-${name}-${randomUUID()}`,
+          canonicalUrl: `https://news.example.com/story/${randomUUID()}`,
+          canonicalUrlHash: randomUUID(),
+          headline: `A fictional headline for the ${name} pool-filter case`,
+          sourceDescription:
+            'A fictional forty-plus character description used to satisfy the minimum quality threshold in this test.',
+          contentType: source.contentType,
+          sourcePublishedAt: now,
+          discoveredAt: now,
+          status: 'NEW',
+        },
+      });
+      candidateIds.add(candidate.id);
+      candidateIdByCase.set(name, candidate.id);
+    }
+
+    const pool = await repository.listAutoPublishCandidatePool(500);
+    const poolIds = new Set(pool.map((c) => c.id));
+    for (const { name, shouldAppear } of cases) {
+      const candidateId = candidateIdByCase.get(name);
+      if (candidateId === undefined) throw new Error(`missing candidate for case ${name}`);
+      expect(poolIds.has(candidateId)).toBe(shouldAppear);
+    }
+  }, 30_000);
+
+  it('a large permanent backlog from sources that can never auto-publish does not starve genuinely eligible trusted-source candidates out of the bounded real-run pool', async () => {
+    const client = requirePrisma(prisma);
+    const editor = await createUser(client, 'EDITOR', userIds);
+    const systemActor = await createUser(client, 'ADMIN', userIds);
+    const now = new Date('2026-08-29T12:00:00.000Z');
+    const old = new Date('2026-01-01T00:00:00.000Z');
+
+    // A source that structurally passes status/kind/contentType but can
+    // never auto-publish -- exactly the official-team-feed shape that
+    // starved the real Render cron.
+    const neverEligibleSource = await createTrustedSource(client, editor, sourceIds, {
+      autoPublishArticles: false,
+    });
+
+    const BACKLOG_SIZE = 105; // > the real production pool size (maxPerRun=20 -> 100)
+    const backlogRows = Array.from({ length: BACKLOG_SIZE }, (_, i) => ({
+      sourceId: neverEligibleSource.id,
+      sourceNameSnapshot: neverEligibleSource.publisherName,
+      sourceExternalId: `starvation-backlog-${String(i)}-${randomUUID()}`,
+      canonicalUrl: `https://news.example.com/story/${randomUUID()}`,
+      canonicalUrlHash: randomUUID(),
+      headline: `A fictional backlog headline ${String(i)}`,
+      sourceDescription:
+        'A fictional forty-plus character description used to satisfy the minimum quality threshold in this test.',
+      contentType: 'ARTICLE' as const,
+      sourcePublishedAt: new Date(old.getTime() + i * 1000),
+      discoveredAt: old,
+      status: 'NEW' as const,
+    }));
+    await client.newsCandidate.createMany({ data: backlogRows });
+    const backlog = await client.newsCandidate.findMany({
+      where: { sourceId: neverEligibleSource.id },
+      select: { id: true },
+    });
+    for (const row of backlog) candidateIds.add(row.id);
+    expect(backlog.length).toBe(BACKLOG_SIZE);
+
+    const trustedSource = await createTrustedSource(client, editor, sourceIds);
+    const eligibleCandidate = await client.newsCandidate.create({
+      data: {
+        sourceId: trustedSource.id,
+        sourceNameSnapshot: trustedSource.publisherName,
+        sourceExternalId: `starvation-eligible-${randomUUID()}`,
+        canonicalUrl: `https://news.example.com/story/${randomUUID()}`,
+        canonicalUrlHash: randomUUID(),
+        headline: 'A fictional headline that is genuinely eligible right now',
+        sourceDescription:
+          'A fictional forty-plus character description used to satisfy the minimum quality threshold in this test.',
+        contentType: 'ARTICLE',
+        sourcePublishedAt: now,
+        discoveredAt: now,
+        status: 'NEW',
+      },
+    });
+    candidateIds.add(eligibleCandidate.id);
+
+    const repository = new PrismaNewsInboxRepository(client);
+    const service = new NewsInboxService(
+      repository,
+      new SafeFeedClient(),
+      DEFAULT_NEWS_INGESTION_POLICY,
+      () => now,
+      // Matches the real Render cron's production defaults, not this
+      // suite's usual maxPerRun: 1_000 -- the whole point of this test is
+      // to reproduce the bounded real-run pool (maxPerRun * 5 = 100) the
+      // starvation bug depended on.
+      {
+        enabled: true,
+        maxAgeHours: 24,
+        maxPerRun: 20,
+        maxPerSourcePerRun: 10,
+        minDescriptionLength: 40,
+      },
+    );
+    const systemPrincipal = {
+      userId: systemActor.id,
+      email: systemActor.email,
+      role: systemActor.role,
+    };
+
+    const result = await service.autoPublishEligibleCandidates(
+      systemPrincipal,
+      `${auditPrefix}-starvation`,
+    );
+    const eligibleItem = result.items.find((item) => item.candidateId === eligibleCandidate.id);
+    expect(eligibleItem?.outcome).toBe('PUBLISHED');
+    if (eligibleItem?.articleId !== undefined && eligibleItem.articleId !== null) {
+      articleIds.add(eligibleItem.articleId);
+    }
+
+    const backlogItems = result.items.filter((item) =>
+      backlog.some((row) => row.id === item.candidateId),
+    );
+    expect(backlogItems).toHaveLength(0);
+    const stillNewBacklogCount = await client.newsCandidate.count({
+      where: { sourceId: neverEligibleSource.id, status: 'NEW' },
+    });
+    expect(stillNewBacklogCount).toBe(BACKLOG_SIZE);
+  }, 30_000);
 });
 
 async function createTrustedSource(
   client: PrismaClient,
   actor: { id: string; email: string },
   ids: Set<string>,
-  overrides: { readonly allowsDescriptionUse?: boolean } = {},
+  overrides: {
+    readonly allowsDescriptionUse?: boolean;
+    readonly status?: NewsSourceStatus;
+    readonly kind?: NewsSourceKind;
+    readonly contentType?: NewsContentType;
+    readonly autoPublishArticles?: boolean;
+  } = {},
 ) {
   const slug = `m42b-trusted-${randomUUID()}`;
   const source = await client.newsSource.create({
     data: {
       name: 'M42B Fictional Trusted Source',
       slug,
-      kind: 'RSS',
-      contentType: 'ARTICLE',
-      status: 'ACTIVE',
+      kind: overrides.kind ?? 'RSS',
+      contentType: overrides.contentType ?? 'ARTICLE',
+      status: overrides.status ?? 'ACTIVE',
       feedUrl: `https://${slug}.example.com/feed.xml`,
       siteUrl: `https://${slug}.example.com/`,
       publisherName: 'M42B Fictional Publisher',
       allowsDescriptionUse: overrides.allowsDescriptionUse ?? true,
-      autoPublishArticles: true,
+      autoPublishArticles: overrides.autoPublishArticles ?? true,
       createdById: actor.id,
       updatedById: actor.id,
       createdBySnapshot: actor.email,
