@@ -6,7 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { createPrismaClient } from '../../src/common/database/prisma.js';
 import { errorHandler } from '../../src/common/middleware/error-handler.js';
-import { loadDatabaseConfig } from '../../src/config/env.js';
+import { resolveTestDatabaseUrl } from '../helpers/test-database.js';
 import { Prisma, type PrismaClient } from '../../src/generated/prisma/client.js';
 import { PrismaArticleRepository } from '../../src/modules/articles/article.repository.js';
 import { ArticleService } from '../../src/modules/articles/article.service.js';
@@ -30,7 +30,7 @@ describe.skipIf(!enabled)('Team Hub database', () => {
   let nfcTeamId: string | undefined;
 
   beforeAll(async () => {
-    prisma = createPrismaClient(loadDatabaseConfig().databaseUrl);
+    prisma = createPrismaClient(resolveTestDatabaseUrl());
     const teams = new TeamService(new PrismaTeamRepository(prisma));
     stats = new StatsHubService(new PrismaStatsHubRepository(prisma));
     service = new TeamHubService({

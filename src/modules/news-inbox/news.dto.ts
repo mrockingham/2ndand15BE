@@ -22,6 +22,30 @@ export type NewsCandidateRecord = Prisma.NewsCandidateGetPayload<{
 }>;
 export type NewsIngestionRunRecord = Prisma.NewsIngestionRunGetPayload<Record<string, never>>;
 
+/** M42B: only the fields the auto-publish eligibility/creation path needs --
+ * deliberately narrower than `newsCandidateInclude`, which is shaped for
+ * Admin display and omits several source fields (status, kind,
+ * autoPublishArticles, allowsDescriptionUse) eligibility depends on. */
+export const autoPublishCandidateInclude = {
+  source: {
+    select: {
+      id: true,
+      slug: true,
+      status: true,
+      kind: true,
+      contentType: true,
+      autoPublishArticles: true,
+      allowsDescriptionUse: true,
+      isOfficialTeam: true,
+    },
+  },
+  suggestedTeams: { select: { teamId: true } },
+} satisfies Prisma.NewsCandidateInclude;
+
+export type AutoPublishCandidateRecord = Prisma.NewsCandidateGetPayload<{
+  include: typeof autoPublishCandidateInclude;
+}>;
+
 export function toNewsSourceDto(source: NewsSourceRecord) {
   return {
     id: source.id,
@@ -44,6 +68,7 @@ export function toNewsSourceDto(source: NewsSourceRecord) {
     isOfficialLeague: source.isOfficialLeague,
     isOfficialTeam: source.isOfficialTeam,
     allowsDescriptionUse: source.allowsDescriptionUse,
+    autoPublishArticles: source.autoPublishArticles,
     sourcePreference: {
       reliability: source.reliabilityWeight,
       metadataRichness: source.metadataRichnessWeight,

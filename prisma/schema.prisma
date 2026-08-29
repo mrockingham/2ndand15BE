@@ -1285,6 +1285,12 @@ model NewsSource {
   isOfficialLeague          Boolean              @default(false) @map("is_official_league")
   isOfficialTeam            Boolean              @default(false) @map("is_official_team")
   allowsDescriptionUse      Boolean              @default(false) @map("allows_description_use")
+  /// M42B: independent of `status` (activation) -- an ACTIVE source with this
+  /// still false only ever produces NewsCandidates for human review. Only a
+  /// second, explicit opt-in (ADMIN-only) allows eligible ARTICLE candidates
+  /// from this source to auto-publish. Trust is never inferred from
+  /// publisher name or `isOfficialLeague`/`isOfficialTeam`.
+  autoPublishArticles       Boolean              @default(false) @map("auto_publish_articles")
   reliabilityWeight         Int                  @default(50) @map("reliability_weight")
   metadataRichnessWeight    Int                  @default(50) @map("metadata_richness_weight")
   teamSpecificityWeight     Int                  @default(50) @map("team_specificity_weight")

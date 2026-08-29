@@ -3,7 +3,7 @@ import 'dotenv/config';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { createPrismaClient } from '../../src/common/database/prisma.js';
-import { loadDatabaseConfig } from '../../src/config/env.js';
+import { resolveTestDatabaseUrl } from '../helpers/test-database.js';
 import type { PrismaClient } from '../../src/generated/prisma/client.js';
 import { PrismaGameHighlightsRepository } from '../../src/modules/game-highlights/game-highlights.repository.js';
 import { GameHighlightsService } from '../../src/modules/game-highlights/game-highlights.service.js';
@@ -64,7 +64,7 @@ describe.skipIf(!databaseTestsEnabled)('game highlights database integration (M3
   let gameId: string | undefined;
 
   beforeAll(async () => {
-    prisma = createPrismaClient(loadDatabaseConfig().databaseUrl);
+    prisma = createPrismaClient(resolveTestDatabaseUrl());
     const teams = await prisma.team.findMany({ take: 2, orderBy: { id: 'asc' } });
     const homeTeam = teams.at(0);
     const awayTeam = teams.at(1);

@@ -61,6 +61,46 @@ describe('news feed parser', () => {
     });
   });
 
+  // M42A: real-world-shaped national-source feeds. There is no
+  // publisher-specific parser -- ProFootballTalk and CBS Sports both parse
+  // through this one generic RSS path -- so these fixtures pin the specific
+  // vendor markup shapes discovered while evaluating those feeds, rather
+  // than exercising new parsing code.
+  describe('national-source feed shapes (PFT/CBS-like RSS)', () => {
+    it('picks the first image media:content as the thumbnail even when a video media:content follows in the same item (PFT shape)', async () => {
+      const feed = parseNewsFeed(await fixture('sample-national-source-rss.xml'));
+      expect(feed.entries[0]).toMatchObject({
+        headline: 'Fictional article with an embedded video player',
+        canonicalUrl: 'https://news.example.com/nfl/story/fictional-embedded-video-article',
+        thumbnailUrl: 'https://static.example.com/national/fictional-hero-image.jpg',
+      });
+      // The video media:content and the entire content:encoded body (which
+      // may embed a video player's config/script) are never surfaced.
+      expect(JSON.stringify(feed)).not.toContain('fictional-embedded-clip.mp4');
+      expect(JSON.stringify(feed)).not.toContain('playerConfig');
+      expect(JSON.stringify(feed)).not.toContain('VideoLead');
+    });
+
+    it('trims whitespace-padded title/link/description (CBS shape)', async () => {
+      const feed = parseNewsFeed(await fixture('sample-national-source-rss.xml'));
+      expect(feed.entries[1]).toMatchObject({
+        externalId: 'fictional-national-2',
+        headline: 'Fictional article with whitespace-padded title and description',
+        canonicalUrl: 'https://news.example.com/nfl/story/fictional-whitespace-article',
+        description:
+          'A short summary padded with newlines and indentation, as some publishers emit.',
+        thumbnailUrl: 'https://static.example.com/national/fictional-second-image.png',
+      });
+    });
+
+    it('treats an untyped media:content url as a thumbnail (no type attribute means not excluded as non-image)', async () => {
+      const feed = parseNewsFeed(await fixture('sample-national-source-rss.xml'));
+      expect(feed.entries[1]?.thumbnailUrl).toBe(
+        'https://static.example.com/national/fictional-second-image.png',
+      );
+    });
+  });
+
   it('normalizes common Atom fields and alternate links', async () => {
     const feed = parseNewsFeed(await fixture('sample-atom.xml'));
     expect(feed.kind).toBe('ATOM');

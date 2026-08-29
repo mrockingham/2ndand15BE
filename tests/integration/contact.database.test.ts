@@ -3,7 +3,7 @@ import 'dotenv/config';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { createPrismaClient } from '../../src/common/database/prisma.js';
-import { loadDatabaseConfig } from '../../src/config/env.js';
+import { resolveTestDatabaseUrl } from '../helpers/test-database.js';
 import type { PrismaClient } from '../../src/generated/prisma/client.js';
 import type { AdministrativePrincipal } from '../../src/modules/admin/admin-authorization.js';
 import { PrismaContactRepository } from '../../src/modules/contact/contact.repository.js';
@@ -23,7 +23,7 @@ describe.skipIf(!databaseTestsEnabled)('contact database integration', () => {
   let createdMessageId: string | undefined;
 
   beforeAll(async () => {
-    prisma = createPrismaClient(loadDatabaseConfig().databaseUrl);
+    prisma = createPrismaClient(resolveTestDatabaseUrl());
     const adminUser = await prisma.user.findFirstOrThrow({ where: { role: 'ADMIN' } });
     principal = { userId: adminUser.id, email: adminUser.email, role: 'ADMIN' };
   });

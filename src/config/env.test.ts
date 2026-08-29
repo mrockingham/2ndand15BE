@@ -92,6 +92,13 @@ describe('loadConfig', () => {
         initialMaxItemsPerSource: 25,
         lateItemToleranceHours: 48,
       },
+      newsAutoPublish: {
+        enabled: false,
+        maxAgeHours: 24,
+        maxPerRun: 20,
+        maxPerSourcePerRun: 10,
+        minDescriptionLength: 40,
+      },
       gameMediaCuration: {
         embedAllowedHosts: [
           'youtube.com',

@@ -109,7 +109,7 @@ npm run test:coverage
 npm run build
 ```
 
-Database-backed integration tests are opt-in so ordinary unit and route tests never depend on a developer database. Authentication tests create uniquely named temporary users and delete only those exact users afterward. After applying migrations and the team seed, run all database checks with:
+Database-backed integration tests are opt-in so ordinary unit and route tests never depend on a developer database. They also require `TEST_DATABASE_URL` -- a genuinely separate database or Neon branch from `DATABASE_URL` -- and refuse to run under `NODE_ENV=test` (which Vitest sets automatically) against anything identified as the production database; see `docs/testing/database-tests.md` for why and how to provision one. Authentication tests create uniquely named temporary users and delete only those exact users afterward. After applying migrations and the team seed to your test database, run all database checks with:
 
 Git Bash, macOS, or Linux:
 

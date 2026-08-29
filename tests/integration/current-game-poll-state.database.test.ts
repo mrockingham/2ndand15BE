@@ -3,7 +3,7 @@ import 'dotenv/config';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { createPrismaClient } from '../../src/common/database/prisma.js';
-import { loadDatabaseConfig } from '../../src/config/env.js';
+import { resolveTestDatabaseUrl } from '../helpers/test-database.js';
 import type { PrismaClient } from '../../src/generated/prisma/client.js';
 import { PrismaCurrentGamePollStateRepository } from '../../src/modules/sports/current-game-poll-state.repository.js';
 
@@ -29,7 +29,7 @@ describe.skipIf(!databaseTestsEnabled)('current-game poll-state database integra
   const createdGameIds: string[] = [];
 
   beforeAll(async () => {
-    prisma = createPrismaClient(loadDatabaseConfig().databaseUrl);
+    prisma = createPrismaClient(resolveTestDatabaseUrl());
     const teams = await prisma.team.findMany({ take: 2 });
     if (teams.length < 2) throw new Error('Expected at least two seeded teams for this test.');
     homeTeamId = teams[0]?.id;

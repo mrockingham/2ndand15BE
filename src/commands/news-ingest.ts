@@ -7,7 +7,10 @@ import { loadNewsIngestionConfig } from '../config/env.js';
 import type { AdministrativePrincipal } from '../modules/admin/admin-authorization.js';
 import { SafeFeedClient } from '../modules/news-inbox/feed-client.js';
 import { PrismaNewsInboxRepository } from '../modules/news-inbox/news.repository.js';
-import { NewsInboxService } from '../modules/news-inbox/news.service.js';
+import {
+  NEWS_AUTO_PUBLISH_SYSTEM_ACTOR_EMAIL,
+  NewsInboxService,
+} from '../modules/news-inbox/news.service.js';
 
 // Production currently has 23 active sources. Keep `--all` bounded above that
 // reviewed registry size so an accidental mass activation still fails closed.
@@ -31,7 +34,13 @@ async function main(): Promise<void> {
       role: user.role,
     };
     const repository = new PrismaNewsInboxRepository(prisma);
-    const service = new NewsInboxService(repository, new SafeFeedClient(), config.newsIngestion);
+    const service = new NewsInboxService(
+      repository,
+      new SafeFeedClient(),
+      config.newsIngestion,
+      () => new Date(),
+      config.newsAutoPublish,
+    );
     const sources = arguments_.all
       ? await listBoundedActiveSources(repository)
       : [await requireSource(repository, arguments_.sourceSlug)];
@@ -39,7 +48,22 @@ async function main(): Promise<void> {
     for (const source of sources) {
       results.push(await service.ingestSource(source.id, actor, `news-cli-${randomUUID()}`));
     }
-    process.stdout.write(`${JSON.stringify({ sources: results }, null, 2)}\n`);
+    // M42B: one bounded auto-publish pass per invocation, after every
+    // source's ingestion has landed its candidates -- not a second cron, not
+    // per-source (the global per-run cap in `evaluateAutoPublishBatch`
+    // wouldn't mean anything if applied separately per source). Only runs
+    // for `--all`, matching the Render cron's actual invocation shape;
+    // `--source=<slug>` stays a scoped, single-source debug/test path with
+    // no cross-source side effects. Uses the dedicated system actor, never
+    // the human `--actor=` account -- auto-publication must never be
+    // attributed to whichever person happens to run the cron (ticket §O).
+    const autoPublish = arguments_.all
+      ? await service.autoPublishEligibleCandidates(
+          await requireSystemActor(prisma),
+          `news-cli-autopublish-${randomUUID()}`,
+        )
+      : null;
+    process.stdout.write(`${JSON.stringify({ sources: results, autoPublish }, null, 2)}\n`);
   } finally {
     await prisma.$disconnect();
   }
@@ -63,6 +87,21 @@ function parseArguments(arguments_: readonly string[]): {
     );
   }
   return { sourceSlug: source, all, actorEmail: actor.trim() };
+}
+
+async function requireSystemActor(
+  prisma: ConstructorParameters<typeof PrismaNewsInboxRepository>[0],
+): Promise<AdministrativePrincipal> {
+  const user = await prisma.user.findUnique({
+    where: { normalizedEmail: NEWS_AUTO_PUBLISH_SYSTEM_ACTOR_EMAIL.toLowerCase() },
+    select: { id: true, email: true, role: true, isActive: true },
+  });
+  if (user === null || !user.isActive || !['EDITOR', 'ADMIN'].includes(user.role)) {
+    throw new Error(
+      `The auto-publish system actor (${NEWS_AUTO_PUBLISH_SYSTEM_ACTOR_EMAIL}) must exist as an active EDITOR or ADMIN account.`,
+    );
+  }
+  return { userId: user.id, email: user.email, role: user.role };
 }
 
 async function requireSource(repository: PrismaNewsInboxRepository, slug: string | null) {

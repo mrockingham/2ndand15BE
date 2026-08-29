@@ -3,7 +3,7 @@ import 'dotenv/config';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { createPrismaClient } from '../../src/common/database/prisma.js';
-import { loadDatabaseConfig } from '../../src/config/env.js';
+import { resolveTestDatabaseUrl } from '../helpers/test-database.js';
 import type { PrismaClient } from '../../src/generated/prisma/client.js';
 import { PrismaGameRepository } from '../../src/modules/games/game.repository.js';
 import { GameService } from '../../src/modules/games/game.service.js';
@@ -15,7 +15,7 @@ describeDatabase('API-Sports hosted synchronization verification', () => {
   let client: PrismaClient;
 
   beforeAll(() => {
-    client = createPrismaClient(loadDatabaseConfig().databaseUrl);
+    client = createPrismaClient(resolveTestDatabaseUrl());
   });
 
   afterAll(async () => {

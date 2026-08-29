@@ -3,7 +3,7 @@ import 'dotenv/config';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { createPrismaClient } from '../../src/common/database/prisma.js';
-import { loadDatabaseConfig } from '../../src/config/env.js';
+import { resolveTestDatabaseUrl } from '../helpers/test-database.js';
 import type { PrismaClient } from '../../src/generated/prisma/client.js';
 import { PrismaPlayerRepository } from '../../src/modules/players/player.repository.js';
 import { PlayerService } from '../../src/modules/players/player.service.js';
@@ -14,7 +14,7 @@ describe.skipIf(!enabled)('historical player database', () => {
   let prisma: PrismaClient | undefined;
 
   beforeAll(() => {
-    prisma = createPrismaClient(loadDatabaseConfig().databaseUrl);
+    prisma = createPrismaClient(resolveTestDatabaseUrl());
   });
 
   afterAll(async () => {

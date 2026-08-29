@@ -118,6 +118,26 @@ See `docs/production/contact.md` for the full contact-form design.
   `NEWS_LATE_ITEM_TOLERANCE_HOURS` — policy knobs, safe at defaults unless a
   specific ingestion behavior change is intended.
 
+### News trusted-source auto-publication (Milestone 42B)
+
+- `NEWS_AUTO_PUBLISH_ENABLED` — **global kill switch, defaults `false`.**
+  `true` is required for auto-publication to run at all, on top of each
+  source's own `autoPublishArticles` flag; do not set this `true` in
+  production without having run `npm run news:auto-publish:preview` against
+  production first and reviewed its output. Setting it `false` again stops
+  auto-publication immediately without touching any source's flag.
+- `NEWS_AUTO_PUBLISH_MAX_AGE_HOURS` (default `24`), `NEWS_AUTO_PUBLISH_MAX_PER_RUN`
+  (default `20`), `NEWS_AUTO_PUBLISH_MAX_PER_SOURCE_PER_RUN` (default `10`),
+  `NEWS_AUTO_PUBLISH_MIN_DESCRIPTION_LENGTH` (default `40`) — policy knobs,
+  safe at defaults. See `docs/news-source-ingestion.md`'s
+  "Trusted-source auto-publication" section for the full eligibility rules.
+- The auto-publish system account (email constant
+  `NEWS_AUTO_PUBLISH_SYSTEM_ACTOR_EMAIL` in `news.service.ts`) must exist in
+  the target database as an active `EDITOR`/`ADMIN` user before
+  `NEWS_AUTO_PUBLISH_ENABLED=true` is ever set — the CLI fails closed with a
+  clear error otherwise. It is a real database row provisioned once per
+  environment, not something these environment variables create.
+
 ### Game Center curated video embeds
 
 - `GAME_CURATED_VIDEO_EMBED_HOST_ALLOWLIST` — safe at the documented YouTube
@@ -225,6 +245,12 @@ current-game Worker where practical. The Cron Job requires:
 `NEWS_INITIAL_INGEST_MAX_ITEMS_PER_SOURCE`, and
 `NEWS_LATE_ITEM_TOLERANCE_HOURS` may be inherited from the shared group but
 have validated defaults. No separate GitHub database secret is needed.
+
+This same `--all` invocation is also what runs the Milestone 42B
+auto-publish pass (bounded, after ingestion, in one process — no second
+cron). It stays a no-op until `NEWS_AUTO_PUBLISH_ENABLED=true` is explicitly
+set in this Cron Job's environment; see "News trusted-source
+auto-publication" above.
 
 Render guarantees only one active execution for a given Cron Job. The existing
 per-source ingestion lease is retained because an editor can still trigger the

@@ -168,10 +168,16 @@ export function toAdminTopStoryDto(
   return { id: topStory.id, position: topStory.position, article: toAdminArticleListDto(article) };
 }
 
+/** `homepageSelection` is additive (M42A), mirroring the same tag already
+ * used on `PublicHomepageHighlightDto` -- internal/debugging provenance, the
+ * public UI doesn't have to render it. Every admin-curated row is
+ * `'CURATED'`; only the automatic-fallback padding described in
+ * `HomepageService.getPublicTopStories` produces `'AUTOMATIC'` entries. */
 export interface PublicTopStoryDto {
   readonly id: string;
   readonly position: number;
   readonly article: PublicArticleListDto;
+  readonly homepageSelection: 'CURATED' | 'AUTOMATIC';
 }
 
 export function toPublicTopStoryDto(
@@ -183,6 +189,25 @@ export function toPublicTopStoryDto(
     id: topStory.id,
     position: topStory.position,
     article: toPublicArticleListDto(article, publishedAt ?? article.createdAt),
+    homepageSelection: 'CURATED',
+  };
+}
+
+/** Builds an automatic-fallback Top Story entry (M42A) from an article that
+ * has no curated `HomepageTopStory` row. `position` continues numbering
+ * after the curated rows so the combined list stays in the order the
+ * caller assembled it -- this is presentation-order bookkeeping only, never
+ * used to imply the article is actually curated. */
+export function toAutomaticTopStoryDto(
+  article: ArticleRecord,
+  position: number,
+): PublicTopStoryDto {
+  const publishedAt = effectivePublishedAt(article);
+  return {
+    id: `automatic:${article.id}`,
+    position,
+    article: toPublicArticleListDto(article, publishedAt ?? article.createdAt),
+    homepageSelection: 'AUTOMATIC',
   };
 }
 

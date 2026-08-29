@@ -14,8 +14,10 @@ import {
   type ArticleWriteFields,
 } from '../articles/article.repository.js';
 import {
+  autoPublishCandidateInclude,
   newsCandidateInclude,
   newsSourceInclude,
+  type AutoPublishCandidateRecord,
   type NewsCandidateRecord,
   type NewsIngestionRunRecord,
   type NewsSourceRecord,
@@ -73,6 +75,10 @@ export interface CandidateConversionWrite {
   readonly fields: ArticleWriteFields;
   readonly teamIds: readonly string[];
   readonly changeSummary: string | null;
+  /** M42B: omitted (default) for the human conversion path -- the created
+   * article stays DRAFT, exactly as before. The auto-publish path passes
+   * this to make the article PUBLISHED atomically at creation. */
+  readonly publish?: { readonly status: 'PUBLISHED'; readonly publishedAt: Date } | null;
 }
 
 export interface NewsInboxRepository {
@@ -140,6 +146,19 @@ export interface NewsInboxRepository {
     discoveredAt: Date,
   ): Promise<CandidateUpsertResult>;
   listCandidates(query: NewsCandidateListQuery): Promise<CandidatePage>;
+  /** M42B: bounded candidate pool for the auto-publish pass and its dry-run
+   * preview. Pre-filters at the DB level only on the *structural* source
+   * facts that never depend on the trust decision being evaluated
+   * (status=ACTIVE, contentType=ARTICLE, kind!=MANUAL_ONLY) and
+   * candidate.status=NEW. Deliberately does NOT filter on
+   * `autoPublishArticles` here -- the preview CLI must be able to show
+   * "how many candidates would be eligible if this source were trusted"
+   * for a source that isn't flagged yet (ticket §R), so every remaining
+   * SOURCE/CANDIDATE rule (including `autoPublishArticles` itself) is
+   * evaluated per-row by `evaluateAutoPublishEligibility` in application
+   * code -- for both preview (show all, with reasons) and the real run
+   * (keep only the eligible ones). */
+  listAutoPublishCandidatePool(limit: number): Promise<readonly AutoPublishCandidateRecord[]>;
   findCandidate(id: string): Promise<NewsCandidateRecord | null>;
   createManualCandidate(
     input: ManualCandidateCreateInput,
@@ -166,6 +185,12 @@ export interface NewsInboxRepository {
     actor: AdministrativePrincipal,
     requestId: string | null,
     now: Date,
+    /** M42B: `'NEWS_CANDIDATE_CONVERTED'` for the human editor path (the
+     * default, unchanged). Auto-publish passes `'NEWS_CANDIDATE_AUTO_PUBLISHED'`
+     * plus a reason so the audit trail never looks like a human converted
+     * the candidate. */
+    auditAction?: string,
+    auditReason?: string | null,
   ): Promise<{
     candidate: NewsCandidateRecord;
     article: Awaited<ReturnType<typeof createArticleInTransaction>>;
@@ -261,6 +286,9 @@ export class PrismaNewsInboxRepository implements NewsInboxRepository {
           ...(input.allowsDescriptionUse === undefined
             ? {}
             : { allowsDescriptionUse: input.allowsDescriptionUse }),
+          ...(input.autoPublishArticles === undefined
+            ? {}
+            : { autoPublishArticles: input.autoPublishArticles }),
           ...(input.reliabilityWeight === undefined
             ? {}
             : { reliabilityWeight: input.reliabilityWeight }),
@@ -591,6 +619,18 @@ export class PrismaNewsInboxRepository implements NewsInboxRepository {
     });
   }
 
+  listAutoPublishCandidatePool(limit: number): Promise<readonly AutoPublishCandidateRecord[]> {
+    return this.prisma.newsCandidate.findMany({
+      where: {
+        status: 'NEW',
+        source: { status: 'ACTIVE', contentType: 'ARTICLE', kind: { not: 'MANUAL_ONLY' } },
+      },
+      orderBy: [{ sourcePublishedAt: 'asc' }, { id: 'asc' }],
+      take: limit,
+      include: autoPublishCandidateInclude,
+    });
+  }
+
   async listCandidates(query: NewsCandidateListQuery): Promise<CandidatePage> {
     const candidates = await this.prisma.newsCandidate.findMany({
       where: {
@@ -733,6 +773,8 @@ export class PrismaNewsInboxRepository implements NewsInboxRepository {
     actor: AdministrativePrincipal,
     requestId: string | null,
     now: Date,
+    auditAction = 'NEWS_CANDIDATE_CONVERTED',
+    auditReason: string | null = null,
   ): Promise<{
     candidate: NewsCandidateRecord;
     article: Awaited<ReturnType<typeof createArticleInTransaction>>;
@@ -761,6 +803,7 @@ export class PrismaNewsInboxRepository implements NewsInboxRepository {
         actor,
         write.changeSummary,
         requestId,
+        write.publish ?? null,
       );
       const updated = await transaction.newsCandidate.updateMany({
         where: { id, status: before.status, convertedArticleId: null },
@@ -782,11 +825,12 @@ export class PrismaNewsInboxRepository implements NewsInboxRepository {
         transaction,
         actor,
         requestId,
-        'NEWS_CANDIDATE_CONVERTED',
+        auditAction,
         'NEWS_CANDIDATE',
         id,
         compactCandidate(before),
         { ...compactCandidate(candidate), articleId: article.id },
+        auditReason,
       );
       return { candidate, article };
     });
@@ -830,6 +874,7 @@ function compactSource(source: NewsSourceRecord): Prisma.InputJsonObject {
     isOfficialLeague: source.isOfficialLeague,
     isOfficialTeam: source.isOfficialTeam,
     allowsDescriptionUse: source.allowsDescriptionUse,
+    autoPublishArticles: source.autoPublishArticles,
     hasFeedUrl: source.feedUrl !== null,
   });
 }

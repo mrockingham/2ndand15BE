@@ -8,7 +8,7 @@ import { createPrismaClient } from '../../src/common/database/prisma.js';
 import { JwtAccessTokenService } from '../../src/common/security/access-token.js';
 import { CryptoOpaqueTokenService } from '../../src/common/security/opaque-token.js';
 import { Argon2idPasswordHasher } from '../../src/common/security/password-hasher.js';
-import { loadDatabaseConfig } from '../../src/config/env.js';
+import { resolveTestDatabaseUrl } from '../helpers/test-database.js';
 import type { PrismaClient } from '../../src/generated/prisma/client.js';
 import { PrismaAuthRepository } from '../../src/modules/auth/auth.repository.js';
 import { AuthService } from '../../src/modules/auth/auth.service.js';
@@ -21,7 +21,7 @@ describe.skipIf(!databaseTestsEnabled)('authentication database integration', ()
   const createdUserIds = new Set<string>();
 
   beforeAll(() => {
-    prisma = createPrismaClient(loadDatabaseConfig().databaseUrl);
+    prisma = createPrismaClient(resolveTestDatabaseUrl());
   });
 
   afterAll(async () => {
