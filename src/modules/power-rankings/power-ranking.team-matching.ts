@@ -95,7 +95,7 @@ export function matchImportEntryToTeam(
       `conference "${entry.conference}" does not match Team ${matchedTeam.id} ("${matchedTeam.conference}")`,
     );
   }
-  if (matchedTeam.division.toUpperCase() !== entry.division.toUpperCase()) {
+  if (matchedTeam.division.toUpperCase() !== normalizeDivision(entry.division).toUpperCase()) {
     mismatches.push(
       `division "${entry.division}" does not match Team ${matchedTeam.id} ("${matchedTeam.division}")`,
     );
@@ -117,4 +117,12 @@ export function matchImportEntryToTeam(
   }
 
   return { rank: entry.rank, teamId: entry.teamId, matchedTeam, matchedBy };
+}
+
+/** Team.division is stored bare ("West"), but editorially-authored import
+ * JSON reasonably writes it conference-prefixed ("NFC West") for human
+ * readability -- strip a leading "AFC "/"NFC " token before comparing so
+ * that's treated as the same value, not a genuine identity mismatch. */
+function normalizeDivision(value: string): string {
+  return value.replace(/^(AFC|NFC)\s+/i, '').trim();
 }
