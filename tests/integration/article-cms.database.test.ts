@@ -27,6 +27,7 @@ describe.skipIf(!databaseTestsEnabled)('editorial CMS database and HTTP integrat
   let prisma: PrismaClient | undefined;
   const userIds = new Set<string>();
   const articleIds = new Set<string>();
+  const candidateIds = new Set<string>();
   const auditPrefix = `article-cms-${randomUUID()}`;
 
   beforeAll(() => {
@@ -35,6 +36,16 @@ describe.skipIf(!databaseTestsEnabled)('editorial CMS database and HTTP integrat
 
   afterAll(async () => {
     const client = requirePrisma(prisma);
+    if (candidateIds.size > 0) {
+      // In case a test failed before it could release these itself: null out
+      // the FK/status pair together to satisfy news_candidates_conversion_check
+      // before deleting, same as the delete path under test does.
+      await client.newsCandidate.updateMany({
+        where: { id: { in: [...candidateIds] } },
+        data: { status: 'NEW', convertedArticleId: null },
+      });
+      await client.newsCandidate.deleteMany({ where: { id: { in: [...candidateIds] } } });
+    }
     if (articleIds.size > 0) {
       await client.article.deleteMany({ where: { id: { in: [...articleIds] } } });
     }
@@ -217,6 +228,136 @@ describe.skipIf(!databaseTestsEnabled)('editorial CMS database and HTTP integrat
         },
       }),
     ).rejects.toBeDefined();
+  }, 30_000);
+
+  it('permanently deletes an article: ADMIN-only, 404 on unknown id, revisions gone, unrelated article untouched, candidate relation safely released, public API no longer serves it', async () => {
+    const client = requirePrisma(prisma);
+    const config = loadConfig();
+    const accessTokens = new JwtAccessTokenService({
+      secret: config.auth.accessTokenSecret,
+      expiresInSeconds: config.auth.accessTokenTtlSeconds,
+    });
+    const repository = new PrismaArticleRepository(client);
+    const service = new ArticleService(repository);
+    const identities = new PrismaAdminRepository(client);
+    const app = createApp({
+      config,
+      logger: pino({ level: 'silent' }),
+      teamReader: new TeamService(new PrismaTeamRepository(client)),
+      gameReader: new GameService(new PrismaGameRepository(client, 'none'), () => new Date(), {
+        currentNflSeason: 2099,
+        allowHistoricalDefaultGameResults: false,
+      }),
+      authService: createTestAuthService(),
+      userService: createTestUserService(),
+      accessTokens,
+      adminIdentities: identities,
+      articleReader: service,
+      editorialArticleService: service,
+    });
+    const editor = await createUser(client, 'EDITOR', userIds);
+    const admin = await createUser(client, 'ADMIN', userIds);
+    const editorToken = await accessTokens.sign({ userId: editor.id, sessionId: randomUUID() });
+    const adminToken = await accessTokens.sign({ userId: admin.id, sessionId: randomUUID() });
+    const team = await client.team.findFirstOrThrow({
+      where: { isActive: true },
+      orderBy: { id: 'asc' },
+    });
+
+    // The article to be deleted: published, with a NewsCandidate that has
+    // been fully converted onto it (nullable, optional relation -- exactly
+    // the shape that blocks deletion at the DB level via
+    // NewsCandidate.convertedArticleId's onDelete: Restrict and the
+    // news_candidates_conversion_check CHECK constraint unless the delete
+    // path handles it).
+    const targetSlug = `fictional-delete-target-${randomUUID()}`;
+    const target = await request(app)
+      .post('/api/v1/admin/articles')
+      .set('authorization', `Bearer ${editorToken}`)
+      .set('x-request-id', `${auditPrefix}-delete-target-create`)
+      .send(createBody(targetSlug, team.id))
+      .expect(201);
+    const targetId = (target.body as { data: { id: string } }).data.id;
+    articleIds.add(targetId);
+    await request(app)
+      .post(`/api/v1/admin/articles/${targetId}/publish`)
+      .set('authorization', `Bearer ${editorToken}`)
+      .send({ expectedVersion: 1 })
+      .expect(200);
+
+    const candidate = await client.newsCandidate.create({
+      data: {
+        sourceId: null,
+        sourceNameSnapshot: 'M42B Fictional Publisher',
+        canonicalUrl: `https://news.example.com/story/${randomUUID()}`,
+        canonicalUrlHash: randomUUID(),
+        headline: 'A fictional headline already converted onto the delete target',
+        discoveredAt: new Date(),
+        status: 'CONVERTED',
+        convertedArticleId: targetId,
+      },
+    });
+    candidateIds.add(candidate.id);
+
+    // An unrelated article + its own revisions must be untouched by deleting
+    // the target.
+    const unrelatedSlug = `fictional-delete-unrelated-${randomUUID()}`;
+    const unrelated = await request(app)
+      .post('/api/v1/admin/articles')
+      .set('authorization', `Bearer ${editorToken}`)
+      .set('x-request-id', `${auditPrefix}-delete-unrelated-create`)
+      .send(createBody(unrelatedSlug, team.id))
+      .expect(201);
+    const unrelatedId = (unrelated.body as { data: { id: string } }).data.id;
+    articleIds.add(unrelatedId);
+
+    // EDITOR is forbidden from permanent delete -- ADMIN only.
+    await request(app)
+      .delete(`/api/v1/admin/articles/${targetId}`)
+      .set('authorization', `Bearer ${editorToken}`)
+      .expect(403);
+
+    // Unknown id 404s cleanly.
+    await request(app)
+      .delete('/api/v1/admin/articles/00000000-0000-4000-8000-000000000999')
+      .set('authorization', `Bearer ${adminToken}`)
+      .expect(404);
+
+    await request(app)
+      .delete(`/api/v1/admin/articles/${targetId}`)
+      .set('authorization', `Bearer ${adminToken}`)
+      .set('x-request-id', `${auditPrefix}-delete`)
+      .expect(204);
+
+    // Idempotent-safe from the UI's perspective: deleting again 404s rather
+    // than erroring.
+    await request(app)
+      .delete(`/api/v1/admin/articles/${targetId}`)
+      .set('authorization', `Bearer ${adminToken}`)
+      .expect(404);
+
+    expect(await client.article.findUnique({ where: { id: targetId } })).toBeNull();
+    expect(await client.articleRevision.count({ where: { articleId: targetId } })).toBe(0);
+    await request(app).get(`/api/v1/articles/${targetSlug}`).expect(404);
+
+    const releasedCandidate = await client.newsCandidate.findUniqueOrThrow({
+      where: { id: candidate.id },
+    });
+    expect(releasedCandidate.status).toBe('NEW');
+    expect(releasedCandidate.convertedArticleId).toBeNull();
+
+    const audit = await client.adminAuditEvent.findFirst({
+      where: { entityType: 'ARTICLE', entityId: targetId, action: 'ARTICLE_DELETED' },
+    });
+    expect(audit).toMatchObject({ actorUserId: admin.id, actorEmailSnapshot: admin.email });
+    expect(JSON.stringify(audit?.beforeSnapshot)).toContain('bodySha256');
+
+    const stillThere = await client.article.findUniqueOrThrow({ where: { id: unrelatedId } });
+    expect(stillThere.status).toBe('DRAFT');
+    await request(app)
+      .get(`/api/v1/admin/articles/${unrelatedId}`)
+      .set('authorization', `Bearer ${editorToken}`)
+      .expect(200);
   }, 30_000);
 });
 

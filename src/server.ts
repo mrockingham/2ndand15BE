@@ -81,6 +81,8 @@ import { PredictionService } from './modules/ai-hub/prediction.service.js';
 import { AiHubWeeklyInsightsService } from './modules/ai-hub/weekly-insights.service.js';
 import { PrismaStandingsRepository } from './modules/standings/standings.repository.js';
 import { StandingsService } from './modules/standings/standings.service.js';
+import { PrismaPowerRankingRepository } from './modules/power-rankings/power-ranking.repository.js';
+import { PowerRankingService } from './modules/power-rankings/power-ranking.service.js';
 import {
   OpenAiPredictionExplainer,
   UnconfiguredPredictionExplainer,
@@ -242,6 +244,7 @@ const weeklyInsightsService = new AiHubWeeklyInsightsService(predictionRepositor
 const playerReader = new PlayerService(new PrismaPlayerRepository(prisma));
 const statsHubReader = new StatsHubService(new PrismaStatsHubRepository(prisma));
 const standingsReader = new StandingsService(new PrismaStandingsRepository(prisma));
+const powerRankingsService = new PowerRankingService(new PrismaPowerRankingRepository(prisma));
 const publicGameSource = resolvePublicGameDataSource(config.sports);
 const gameReader = new GameService(
   new PrismaGameRepository(prisma, publicGameSource),
@@ -335,6 +338,7 @@ const app = createApp({
   playerReader,
   statsHubReader,
   standingsReader,
+  powerRankingsService,
   teamHubReader,
   teamHomepageService,
   predictionService,

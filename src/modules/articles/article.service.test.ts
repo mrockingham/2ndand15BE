@@ -83,6 +83,26 @@ describe('article service', () => {
     ).rejects.toMatchObject({ code: 'ARTICLE_ARCHIVED' });
   });
 
+  it('deletes an article and rejects an unknown id with a 404', async () => {
+    const repository = repositoryMock({ delete: vi.fn().mockResolvedValue(true) });
+    const service = new ArticleService(repository);
+    await service.deleteArticle('00000000-0000-4000-8000-000000000900', editor, 'req-delete');
+    expect(vi.mocked(repository.delete)).toHaveBeenCalledWith(
+      '00000000-0000-4000-8000-000000000900',
+      editor,
+      'req-delete',
+    );
+
+    const missing = repositoryMock({ delete: vi.fn().mockResolvedValue(false) });
+    await expect(
+      new ArticleService(missing).deleteArticle(
+        '00000000-0000-4000-8000-000000000901',
+        editor,
+        null,
+      ),
+    ).rejects.toMatchObject({ statusCode: 404 });
+  });
+
   it('sorts featured articles by priority and keeps bodies out of list DTOs', async () => {
     const low = articleRecord({
       id: '00000000-0000-4000-8000-000000000201',
@@ -137,6 +157,7 @@ function repositoryMock(overrides: Partial<ArticleRepository> = {}): ArticleRepo
     mutate: vi.fn().mockResolvedValue(articleRecord()),
     listRevisions: vi.fn().mockResolvedValue({ revisions: [], nextCursor: null }),
     findRevision: vi.fn().mockResolvedValue(null),
+    delete: vi.fn().mockResolvedValue(true),
     ...overrides,
   };
 }

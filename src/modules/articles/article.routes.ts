@@ -53,5 +53,6 @@ export function createAdminArticleRouter(options: {
     require('VIEW_EDITORIAL_AUDIT'),
     controller.revision,
   );
+  router.delete('/:articleId', require('DELETE_ARTICLE'), controller.delete);
   return router;
 }

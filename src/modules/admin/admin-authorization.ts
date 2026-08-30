@@ -19,6 +19,7 @@ export type AdministrativeCapability =
   | 'PUBLISH_ARTICLE'
   | 'FEATURE_ARTICLE'
   | 'ARCHIVE_ARTICLE'
+  | 'DELETE_ARTICLE'
   | 'VIEW_EDITORIAL_AUDIT'
   | 'VIEW_NEWS_SOURCES'
   | 'MANAGE_NEWS_SOURCES'
@@ -36,7 +37,9 @@ export type AdministrativeCapability =
   | 'VIEW_HOMEPAGE_CMS'
   | 'MANAGE_HOMEPAGE_CMS'
   | 'VIEW_CONTACT_MESSAGES'
-  | 'MANAGE_CONTACT_MESSAGES';
+  | 'MANAGE_CONTACT_MESSAGES'
+  | 'VIEW_POWER_RANKINGS'
+  | 'MANAGE_POWER_RANKINGS';
 
 export interface AdministrativePrincipal {
   readonly userId: string;
@@ -74,6 +77,8 @@ const capabilitiesByRole: Readonly<Record<UserRole, ReadonlySet<AdministrativeCa
     'VIEW_HOMEPAGE_CMS',
     'MANAGE_HOMEPAGE_CMS',
     'VIEW_CONTACT_MESSAGES',
+    'VIEW_POWER_RANKINGS',
+    'MANAGE_POWER_RANKINGS',
   ]),
   ADMIN: new Set([
     'VIEW_SCHEDULE',
@@ -90,6 +95,7 @@ const capabilitiesByRole: Readonly<Record<UserRole, ReadonlySet<AdministrativeCa
     'PUBLISH_ARTICLE',
     'FEATURE_ARTICLE',
     'ARCHIVE_ARTICLE',
+    'DELETE_ARTICLE',
     'VIEW_EDITORIAL_AUDIT',
     'VIEW_NEWS_SOURCES',
     'MANAGE_NEWS_SOURCES',
@@ -108,6 +114,8 @@ const capabilitiesByRole: Readonly<Record<UserRole, ReadonlySet<AdministrativeCa
     'MANAGE_HOMEPAGE_CMS',
     'VIEW_CONTACT_MESSAGES',
     'MANAGE_CONTACT_MESSAGES',
+    'VIEW_POWER_RANKINGS',
+    'MANAGE_POWER_RANKINGS',
   ]),
 };
 

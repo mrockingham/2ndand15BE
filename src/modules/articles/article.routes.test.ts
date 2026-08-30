@@ -96,6 +96,7 @@ function harness(role: UserRole) {
     restore: vi.fn().mockResolvedValue(detail),
     listRevisions: vi.fn().mockResolvedValue({ revisions: [], nextCursor: null }),
     getRevision: vi.fn().mockResolvedValue({}),
+    deleteArticle: vi.fn().mockResolvedValue(undefined),
   };
   const reader: PublicArticleReader = {
     list: vi.fn().mockResolvedValue({ articles: [], nextCursor: null }),
