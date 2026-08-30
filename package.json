@@ -54,6 +54,7 @@
     "news:ingest": "tsx src/commands/news-ingest.ts",
     "news:ingest:production": "node dist/commands/news-ingest.js",
     "news:auto-publish:preview": "tsx src/commands/news-auto-publish-preview.ts",
+    "power-rankings:import": "tsx src/commands/power-rankings-import.ts",
     "predictions": "tsx src/commands/predictions.ts",
     "historical:download": "tsx src/commands/historical-download.ts",
     "historical:review": "tsx src/commands/historical-review.ts",

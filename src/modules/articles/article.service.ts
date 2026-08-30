@@ -118,6 +118,11 @@ export interface EditorialArticleService {
     readonly nextCursor: string | null;
   }>;
   getRevision(id: string, revisionId: string): Promise<ReturnType<typeof toRevisionDto>>;
+  deleteArticle(
+    id: string,
+    principal: AdministrativePrincipal,
+    requestId: string | null,
+  ): Promise<void>;
 }
 
 export class ArticleService implements PublicArticleReader, EditorialArticleService {
@@ -383,6 +388,15 @@ export class ArticleService implements PublicArticleReader, EditorialArticleServ
       });
     }
     return toRevisionDto(revision);
+  }
+
+  async deleteArticle(
+    id: string,
+    principal: AdministrativePrincipal,
+    requestId: string | null,
+  ): Promise<void> {
+    const deleted = await this.repository.delete(id, principal, requestId);
+    if (!deleted) throw articleNotFound();
   }
 
   private async listPublic(

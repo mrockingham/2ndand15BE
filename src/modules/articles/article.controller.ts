@@ -108,6 +108,11 @@ export function createAdminArticleController(service: EditorialArticleService) {
       );
       response.status(200).json({ data: await service.getRevision(articleId, revisionId) });
     }),
+    delete: handler(async (request, response) => {
+      const { articleId } = parse(articleIdParamsSchema, request.params, 'path parameters');
+      await service.deleteArticle(articleId, principal(request), requestId(request));
+      response.status(204).send();
+    }),
   };
 
   function statusHandler(

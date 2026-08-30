@@ -72,6 +72,11 @@ import {
 import type { ContactServiceContract } from '../modules/contact/contact.service.js';
 import { createStandingsRouter } from '../modules/standings/standings.routes.js';
 import type { StandingsReader } from '../modules/standings/standings.service.js';
+import {
+  createAdminPowerRankingRouter,
+  createPublicPowerRankingRouter,
+} from '../modules/power-rankings/power-ranking.routes.js';
+import type { PowerRankingsService } from '../modules/power-rankings/power-ranking.service.js';
 
 export interface ApiRouterOptions {
   readonly rateLimit: AppConfig['rateLimit'];
@@ -105,6 +110,7 @@ export interface ApiRouterOptions {
   readonly contactService?: ContactServiceContract;
   readonly contactRateLimit?: AppConfig['contact']['rateLimit'];
   readonly standingsReader?: StandingsReader;
+  readonly powerRankingsService?: PowerRankingsService;
 }
 
 export function createApiRouter(options: ApiRouterOptions): Router {
@@ -190,6 +196,16 @@ export function createApiRouter(options: ApiRouterOptions): Router {
       }),
     );
   }
+  if (options.powerRankingsService !== undefined && options.adminIdentities !== undefined) {
+    router.use(
+      '/admin/power-rankings',
+      createAdminPowerRankingRouter({
+        authenticate: options.authenticate,
+        identities: options.adminIdentities,
+        service: options.powerRankingsService,
+      }),
+    );
+  }
   if (options.dataHealthService !== undefined && options.adminIdentities !== undefined) {
     router.use(
       '/admin/data-health',
@@ -260,6 +276,8 @@ export function createApiRouter(options: ApiRouterOptions): Router {
     router.use('/stats', createStatsHubRouter(options.statsHubReader));
   if (options.standingsReader !== undefined)
     router.use('/standings', createStandingsRouter(options.standingsReader));
+  if (options.powerRankingsService !== undefined)
+    router.use('/power-rankings', createPublicPowerRankingRouter(options.powerRankingsService));
   if (options.gameStatsReader !== undefined)
     router.use('/games', createGameStatsRouter(options.gameStatsReader));
   if (options.gamePlayReader !== undefined)

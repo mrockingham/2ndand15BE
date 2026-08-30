@@ -12,9 +12,11 @@ describe('administrative capabilities', () => {
     expect(roleHasCapability('EDITOR', 'CREATE_ARTICLE')).toBe(true);
     expect(roleHasCapability('EDITOR', 'PUBLISH_ARTICLE')).toBe(true);
     expect(roleHasCapability('EDITOR', 'ARCHIVE_ARTICLE')).toBe(false);
+    expect(roleHasCapability('EDITOR', 'DELETE_ARTICLE')).toBe(false);
     expect(roleHasCapability('ADMIN', 'REMOVE_OVERRIDE')).toBe(true);
     expect(roleHasCapability('ADMIN', 'MANAGE_ROLES')).toBe(true);
     expect(roleHasCapability('ADMIN', 'ARCHIVE_ARTICLE')).toBe(true);
+    expect(roleHasCapability('ADMIN', 'DELETE_ARTICLE')).toBe(true);
   });
 
   it('M32: grants game-media viewing to editors, but write actions to admins only', () => {

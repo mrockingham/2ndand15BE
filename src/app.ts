@@ -39,6 +39,7 @@ import type { PredictionService } from './modules/ai-hub/prediction.service.js';
 import type { AiHubWeeklyInsightsService } from './modules/ai-hub/weekly-insights.service.js';
 import type { ContactServiceContract } from './modules/contact/contact.service.js';
 import type { StandingsReader } from './modules/standings/standings.service.js';
+import type { PowerRankingsService } from './modules/power-rankings/power-ranking.service.js';
 
 export interface CreateAppOptions {
   readonly config: AppConfig;
@@ -70,6 +71,7 @@ export interface CreateAppOptions {
   readonly weeklyInsightsService?: AiHubWeeklyInsightsService;
   readonly contactService?: ContactServiceContract;
   readonly standingsReader?: StandingsReader;
+  readonly powerRankingsService?: PowerRankingsService;
 }
 
 export function createApp(options: CreateAppOptions): Express {
@@ -135,6 +137,9 @@ export function createApp(options: CreateAppOptions): Express {
       ...(options.standingsReader === undefined
         ? {}
         : { standingsReader: options.standingsReader }),
+      ...(options.powerRankingsService === undefined
+        ? {}
+        : { powerRankingsService: options.powerRankingsService }),
       ...(options.teamHubReader === undefined ? {} : { teamHubReader: options.teamHubReader }),
       ...(options.teamHomepageService === undefined
         ? {}

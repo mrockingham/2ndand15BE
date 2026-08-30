@@ -88,6 +88,11 @@ export interface ArticleRepository {
   ): Promise<ArticleRecord | null>;
   listRevisions(articleId: string, query: RevisionListQuery): Promise<RevisionPage>;
   findRevision(articleId: string, revisionId: string): Promise<ArticleRevisionRecord | null>;
+  delete(
+    id: string,
+    principal: AdministrativePrincipal,
+    requestId: string | null,
+  ): Promise<boolean>;
 }
 
 export class PrismaArticleRepository implements ArticleRepository {
@@ -253,6 +258,54 @@ export class PrismaArticleRepository implements ArticleRepository {
         after,
       );
       return after;
+    });
+  }
+
+  async delete(
+    id: string,
+    principal: AdministrativePrincipal,
+    requestId: string | null,
+  ): Promise<boolean> {
+    return this.prisma.$transaction(async (transaction) => {
+      const article = await transaction.article.findUnique({
+        where: { id },
+        include: articleInclude,
+      });
+      if (article === null) return false;
+      // Permanent deletion is terminal -- unlike `mutate`, there's no
+      // optimistic-concurrency check here (no "after" state a concurrent
+      // editor could clobber). A second delete of the same id simply finds
+      // nothing and returns false, which the service maps to 404 -- callers
+      // can safely retry a delete without special-casing "already gone".
+      //
+      // NewsCandidate.convertedArticleId has onDelete: Restrict, and the DB's
+      // news_candidates_conversion_check requires status and
+      // convertedArticleId to agree (CONVERTED iff non-null) -- both must be
+      // reset together, in this same transaction, before the Article row can
+      // be removed. The candidate goes back to NEW: its converted article no
+      // longer exists, so it's legitimately available for review again.
+      await transaction.newsCandidate.updateMany({
+        where: { convertedArticleId: id },
+        data: { status: 'NEW', convertedArticleId: null },
+      });
+      // ArticleRevision already cascades on Article delete at the DB level;
+      // deleting explicitly first keeps the transaction's intent legible and
+      // matches this module's other dependent-row cleanup (e.g. `mutate`'s
+      // articleTeam handling above).
+      await transaction.articleRevision.deleteMany({ where: { articleId: id } });
+      await transaction.article.delete({ where: { id } });
+      await transaction.adminAuditEvent.create({
+        data: {
+          actorUserId: principal.userId,
+          actorEmailSnapshot: principal.email,
+          action: 'ARTICLE_DELETED',
+          entityType: 'ARTICLE',
+          entityId: id,
+          requestId,
+          beforeSnapshot: compactAuditSnapshot(article),
+        },
+      });
+      return true;
     });
   }
 

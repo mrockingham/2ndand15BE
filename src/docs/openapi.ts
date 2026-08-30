@@ -107,6 +107,20 @@ const articleIdParameter = {
   schema: { type: 'string', format: 'uuid' },
 } as const;
 
+const powerRankingEditionIdParameter = {
+  name: 'editionId',
+  in: 'path',
+  required: true,
+  schema: { type: 'string', format: 'uuid' },
+} as const;
+
+const powerRankingEntryIdParameter = {
+  name: 'entryId',
+  in: 'path',
+  required: true,
+  schema: { type: 'string', format: 'uuid' },
+} as const;
+
 const teamHomepageTeamIdParameter = {
   name: 'teamId',
   in: 'path',
@@ -869,6 +883,19 @@ export const openApiDocument = {
           '409': { $ref: '#/components/responses/ConflictError' },
         },
       },
+      delete: {
+        operationId: 'deleteArticle',
+        summary: 'Permanently delete an article (admin only)',
+        tags: ['Editorial CMS'],
+        security: [{ bearerAuth: [] }],
+        parameters: [articleIdParameter],
+        responses: {
+          '204': { description: 'The article and its revisions were permanently deleted.' },
+          '401': { $ref: '#/components/responses/UnauthorizedError' },
+          '403': { $ref: '#/components/responses/ForbiddenError' },
+          '404': { $ref: '#/components/responses/NotFoundError' },
+        },
+      },
     },
     '/admin/articles/{articleId}/teams': {
       put: {
@@ -976,6 +1003,281 @@ export const openApiDocument = {
             content: {
               'application/json': {
                 schema: { $ref: '#/components/schemas/ArticleRevisionResponse' },
+              },
+            },
+          },
+          '401': { $ref: '#/components/responses/UnauthorizedError' },
+          '403': { $ref: '#/components/responses/ForbiddenError' },
+          '404': { $ref: '#/components/responses/NotFoundError' },
+        },
+      },
+    },
+    '/admin/power-rankings': {
+      get: {
+        operationId: 'listAdminPowerRankingEditions',
+        summary: 'List power ranking editions (any status)',
+        tags: ['Power Rankings Admin'],
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          { name: 'limit', in: 'query', schema: { type: 'integer', minimum: 1, maximum: 100 } },
+          { name: 'cursor', in: 'query', schema: { type: 'string', format: 'uuid' } },
+          {
+            name: 'status',
+            in: 'query',
+            schema: { type: 'string', enum: ['DRAFT', 'PUBLISHED', 'ARCHIVED'] },
+          },
+          {
+            name: 'season',
+            in: 'query',
+            schema: { type: 'integer', minimum: 2000, maximum: 2100 },
+          },
+        ],
+        responses: {
+          '200': {
+            description: 'Editions, most recent season first.',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/AdminPowerRankingEditionListResponse' },
+              },
+            },
+          },
+          '401': { $ref: '#/components/responses/UnauthorizedError' },
+          '403': { $ref: '#/components/responses/ForbiddenError' },
+        },
+      },
+      post: {
+        operationId: 'createPowerRankingEdition',
+        summary: 'Create a power ranking edition (metadata only, no entries)',
+        tags: ['Power Rankings Admin'],
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: { $ref: '#/components/schemas/PowerRankingEditionCreateRequest' },
+            },
+          },
+        },
+        responses: {
+          '201': {
+            description: 'Created edition (DRAFT, no entries yet).',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/AdminPowerRankingEditionDetailResponse' },
+              },
+            },
+          },
+          '400': { $ref: '#/components/responses/ValidationError' },
+          '401': { $ref: '#/components/responses/UnauthorizedError' },
+          '403': { $ref: '#/components/responses/ForbiddenError' },
+        },
+      },
+    },
+    '/admin/power-rankings/import': {
+      post: {
+        operationId: 'importPowerRankings',
+        summary: 'Preview or upsert a batch power rankings JSON document',
+        tags: ['Power Rankings Admin'],
+        security: [{ bearerAuth: [] }],
+        description:
+          'PREVIEW validates the whole document (ranks, team matching, cross-checks against canonical Team rows) and writes nothing. UPSERT applies it transactionally -- either the whole edition and all entries are written, or nothing is (a single invalid entry rejects the entire import). teamId values in the document are treated as import-time slugs/identifiers, never assumed to be Team UUIDs; Team itself is never written to.',
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: { $ref: '#/components/schemas/PowerRankingImportRequest' },
+            },
+          },
+        },
+        responses: {
+          '200': {
+            description: 'PREVIEW: a validation report. UPSERT: the resulting edition detail.',
+            content: {
+              'application/json': {
+                schema: {
+                  oneOf: [
+                    { $ref: '#/components/schemas/PowerRankingImportPreviewResponse' },
+                    { $ref: '#/components/schemas/PowerRankingImportUpsertResponse' },
+                  ],
+                },
+              },
+            },
+          },
+          '400': { $ref: '#/components/responses/ValidationError' },
+          '401': { $ref: '#/components/responses/UnauthorizedError' },
+          '403': { $ref: '#/components/responses/ForbiddenError' },
+          '422': {
+            description:
+              'The import document failed validation (UPSERT only); no changes were written.',
+            content: {
+              'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } },
+            },
+          },
+        },
+      },
+    },
+    '/admin/power-rankings/{editionId}': {
+      get: {
+        operationId: 'getAdminPowerRankingEdition',
+        summary: 'Get one power ranking edition with all entries',
+        tags: ['Power Rankings Admin'],
+        security: [{ bearerAuth: [] }],
+        parameters: [powerRankingEditionIdParameter],
+        responses: {
+          '200': {
+            description: 'Edition detail with entries.',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/AdminPowerRankingEditionDetailResponse' },
+              },
+            },
+          },
+          '401': { $ref: '#/components/responses/UnauthorizedError' },
+          '403': { $ref: '#/components/responses/ForbiddenError' },
+          '404': { $ref: '#/components/responses/NotFoundError' },
+        },
+      },
+      patch: {
+        operationId: 'updatePowerRankingEdition',
+        summary: 'Edit edition metadata (title, subtitle, asOf, methodology, sources)',
+        tags: ['Power Rankings Admin'],
+        security: [{ bearerAuth: [] }],
+        parameters: [powerRankingEditionIdParameter],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: { $ref: '#/components/schemas/PowerRankingEditionUpdateRequest' },
+            },
+          },
+        },
+        responses: {
+          '200': {
+            description: 'Updated edition.',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/AdminPowerRankingEditionDetailResponse' },
+              },
+            },
+          },
+          '400': { $ref: '#/components/responses/ValidationError' },
+          '401': { $ref: '#/components/responses/UnauthorizedError' },
+          '403': { $ref: '#/components/responses/ForbiddenError' },
+          '404': { $ref: '#/components/responses/NotFoundError' },
+        },
+      },
+    },
+    '/admin/power-rankings/{editionId}/entries/{entryId}': {
+      patch: {
+        operationId: 'updatePowerRankingEntry',
+        summary: 'Edit one team’s entry (content fields and/or rank)',
+        tags: ['Power Rankings Admin'],
+        security: [{ bearerAuth: [] }],
+        description:
+          'Changing rank triggers a safe transactional reorder of every entry between the old and new rank -- ranks stay unique and contiguous 1..32. movement is always derived from (previousRank - rank) server-side and can never be set directly.',
+        parameters: [powerRankingEditionIdParameter, powerRankingEntryIdParameter],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: { $ref: '#/components/schemas/PowerRankingEntryUpdateRequest' },
+            },
+          },
+        },
+        responses: {
+          '200': {
+            description: 'Updated edition (all entries, reflecting any reorder).',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/AdminPowerRankingEditionDetailResponse' },
+              },
+            },
+          },
+          '400': { $ref: '#/components/responses/ValidationError' },
+          '401': { $ref: '#/components/responses/UnauthorizedError' },
+          '403': { $ref: '#/components/responses/ForbiddenError' },
+          '404': { $ref: '#/components/responses/NotFoundError' },
+        },
+      },
+    },
+    '/admin/power-rankings/{editionId}/entries/reorder': {
+      post: {
+        operationId: 'reorderPowerRankingEntries',
+        summary: 'Reorder an edition’s entries by supplying the full new rank order',
+        tags: ['Power Rankings Admin'],
+        security: [{ bearerAuth: [] }],
+        parameters: [powerRankingEditionIdParameter],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: { $ref: '#/components/schemas/PowerRankingReorderRequest' },
+            },
+          },
+        },
+        responses: {
+          '200': {
+            description: 'Reordered edition.',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/AdminPowerRankingEditionDetailResponse' },
+              },
+            },
+          },
+          '400': { $ref: '#/components/responses/ValidationError' },
+          '401': { $ref: '#/components/responses/UnauthorizedError' },
+          '403': { $ref: '#/components/responses/ForbiddenError' },
+          '404': { $ref: '#/components/responses/NotFoundError' },
+          '422': {
+            description: 'orderedEntryIds was not exactly this edition’s current entry ids.',
+            content: {
+              'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } },
+            },
+          },
+        },
+      },
+    },
+    '/admin/power-rankings/{editionId}/publish': {
+      post: {
+        operationId: 'publishPowerRankingEdition',
+        summary: 'Publish an edition (requires exactly 32 unique active NFL teams)',
+        tags: ['Power Rankings Admin'],
+        security: [{ bearerAuth: [] }],
+        parameters: [powerRankingEditionIdParameter],
+        responses: {
+          '200': {
+            description: 'Published edition.',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/AdminPowerRankingEditionDetailResponse' },
+              },
+            },
+          },
+          '401': { $ref: '#/components/responses/UnauthorizedError' },
+          '403': { $ref: '#/components/responses/ForbiddenError' },
+          '404': { $ref: '#/components/responses/NotFoundError' },
+          '422': {
+            description: 'Not exactly 32 unique active NFL team entries.',
+            content: {
+              'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } },
+            },
+          },
+        },
+      },
+    },
+    '/admin/power-rankings/{editionId}/unpublish': {
+      post: {
+        operationId: 'unpublishPowerRankingEdition',
+        summary: 'Unpublish an edition (returns it to DRAFT)',
+        tags: ['Power Rankings Admin'],
+        security: [{ bearerAuth: [] }],
+        parameters: [powerRankingEditionIdParameter],
+        responses: {
+          '200': {
+            description: 'Unpublished (DRAFT) edition.',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/AdminPowerRankingEditionDetailResponse' },
               },
             },
           },
@@ -2719,6 +3021,62 @@ export const openApiDocument = {
         },
       },
     },
+    '/power-rankings': {
+      get: {
+        operationId: 'getPowerRankings',
+        summary: 'Get 2nd & 15 editorial power rankings',
+        tags: ['Power Rankings'],
+        description:
+          'Independent editorial analysis by 2nd & 15 -- not an official NFL ranking. DB-only public read of the latest PUBLISHED edition by default, or a specific season+edition. Team identity (name, abbreviation, conference, division) is always read live from Team, never duplicated in stored ranking content.',
+        parameters: [
+          {
+            name: 'season',
+            in: 'query',
+            schema: { type: 'integer', minimum: 2000, maximum: 2100 },
+          },
+          { name: 'edition', in: 'query', schema: { type: 'string', maxLength: 64 } },
+        ],
+        responses: {
+          '200': {
+            description:
+              'The requested (or latest published) power ranking edition and its 32 entries.',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/PublicPowerRankingsResponse' },
+              },
+            },
+          },
+          '400': { $ref: '#/components/responses/ValidationError' },
+          '404': { $ref: '#/components/responses/NotFoundError' },
+          '429': { $ref: '#/components/responses/RateLimitError' },
+        },
+      },
+    },
+    '/power-rankings/editions': {
+      get: {
+        operationId: 'listPowerRankingEditions',
+        summary: 'List published power ranking editions for historical selection',
+        tags: ['Power Rankings'],
+        parameters: [
+          {
+            name: 'season',
+            in: 'query',
+            schema: { type: 'integer', minimum: 2000, maximum: 2100 },
+          },
+        ],
+        responses: {
+          '200': {
+            description: 'Published editions, most recent first.',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/PublicPowerRankingEditionsResponse' },
+              },
+            },
+          },
+          '429': { $ref: '#/components/responses/RateLimitError' },
+        },
+      },
+    },
     '/games': {
       get: {
         operationId: 'listGames',
@@ -4259,6 +4617,370 @@ export const openApiDocument = {
               },
               provider: { type: 'string' },
               updatedAt: { type: 'string', format: 'date-time' },
+            },
+          },
+        },
+      },
+      PowerRankingTeam: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id', 'name', 'fullName', 'abbreviation', 'conference', 'division'],
+        properties: {
+          id: { type: 'string', format: 'uuid' },
+          name: { type: 'string' },
+          fullName: { type: 'string' },
+          abbreviation: { type: 'string' },
+          conference: { type: 'string', enum: ['AFC', 'NFC'] },
+          division: { type: 'string', enum: ['East', 'North', 'South', 'West'] },
+        },
+      },
+      PowerRankingEntry: {
+        type: 'object',
+        additionalProperties: false,
+        required: [
+          'rank',
+          'previousRank',
+          'movement',
+          'tier',
+          'headline',
+          'summary',
+          'strengths',
+          'concerns',
+          'team',
+        ],
+        properties: {
+          rank: { type: 'integer', minimum: 1, maximum: 32 },
+          previousRank: { type: ['integer', 'null'], minimum: 1, maximum: 32 },
+          movement: {
+            type: ['integer', 'null'],
+            description:
+              'previousRank - rank; positive = moved up, negative = moved down, 0 = unchanged, null = no previous ranking. Always server-derived.',
+          },
+          tier: { type: 'string' },
+          headline: { type: 'string' },
+          summary: { type: 'string' },
+          strengths: { type: 'array', items: { type: 'string' } },
+          concerns: { type: 'array', items: { type: 'string' } },
+          team: { $ref: '#/components/schemas/PowerRankingTeam' },
+        },
+      },
+      PowerRankingEditionSummary: {
+        type: 'object',
+        additionalProperties: false,
+        required: [
+          'id',
+          'title',
+          'subtitle',
+          'season',
+          'edition',
+          'asOf',
+          'methodology',
+          'sources',
+          'publishedAt',
+        ],
+        properties: {
+          id: { type: 'string', format: 'uuid' },
+          title: { type: 'string' },
+          subtitle: { type: ['string', 'null'] },
+          season: { type: 'integer' },
+          edition: {
+            type: 'string',
+            description: 'Slug-like edition label, e.g. "preseason" or "week-1".',
+          },
+          asOf: { type: 'string', format: 'date-time' },
+          methodology: { type: 'string' },
+          sources: {
+            type: 'array',
+            items: { type: 'string' },
+            description:
+              'Research inputs referenced by the methodology (e.g. "DAZN", "PFT / NBC Sports", "Kalshi") -- provenance metadata only.',
+          },
+          publishedAt: { type: ['string', 'null'], format: 'date-time' },
+        },
+      },
+      PublicPowerRankingsResponse: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['data'],
+        properties: {
+          data: {
+            type: 'object',
+            required: ['edition', 'rankings'],
+            properties: {
+              edition: { $ref: '#/components/schemas/PowerRankingEditionSummary' },
+              rankings: {
+                type: 'array',
+                items: { $ref: '#/components/schemas/PowerRankingEntry' },
+              },
+            },
+          },
+        },
+      },
+      PublicPowerRankingEditionsResponse: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['data'],
+        properties: {
+          data: {
+            type: 'array',
+            items: {
+              type: 'object',
+              required: ['id', 'title', 'season', 'edition', 'asOf', 'publishedAt'],
+              properties: {
+                id: { type: 'string', format: 'uuid' },
+                title: { type: 'string' },
+                season: { type: 'integer' },
+                edition: { type: 'string' },
+                asOf: { type: 'string', format: 'date-time' },
+                publishedAt: { type: ['string', 'null'], format: 'date-time' },
+              },
+            },
+          },
+        },
+      },
+      AdminPowerRankingEntry: {
+        allOf: [
+          { $ref: '#/components/schemas/PowerRankingEntry' },
+          {
+            type: 'object',
+            required: ['id', 'createdAt', 'updatedAt'],
+            properties: {
+              id: { type: 'string', format: 'uuid' },
+              createdAt: { type: 'string', format: 'date-time' },
+              updatedAt: { type: 'string', format: 'date-time' },
+            },
+          },
+        ],
+      },
+      AdminPowerRankingEditionDetail: {
+        allOf: [
+          { $ref: '#/components/schemas/PowerRankingEditionSummary' },
+          {
+            type: 'object',
+            required: ['status', 'entryCount', 'entries', 'createdAt', 'updatedAt'],
+            properties: {
+              status: { type: 'string', enum: ['DRAFT', 'PUBLISHED', 'ARCHIVED'] },
+              entryCount: { type: 'integer' },
+              entries: {
+                type: 'array',
+                items: { $ref: '#/components/schemas/AdminPowerRankingEntry' },
+              },
+              createdAt: { type: 'string', format: 'date-time' },
+              updatedAt: { type: 'string', format: 'date-time' },
+            },
+          },
+        ],
+      },
+      AdminPowerRankingEditionDetailResponse: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['data'],
+        properties: { data: { $ref: '#/components/schemas/AdminPowerRankingEditionDetail' } },
+      },
+      AdminPowerRankingEditionListResponse: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['data', 'meta'],
+        properties: {
+          data: {
+            type: 'array',
+            items: { $ref: '#/components/schemas/AdminPowerRankingEditionDetail' },
+          },
+          meta: {
+            type: 'object',
+            required: ['nextCursor'],
+            properties: { nextCursor: { type: ['string', 'null'], format: 'uuid' } },
+          },
+        },
+      },
+      PowerRankingEditionCreateRequest: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['season', 'edition', 'title', 'asOf', 'methodology'],
+        properties: {
+          season: { type: 'integer', minimum: 2000, maximum: 2100 },
+          edition: {
+            type: 'string',
+            maxLength: 64,
+            description: 'Lowercase slug, e.g. "preseason" or "week-1".',
+          },
+          title: { type: 'string', maxLength: 180 },
+          subtitle: { type: ['string', 'null'], maxLength: 180 },
+          asOf: { type: 'string', format: 'date-time' },
+          methodology: { type: 'string' },
+          sources: { type: 'array', items: { type: 'string' } },
+        },
+      },
+      PowerRankingEditionUpdateRequest: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          title: { type: 'string', maxLength: 180 },
+          subtitle: { type: ['string', 'null'], maxLength: 180 },
+          asOf: { type: 'string', format: 'date-time' },
+          methodology: { type: 'string' },
+          sources: { type: 'array', items: { type: 'string' } },
+        },
+      },
+      PowerRankingEntryUpdateRequest: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          rank: { type: 'integer', minimum: 1, maximum: 32 },
+          previousRank: { type: ['integer', 'null'], minimum: 1, maximum: 32 },
+          tier: { type: 'string' },
+          headline: { type: 'string' },
+          summary: { type: 'string' },
+          strengths: { type: 'array', items: { type: 'string' } },
+          concerns: { type: 'array', items: { type: 'string' } },
+        },
+      },
+      PowerRankingReorderRequest: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['orderedEntryIds'],
+        properties: {
+          orderedEntryIds: {
+            type: 'array',
+            items: { type: 'string', format: 'uuid' },
+            description:
+              'Every current entry id in this edition, in the desired new rank order (index 0 = rank 1).',
+          },
+        },
+      },
+      PowerRankingImportEntry: {
+        type: 'object',
+        additionalProperties: false,
+        required: [
+          'rank',
+          'teamId',
+          'team',
+          'abbreviation',
+          'conference',
+          'division',
+          'tier',
+          'headline',
+          'summary',
+        ],
+        properties: {
+          rank: { type: 'integer', minimum: 1, maximum: 32 },
+          teamId: {
+            type: 'string',
+            description:
+              'An import-time identifier/slug (e.g. "los-angeles-rams"), never assumed to be a Team UUID.',
+          },
+          team: {
+            type: 'string',
+            description:
+              'Cross-validated against the matched canonical Team, never written to Team.',
+          },
+          abbreviation: { type: 'string' },
+          conference: { type: 'string' },
+          division: { type: 'string' },
+          tier: { type: 'string' },
+          headline: { type: 'string' },
+          summary: { type: 'string' },
+          strengths: { type: 'array', items: { type: 'string' } },
+          concerns: { type: 'array', items: { type: 'string' } },
+          previousRank: { type: ['integer', 'null'], minimum: 1, maximum: 32 },
+        },
+      },
+      PowerRankingImportDocument: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['title', 'season', 'edition', 'asOf', 'methodology', 'rankings'],
+        properties: {
+          title: { type: 'string' },
+          season: { type: 'integer', minimum: 2000, maximum: 2100 },
+          edition: { type: 'string', maxLength: 64 },
+          asOf: { type: 'string', format: 'date-time' },
+          methodology: { type: 'string' },
+          sources: { type: 'array', items: { type: 'string' } },
+          subtitle: { type: ['string', 'null'] },
+          rankings: {
+            type: 'array',
+            minItems: 1,
+            maxItems: 32,
+            items: { $ref: '#/components/schemas/PowerRankingImportEntry' },
+          },
+        },
+      },
+      PowerRankingImportRequest: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['data', 'mode'],
+        properties: {
+          data: { $ref: '#/components/schemas/PowerRankingImportDocument' },
+          mode: { type: 'string', enum: ['PREVIEW', 'UPSERT'] },
+          publish: {
+            type: 'boolean',
+            default: false,
+            description: 'UPSERT only. Requires exactly 32 validated, uniquely-matched entries.',
+          },
+        },
+      },
+      PowerRankingImportPreviewResponse: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['data'],
+        properties: {
+          data: {
+            type: 'object',
+            required: [
+              'valid',
+              'isExistingEdition',
+              'season',
+              'edition',
+              'entryCount',
+              'errors',
+              'teamMatches',
+            ],
+            properties: {
+              valid: { type: 'boolean' },
+              isExistingEdition: { type: 'boolean' },
+              season: { type: 'integer' },
+              edition: { type: 'string' },
+              entryCount: { type: 'integer' },
+              errors: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  required: ['rank', 'teamId', 'message'],
+                  properties: {
+                    rank: { type: ['integer', 'null'] },
+                    teamId: { type: ['string', 'null'] },
+                    message: { type: 'string' },
+                  },
+                },
+              },
+              teamMatches: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  required: ['rank', 'teamId', 'matchedTeamId', 'matchedBy'],
+                  properties: {
+                    rank: { type: 'integer' },
+                    teamId: { type: 'string' },
+                    matchedTeamId: { type: 'string', format: 'uuid' },
+                    matchedBy: { type: 'string', enum: ['ID', 'ABBREVIATION', 'SLUG'] },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      PowerRankingImportUpsertResponse: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['data'],
+        properties: {
+          data: {
+            type: 'object',
+            required: ['edition', 'created'],
+            properties: {
+              edition: { $ref: '#/components/schemas/AdminPowerRankingEditionDetail' },
+              created: { type: 'boolean' },
             },
           },
         },

@@ -320,6 +320,8 @@ model User {
   reviewedSourceRights                   SourceRightsProfile[]            @relation("SourceRightsReviewer")
   evaluatedCandidateQualities            CandidateQualityEvaluation[]
   generatedPredictions                   GamePrediction[]                 @relation("PredictionGenerator")
+  createdPowerRankingEditions            PowerRankingEdition[]            @relation("PowerRankingEditionCreator")
+  updatedPowerRankingEditions            PowerRankingEdition[]            @relation("PowerRankingEditionUpdater")
 
   @@index([isActive], map: "users_active_idx")
   @@index([favoriteTeamId], map: "users_favorite_team_id_idx")
@@ -401,6 +403,7 @@ model Team {
   homepageHighlightPlacements TeamHomepageHighlightPlacement[]
   homepageHighlightSettings   TeamHomepageHighlightSettings?
   standingRows                TeamStanding[]
+  powerRankingEntries         PowerRankingEntry[]
 
   @@unique([league, abbreviation], map: "teams_league_abbreviation_key")
   @@index([league, isActive, conference, division, fullName], map: "teams_catalog_order_idx")
@@ -458,6 +461,78 @@ model TeamStanding {
   @@index([snapshotId, providerOrder], map: "team_standings_snapshot_order_idx")
   @@index([teamId], map: "team_standings_team_idx")
   @@map("team_standings")
+}
+
+enum PowerRankingEditionStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+/// M43A: independent 2nd & 15 editorial power rankings -- not an official NFL
+/// ranking. One edition per season+edition slug (e.g. season 2026,
+/// edition "preseason" or "week-1") so future weekly editions never overwrite
+/// history; only one edition can hold a given (season, edition) pair.
+model PowerRankingEdition {
+  id                String                    @id @default(uuid()) @db.Uuid
+  season            Int
+  /// Slug-like edition label, e.g. "preseason", "week-1", "week-2" -- not a
+  /// numeric week column, since preseason/postseason editions don't fit one.
+  edition           String                    @db.VarChar(64)
+  title             String                    @db.VarChar(180)
+  subtitle          String?                   @db.VarChar(180)
+  asOf              DateTime                  @map("as_of") @db.Timestamptz(3)
+  methodology       String                    @db.Text
+  /// Research inputs referenced by the methodology (e.g. "DAZN", "PFT / NBC
+  /// Sports", "Kalshi") -- provenance metadata only, never scraped article
+  /// bodies or reproduced third-party ranking text.
+  sources           String[]
+  status            PowerRankingEditionStatus @default(DRAFT)
+  publishedAt       DateTime?                 @map("published_at") @db.Timestamptz(3)
+  createdById       String?                   @map("created_by_id") @db.Uuid
+  updatedById       String?                   @map("updated_by_id") @db.Uuid
+  createdBySnapshot String                    @map("created_by_snapshot") @db.VarChar(254)
+  updatedBySnapshot String                    @map("updated_by_snapshot") @db.VarChar(254)
+  createdAt         DateTime                  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime                  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  createdBy         User?                     @relation("PowerRankingEditionCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedBy         User?                     @relation("PowerRankingEditionUpdater", fields: [updatedById], references: [id], onDelete: SetNull)
+  entries           PowerRankingEntry[]
+
+  @@unique([season, edition], map: "power_ranking_editions_season_edition_key")
+  @@index([status, publishedAt, id], map: "power_ranking_editions_status_published_idx")
+  @@map("power_ranking_editions")
+}
+
+/// One team's slot within a PowerRankingEdition. Team identity (name,
+/// abbreviation, conference, division) is never duplicated here -- always
+/// read live from the related Team row; the import format may carry those
+/// fields for validation, but Team stays the single source of truth.
+model PowerRankingEntry {
+  id           String              @id @default(uuid()) @db.Uuid
+  editionId    String              @map("edition_id") @db.Uuid
+  teamId       String              @map("team_id") @db.Uuid
+  rank         Int
+  previousRank Int?                @map("previous_rank")
+  /// Derived as previousRank - rank whenever rank or previousRank changes
+  /// (positive = moved up, negative = moved down, 0 = unchanged, null = no
+  /// previous ranking) -- never accepted as independent input, to avoid a
+  /// contradictory movement/previousRank/rank triple.
+  movement     Int?
+  tier         String              @db.VarChar(64)
+  headline     String              @db.VarChar(200)
+  summary      String              @db.Text
+  strengths    String[]
+  concerns     String[]
+  createdAt    DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime            @updatedAt @map("updated_at") @db.Timestamptz(3)
+  edition      PowerRankingEdition @relation(fields: [editionId], references: [id], onDelete: Cascade)
+  team         Team                @relation(fields: [teamId], references: [id], onDelete: Restrict)
+
+  @@unique([editionId, teamId], map: "power_ranking_entries_edition_team_key")
+  @@unique([editionId, rank], map: "power_ranking_entries_edition_rank_key")
+  @@index([teamId], map: "power_ranking_entries_team_idx")
+  @@map("power_ranking_entries")
 }
 
 model Game {
