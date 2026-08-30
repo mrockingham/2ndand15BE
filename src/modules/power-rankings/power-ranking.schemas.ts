@@ -1,6 +1,12 @@
 import { z } from 'zod';
 
-const timestamp = z.iso.datetime({ offset: true });
+// `asOf` is editorially authored (e.g. "2026-08-30"), not machine-generated,
+// so a bare ISO date is accepted alongside a full offset datetime and
+// normalized to midnight UTC -- everything downstream (Date parsing, DTO
+// serialization) only ever sees a valid full ISO string either way.
+const timestamp = z
+  .union([z.iso.datetime({ offset: true }), z.iso.date()])
+  .transform((value) => (value.includes('T') ? value : `${value}T00:00:00.000Z`));
 const trimmedText = (maximum: number) => z.string().trim().min(1).max(maximum);
 const nullableTrimmedText = (maximum: number) => trimmedText(maximum).nullable();
 

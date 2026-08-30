@@ -60,6 +60,11 @@ describe('matchImportEntryToTeam', () => {
     if (!isTeamMatchError(result)) expect(result.matchedBy).toBe('ABBREVIATION');
   });
 
+  it('accepts a conference-prefixed division ("NFC West") as equivalent to the bare stored value ("West")', () => {
+    const result = matchImportEntryToTeam(entry({ division: 'NFC West' }), lookup);
+    expect(isTeamMatchError(result)).toBe(false);
+  });
+
   it('falls back to a normalized slug match derived from teamId', () => {
     const result = matchImportEntryToTeam(
       entry({ teamId: 'los-angeles-rams', abbreviation: 'ZZZ' }),
